@@ -1,2 +1,2 @@
 # STEF
-Sistema Telecine de Escaneo Fílmico
+Sistema de Transporte y Escaneo Fílmico
