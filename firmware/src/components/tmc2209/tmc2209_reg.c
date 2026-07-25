@@ -18,13 +18,16 @@ typedef struct {
    the device holds before we impose anything. */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W | CFG, 0x00000101u, "GCONF"        },
-    { TMC2209_GSTAT,        R | W,       0x00000000u, "GSTAT"        },
+    /* The reset flag is set at power-on: the chip's way of saying it came up
+       holding defaults, which is exactly what this column describes. */
+    { TMC2209_GSTAT,        R | W,       0x00000001u, "GSTAT"        },
     { TMC2209_IFCNT,        R,           0x00000000u, "IFCNT"        },
     { TMC2209_SLAVECONF,        W | CFG, 0x00000000u, "SLAVECONF"    },
     { TMC2209_IOIN,         R,           0x00000000u, "IOIN"         },
-    /* FACTORY_CONF is R/W in silicon but read-only to us: it holds the factory
-       oscillator trim, and writing it detunes every timing-derived quantity. */
+    
+    /* FACTORY_CONF is R/W in silicon but read-only to us*/
     { TMC2209_FACTORY_CONF, R,           0x00000000u, "FACTORY_CONF" },
+
     { TMC2209_IHOLD_IRUN,       W | CFG, 0x00071703u, "IHOLD_IRUN"   },
     { TMC2209_TPOWERDOWN,       W | CFG, 0x00000014u, "TPOWERDOWN"   },
     { TMC2209_TSTEP,        R,           0x000FFFFFu, "TSTEP"        },
@@ -246,6 +249,11 @@ tmc2209_gstat_t tmc2209_gstat_decode(uint32_t raw)
         .uv_cp   = BIT(raw, 2),
     };
     return g;
+}
+
+uint8_t tmc2209_ifcnt_decode(uint32_t raw)
+{
+    return (uint8_t)raw;   /* low byte; the chip reads the rest back as zero */
 }
 
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw)

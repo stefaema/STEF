@@ -115,8 +115,7 @@ void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes)
     m->addr   = addr;
     m->echoes = echoes;
 
-    /* Power-on state the library will find. IOIN.version must read 0x21 or
-       tmc2209_begin() refuses to proceed. */
+    /* Power-on state the library will find. */
     m->regs[TMC2209_IOIN]     = (uint32_t)TMC2209_IOIN_VERSION << 24;
     m->regs[TMC2209_GCONF]    = tmc2209_reg_reset_value(TMC2209_GCONF);
     m->regs[TMC2209_CHOPCONF] = tmc2209_reg_reset_value(TMC2209_CHOPCONF);

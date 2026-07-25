@@ -1,0 +1,126 @@
+{
+    "version": "2.0.0",
+    // Every C task runs through `nix develop ./firmware`, so it works whether or
+    // not the editor itself was launched from a devshell. The firmware devshell
+    // is what provides idf.py, the xtensa toolchain and IDF_PATH (which the unit
+    // tests need too, since they borrow Unity from ESP-IDF).
+    "tasks": [
+        {
+            "label": "firmware: build (idf.py)",
+            "type": "shell",
+            "command": "nix develop ./firmware --command idf.py -C firmware/src build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "firmware: reconfigure (refresh compile_commands.json)",
+            "detail": "Run after adding a component, a source file or an include dir, otherwise clangd keeps resolving against the old build.",
+            "type": "shell",
+            "command": "nix develop ./firmware --command idf.py -C firmware/src reconfigure",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "firmware: flash + monitor",
+            "type": "shell",
+            "command": "nix develop ./firmware --command idf.py -C firmware/src -p ${input:serialPort} flash monitor",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated",
+                "focus": true
+            }
+        },
+        {
+            "label": "firmware: monitor",
+            "type": "shell",
+            "command": "nix develop ./firmware --command idf.py -C firmware/src -p ${input:serialPort} monitor",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated",
+                "focus": true
+            }
+        },
+        {
+            "label": "firmware: fullclean",
+            "type": "shell",
+            "command": "nix develop ./firmware --command idf.py -C firmware/src fullclean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "unit tests: configure",
+            "detail": "Generates firmware/test/unit/build/compile_commands.json, which is what clangd reads inside the test tree.",
+            "type": "shell",
+            "command": "nix develop ./firmware --command cmake -S firmware/test/unit -B firmware/test/unit/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "unit tests: build",
+            "type": "shell",
+            "command": "nix develop ./firmware --command cmake --build firmware/test/unit/build -j",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "unit tests: configure",
+            "group": "build",
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "unit tests: run",
+            "type": "shell",
+            "command": "nix develop ./firmware --command ctest --test-dir firmware/test/unit/build --output-on-failure",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "unit tests: build",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "python: pytest (all modules)",
+            "type": "shell",
+            "command": "python -m pytest",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "serialPort",
+            "type": "promptString",
+            "description": "Serial port of the ESP32 (firmware/utils/find_esp32_port.py finds it)",
+            "default": "/dev/ttyACM0"
+        }
+    ]
+}

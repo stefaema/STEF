@@ -150,8 +150,8 @@ static tmc2209_err_t confirm_writes(tmc2209_t *dev, unsigned distinct, unsigned 
     if (err != TMC2209_OK) {
         return err;
     }
-    uint8_t  now   = (uint8_t)(raw & 0xFFu);
-    unsigned delta = (unsigned)((uint8_t)(now - dev->ifcnt));   /* wraps at 255 */
+    uint8_t  now   = tmc2209_ifcnt_decode(raw);
+    unsigned delta = (uint8_t)(now - dev->ifcnt);   /* unsigned 8-bit subtraction wraps */
     dev->ifcnt = now;
 
     if (delta < distinct || delta > issued) {
@@ -173,45 +173,43 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t add
     memset(dev, 0, sizeof *dev);
     dev->bus     = bus;
     dev->addr    = addr;
-    dev->trusted = false;   /* nothing has been imposed on the device yet */
+    dev->trusted = false;   /* Driver & uC config may be different */
 
+    /* Although shadow device config cannot be trusted at init, use default register values */
     for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
         dev->shadow[slot] = tmc2209_reg_reset_at(slot);
     }
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_begin(tmc2209_t *dev)
+tmc2209_err_t tmc2209_begin(tmc2209_t *dev, tmc2209_gstat_t *at_bringup)
 {
     if (!dev || !dev->bus) {
         return TMC2209_ERR_ARG;
     }
 
-    /* IOIN.version is a free comms self-test: it proves framing, CRC and
-       wiring all work before we depend on any of them. */
     uint32_t raw = 0;
-    tmc2209_err_t err = tmc2209_read(dev, TMC2209_IOIN, &raw);
+
+    /* Fail-fast if device is not reachable: OK means framing, addressing and wiring work. */
+    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
-    if (tmc2209_ioin_decode(raw).version != TMC2209_IOIN_VERSION) {
-        return TMC2209_ERR_VERSION;
-    }
 
-    /* Seed the write counter before issuing any write, or the first
-       verification compares against a number we never observed. */
-    err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    dev->ifcnt = (uint8_t)(raw & 0xFFu);
+    /* Baseline for every later write check. Mandatory. */
+    dev->ifcnt = tmc2209_ifcnt_decode(raw);
 
-    /* Clear whatever is latched, including the power-on reset flag, so the
-       next GSTAT read reports only what happened since we took charge. */
     err = tmc2209_read(dev, TMC2209_GSTAT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
+
+    /* Only chance to see these flags: the clear below discards them. */
+    if (at_bringup) {
+        *at_bringup = tmc2209_gstat_decode(raw);
+    }
+
+    /* Bitwise Write-1-to-clear, so raw is already the mask for the flags we saw. */
     if (raw != 0) {
         err = tmc2209_write(dev, TMC2209_GSTAT, raw);
         if (err != TMC2209_OK) {
@@ -219,6 +217,7 @@ tmc2209_err_t tmc2209_begin(tmc2209_t *dev)
         }
     }
 
+    /* Shadow config may not be the device's. Reflush overwrites the device to make it so. */
     return tmc2209_reflush(dev);
 }
 
@@ -301,7 +300,7 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t value)
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_cached(const tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
+tmc2209_err_t tmc2209_shadow(const tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 {
     if (!dev || !out) {
         return TMC2209_ERR_ARG;
@@ -357,7 +356,7 @@ tmc2209_err_t tmc2209_flush(tmc2209_t *dev)
         uint32_t raw = 0;
         err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
         if (err == TMC2209_OK) {
-            dev->ifcnt = (uint8_t)(raw & 0xFFu);
+            dev->ifcnt = tmc2209_ifcnt_decode(raw);
         }
     }
 

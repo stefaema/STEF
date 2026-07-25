@@ -45,8 +45,8 @@ typedef struct {
     unsigned freeze_ifcnt;    /* accept a write without counting it */
 } mock_dev_t;
 
-/* Zeroes the mock, sets IOIN.version to 0x21 so tmc2209_begin() passes, and
-   wires the returned port to it. */
+/* Zeroes the mock, seeds the power-on register values a real part would show,
+   and wires the returned port to it. */
 void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes);
 
 uint32_t mock_reg(const mock_dev_t *m, tmc2209_reg_t reg);

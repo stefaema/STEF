@@ -95,7 +95,7 @@ field codecs, never written, never reflushed", not "unreachable".
 | `GSTAT` | 0x01 | R/WC | Three latched fault flags: reset, driver error, charge-pump undervoltage | **Keep.** `reset` is how we learn the driver browned out and lost its config. |
 | `IFCNT` | 0x02 | R | Counts write datagrams the driver accepted. Wraps at 255 | **Keep.** A write gets no reply, so this is the only acknowledgement that exists. |
 | `SLAVECONF` | 0x03 | **W** | `senddelay`: how long the driver waits before answering | **Keep.** Must be non-zero so the master can release a shared line before the reply starts. |
-| `IOIN` | 0x06 | R | Live state of the input pins, plus a chip version byte | **Keep.** `version == 0x21` is a free comms self-test; the pin states confirm wiring at bring-up. |
+| `IOIN` | 0x06 | R | Live state of the input pins, plus a chip version byte | **Keep.** The pin states confirm wiring at bring-up, and the version byte identifies the silicon when a diagnostic wants to know. |
 | `FACTORY_CONF` | 0x07 | RW | Factory-trimmed oscillator frequency and overtemperature thresholds | **Keep, read-only.** Reading tells us the trim. Writing detunes every timing-derived value. See §6. |
 | `IHOLD_IRUN` | 0x10 | **W** | Run current, standstill current, and the ramp between them | **Keep.** Sets motor torque, and `ihold` is what holds film tension at rest. |
 | `TPOWERDOWN` | 0x11 | **W** | Delay from standstill before dropping to hold current | **Keep.** Must be at least 2 or StealthChop auto-tuning never runs. |
@@ -156,7 +156,7 @@ a single `uint32_t`, which is the practical cap on how many we can add.
 The one rule the shadow imposes: **never present a shadow value and a
 device-read value in the same view without labelling them.** Shadow is
 *commanded*, a read is *actual*. The API enforces this by naming: 
-`tmc2209_read()` hits the wire, `tmc2209_cached()`
+`tmc2209_read()` hits the wire, `tmc2209_shadow()`
 does not, and you cannot confuse them at a call site.
 
 ### The trust bit
@@ -175,7 +175,7 @@ Three things cause it, and they collapse onto one flag and one recovery.
 Recovery is `reflush()` in all three cases, because **you cannot repair the
 shadow by reading**: eight registers are write-only.
 
-`tmc2209_cached()` returns `ERR_STALE` while untrusted rather than handing
+`tmc2209_shadow()` returns `ERR_STALE` while untrusted rather than handing
 back a plausible-looking number. A shadow that lies quietly is worse than no
 shadow.
 

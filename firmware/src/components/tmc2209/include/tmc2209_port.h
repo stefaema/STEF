@@ -30,7 +30,6 @@ typedef enum {
     TMC2209_ERR_NO_ACK,   /* IFCNT did not advance: the write never landed */
     TMC2209_ERR_ACCESS,   /* read of a write-only register, or write of a read-only one */
     TMC2209_ERR_STALE,    /* shadow is untrusted; reflush before believing it */
-    TMC2209_ERR_VERSION,  /* IOIN.version is not 0x21: not a TMC2209, or no comms */
 } tmc2209_err_t;
 
 const char *tmc2209_strerror(tmc2209_err_t err);

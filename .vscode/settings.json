@@ -1,3 +1,116 @@
 {
-    "cmake.sourceDirectory": "/home/stefer/Projects/collegeware/STEF/firmware/src"
+    // ---------------------------------------------------------------- C / C++
+    // clangd is the only C/C++ engine here (no cpptools installed). Per-tree
+    // .clangd files pick the compile database; this section only says how to
+    // launch the server. --query-driver is the load-bearing flag: without it
+    // clangd refuses to run the cross GCC and every ESP-IDF header goes missing.
+    "clangd.path": "clangd",
+    "clangd.useBuiltInClangdIfAvailable": false,
+    "clangd.arguments": [
+        // Two drivers to allow: the cross GCC for firmware/src, and the nix
+        // host GCC the unit tests are built with (its libc headers live in the
+        // store, not /usr/include, so clangd has to ask it).
+        "--query-driver=/nix/store/*/bin/xtensa-esp*-elf-*,/nix/store/*/bin/*gcc*,/usr/bin/*gcc*,/usr/bin/*clang*",
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=never",
+        "--pch-storage=memory",
+        "-j=4"
+    ],
+    "clangd.onConfigChanged": "restart",
+    "clangd.detectExtensionConflicts": true,
+    "clangd.enableClangTidyDiagnostic": true,
+    // Fallback for files not in any compile database (a brand new .c before a
+    // reconfigure, or a scratch header). Keeps the editor from red-lining C11.
+    "clangd.fallbackFlags": [
+        "-std=c11",
+        "-Wall"
+    ],
+
+    // ------------------------------------------------------------------ CMake
+    // The ESP-IDF app is not driven by cmake-tools: it needs idf.py and the nix
+    // devshell. Point cmake-tools at the host unit tests instead, and never let
+    // it configure on its own, because the configure needs IDF_PATH from the
+    // devshell. Use the Tasks (Ctrl+Shift+B) for anything that must build.
+    "cmake.sourceDirectory": "${workspaceFolder}/firmware/test/unit",
+    "cmake.buildDirectory": "${workspaceFolder}/firmware/test/unit/build",
+    "cmake.configureOnOpen": false,
+    "cmake.configureOnEdit": false,
+    "cmake.automaticReconfigure": false,
+    "cmake.exportCompileCommandsFile": true,
+
+    // ----------------------------------------------------------------- Python
+    // Every module is its own package rooted at <module>/src, so the analyzer
+    // needs those roots spelled out. Keep this list in sync when modules are
+    // added.
+    "basedpyright.analysis.typeCheckingMode": "standard",
+    "basedpyright.analysis.diagnosticMode": "openFilesOnly",
+    "basedpyright.analysis.autoImportCompletions": true,
+    "basedpyright.analysis.extraPaths": [
+        "${workspaceFolder}/boards/src",
+        "${workspaceFolder}/ccapi/src",
+        "${workspaceFolder}/driver/src",
+        "${workspaceFolder}/gui/src",
+        "${workspaceFolder}/orchestrator/src",
+        "${workspaceFolder}/rig/src",
+        "${workspaceFolder}/vision/src"
+    ],
+    "python.terminal.activateEnvironment": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "boards/tests",
+        "ccapi/tests",
+        "driver/tests",
+        "gui/tests",
+        "orchestrator/tests",
+        "rig/tests",
+        "vision/tests"
+    ],
+
+    // ------------------------------------------------------------- Formatting
+    // C formatting is deliberately off on save: there is no .clang-format yet,
+    // so saving would reflow the existing firmware to clangd's LLVM default.
+    "[c]": {
+        "editor.defaultFormatter": "kylinideteam.kylin-clangd",
+        "editor.formatOnSave": false
+    },
+    "[cpp]": {
+        "editor.defaultFormatter": "kylinideteam.kylin-clangd",
+        "editor.formatOnSave": false
+    },
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        }
+    },
+
+    // ------------------------------------------------------------------ Files
+    "files.associations": {
+        "Kconfig": "kconfig",
+        "Kconfig.projbuild": "kconfig",
+        "sdkconfig": "properties",
+        "sdkconfig.defaults": "properties",
+        "*.h": "c"
+    },
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    // Build trees are enormous (ESP-IDF pulls in the whole framework). Hiding
+    // them from search is what keeps Ctrl+Shift+F usable.
+    "search.exclude": {
+        "**/build/**": true,
+        "**/.cache/**": true,
+        "**/__pycache__/**": true,
+        "**/.venv/**": true,
+        "meta/**": true
+    },
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/.cache/**": true,
+        "**/.git/objects/**": true
+    }
 }

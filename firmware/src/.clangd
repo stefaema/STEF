@@ -1,0 +1,42 @@
+# clangd config for the ESP-IDF target build.
+#
+# The compile database under build/ was produced by idf.py, so every command in
+# it invokes xtensa-esp32s3-elf-gcc with GCC-only flags. clangd runs upstream
+# clang, which does not know that driver or those flags, so two things are
+# needed: point it at the cross GCC (settings.json --query-driver) so it can ask
+# where the system headers live, and drop the flags clang would reject below.
+CompileFlags:
+  CompilationDatabase: build
+  Remove:
+    - -mlongcalls
+    - -mtext-section-literals
+    - -mdisable-hardware-atomics
+    - -fno-tree-switch-conversion
+    - -fno-inline-small-functions
+    - -fno-inline-functions-called-once
+    - -fstrict-volatile-bitfields
+    - -fno-shrink-wrap
+    - -fmacro-prefix-map=*
+  Add:
+    - -Wno-unknown-attributes
+    - -Wno-ignored-attributes
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - readability-*
+      - performance-*
+    Remove:
+      # ESP-IDF headers and our register tables are full of magic constants and
+      # short names by design; these fire on nearly every line.
+      - readability-magic-numbers
+      - readability-identifier-length
+      - readability-braces-around-statements
+      - bugprone-easily-swappable-parameters
+
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: No

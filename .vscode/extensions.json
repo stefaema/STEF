@@ -1,0 +1,17 @@
+{
+    "recommendations": [
+        "kylinideteam.kylin-clangd",
+        "kylinideteam.kylin-cmake-tools",
+        "kylinideteam.cppdebug",
+        "detachhead.basedpyright",
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "ms-python.debugpy"
+    ],
+    // cpptools ships a second IntelliSense engine that fights clangd over the
+    // same files, and its Open VSX build lags upstream anyway.
+    "unwantedRecommendations": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack"
+    ]
+}

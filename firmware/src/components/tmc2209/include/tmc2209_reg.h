@@ -175,6 +175,11 @@ typedef struct {
 uint32_t        tmc2209_gstat_encode(const tmc2209_gstat_t *g);  /* write 1 to clear */
 tmc2209_gstat_t tmc2209_gstat_decode(uint32_t raw);
 
+/* The accepted-write counter, an 8-bit field that wraps. A codec for a single
+   narrow field looks like overkill until you notice the alternative is the
+   width of the field spelled out as a mask at every call site. */
+uint8_t tmc2209_ifcnt_decode(uint32_t raw);
+
 typedef struct {
     bool    enn, ms1, ms2, diag, pdn_uart, step, spread_en, dir;
     uint8_t version;   /* 0x21 on a genuine TMC2209 */
@@ -182,7 +187,12 @@ typedef struct {
 
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw);
 
+/* Silicon version byte in IOIN, fixed for the part: what this driver was
+   written and tested against. A TMC2208 reads 0x20. Overridable at build time
+   for register-compatible siblings that identify differently. */
+#ifndef TMC2209_IOIN_VERSION
 #define TMC2209_IOIN_VERSION 0x21u
+#endif
 
 /* Sign-extended fields that are not plain unsigned counts. */
 int32_t tmc2209_vactual_decode(uint32_t raw);
