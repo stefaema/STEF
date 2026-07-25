@@ -4,17 +4,15 @@
   inputs = {
     root.url = "path:..";
     nixpkgs.follows = "root/nixpkgs";
+    esp-dev.url = "github:mirrexagon/nixpkgs-esp-dev";
   };
 
-  outputs = { self, nixpkgs, ... }:
+  outputs = { self, nixpkgs, esp-dev, ... }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in {
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShell {
-          buildInputs = [ pkgs.python3 ];
-        };
+      devShells = nixpkgs.lib.genAttrs systems (system: {
+        default = esp-dev.devShells.${system}.esp32s3-idf;
       });
     };
 }

@@ -1,0 +1,12 @@
+menu "STEF Self-Test Configuration"
+
+    config STEF_WS2812_GPIO
+        int "Onboard WS2812 LED GPIO number"
+        range 0 48
+        default 48
+        help
+            GPIO driving the onboard addressable (WS2812) LED used by the
+            visual-confirmation self-test. 48 on ESP32-S3-DevKitC-1 and most
+            N16R8 clones. Set via "idf.py menuconfig" if your board differs.
+
+endmenu

@@ -1,0 +1,13 @@
+# We flash/monitor over the native USB port (USB-Serial/JTAG), not the
+# UART-bridge "COM" port. ESP-IDF's default makes native USB a secondary,
+# output-only console (stdin still bound to UART0), which silently breaks
+# any command menu that reads from stdin: printf output shows up over USB
+# fine, but keystrokes never reach the app since nothing's listening on
+# UART0. Making it the primary console fixes both directions.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Board's real flash (confirmed via esptool flash_id) is 16MB; ESP-IDF's
+# default of 2MB was silently truncating what the bootloader thought was
+# available.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
