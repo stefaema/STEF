@@ -54,8 +54,8 @@ typedef enum {
 
 /** What the driver permits. */
 enum {
-    TMC2209_ACC_R = 1u << 0,
-    TMC2209_ACC_W = 1u << 1,
+    TMC2209_ACC_R = 1U << 0,
+    TMC2209_ACC_W = 1U << 1,
 };
 
 /** Who can change the value, and therefore whether it can be cached. */

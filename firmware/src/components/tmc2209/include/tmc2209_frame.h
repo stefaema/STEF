@@ -8,7 +8,10 @@
 #ifndef TMC2209_FRAME_H
 #define TMC2209_FRAME_H
 
-#include "tmc2209_port.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "tmc2209_err.h"
 
 #define TMC2209_SYNC          0x05u
 #define TMC2209_MASTER_ADDR   0xFFu

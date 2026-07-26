@@ -22,6 +22,7 @@
 #ifndef TMC2209_H
 #define TMC2209_H
 
+#include "tmc2209_err.h"
 #include "tmc2209_port.h"
 #include "tmc2209_reg.h"
 

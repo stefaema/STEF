@@ -36,6 +36,7 @@ target_compile_options(unity PRIVATE -w)
 
 add_library(tmc2209 STATIC
     ${TMC2209_DIR}/tmc2209.c
+    ${TMC2209_DIR}/tmc2209_err.c
     ${TMC2209_DIR}/tmc2209_frame.c
     ${TMC2209_DIR}/tmc2209_reg.c)
 target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
