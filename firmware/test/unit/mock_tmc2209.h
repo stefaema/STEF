@@ -1,5 +1,5 @@
 /*
- * mock_tmc2209.h — a fake TMC2209 behind the port interface.
+ * mock_tmc2209.h: a fake TMC2209 behind the port interface.
  *
  * A scripted byte queue would test the framing but make the transaction tests
  * unreadable, because every expectation would be a hand-assembled datagram.
@@ -17,9 +17,24 @@
 #define MOCK_TMC2209_H
 
 #include "tmc2209.h"
+#include "tmc2209_frame.h"
 
 #define MOCK_OUT_CAP 64
 #define MOCK_LOG_CAP 512
+
+/* Datasheet power-on values. These belong to the device model, not to the
+   library: GCONF's depends on OTP bits and CHOPCONF's on the address straps,
+   so neither is a property the library may assume. FACTORY_CONF is given a
+   non-zero trim precisely because a real part never reads back zero, which is
+   what makes "read it, do not seed it" testable. */
+#define MOCK_RESET_GCONF        0x00000101u
+#define MOCK_RESET_GSTAT        0x00000001u   /* reset flag set at power-on */
+#define MOCK_RESET_CHOPCONF     0x10000053u
+#define MOCK_RESET_IHOLD_IRUN   0x00071703u
+#define MOCK_RESET_TPOWERDOWN   0x00000014u
+#define MOCK_RESET_TSTEP        0x000FFFFFu
+#define MOCK_RESET_PWMCONF      0xC10D0024u
+#define MOCK_RESET_FACTORY_CONF 0x0000001Du
 
 typedef struct {
     uint32_t regs[128];       /* indexed by register address */

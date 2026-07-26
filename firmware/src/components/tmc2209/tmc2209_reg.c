@@ -2,54 +2,62 @@
 
 #include <stddef.h>
 
-#define R      TMC2209_ACC_R
-#define W      TMC2209_ACC_W
-#define CFG    TMC2209_ACC_CONFIG
+#define R  TMC2209_ACC_R
+#define W  TMC2209_ACC_W
+
+#define VOL TMC2209_CLASS_VOLATILE
+#define OWN TMC2209_CLASS_OWNED
+#define CST TMC2209_CLASS_CONSTANT
 
 typedef struct {
-    tmc2209_reg_t reg;
-    uint8_t       access;
-    uint32_t      reset;
-    const char   *name;
+    tmc2209_reg_t   reg;
+    uint8_t         access;   /* what the silicon permits */
+    tmc2209_class_t cls;      /* who can change the value */
+    const char     *name;
 } reg_info_t;
 
-/* Order defines the shadow slot, and therefore the dirty bit. Reset values are
-   the chip's power-on defaults, which is the correct seed because that is what
-   the device holds before we impose anything. */
+/* Order defines the cache slot, and therefore the validity bit.
+ *
+ * Access and class are independent. VACTUAL is write-only in silicon yet
+ * OWNED, because the chip refusing to read it back says nothing about who
+ * changes it. GSTAT is readable and writable yet VOLATILE, because the
+ * hardware sets its flags. Getting those two backwards is the bug this column
+ * exists to prevent.
+ *
+ * There is no reset-value column on purpose: GCONF's reset depends on OTP bits
+ * and CHOPCONF's on the address straps, so neither is a property of the part
+ * number, and a seeded default is a value adopt() would eventually write.
+ * See design.md §1 and §7 item 7. */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
-    { TMC2209_GCONF,        R | W | CFG, 0x00000101u, "GCONF"        },
-    /* The reset flag is set at power-on: the chip's way of saying it came up
-       holding defaults, which is exactly what this column describes. */
-    { TMC2209_GSTAT,        R | W,       0x00000001u, "GSTAT"        },
-    { TMC2209_IFCNT,        R,           0x00000000u, "IFCNT"        },
-    { TMC2209_SLAVECONF,        W | CFG, 0x00000000u, "SLAVECONF"    },
-    { TMC2209_IOIN,         R,           0x00000000u, "IOIN"         },
-    
-    /* FACTORY_CONF is R/W in silicon but read-only to us*/
-    { TMC2209_FACTORY_CONF, R,           0x00000000u, "FACTORY_CONF" },
+    { TMC2209_GCONF,        R | W, OWN, "GCONF"        },
+    { TMC2209_GSTAT,        R | W, VOL, "GSTAT"        },  /* hardware latches the flags */
+    { TMC2209_IFCNT,        R,     VOL, "IFCNT"        },  /* hardware increments it */
+    { TMC2209_SLAVECONF,        W, OWN, "SLAVECONF"    },
+    { TMC2209_IOIN,         R,     VOL, "IOIN"         },  /* live pin state */
+    { TMC2209_FACTORY_CONF, R,     CST, "FACTORY_CONF" },  /* never written: holds the trim */
+    { TMC2209_IHOLD_IRUN,       W, OWN, "IHOLD_IRUN"   },
+    { TMC2209_TPOWERDOWN,       W, OWN, "TPOWERDOWN"   },
+    { TMC2209_TSTEP,        R,     VOL, "TSTEP"        },  /* the driver measures it */
+    { TMC2209_TPWMTHRS,         W, OWN, "TPWMTHRS"     },
+    { TMC2209_TCOOLTHRS,        W, OWN, "TCOOLTHRS"    },
+    { TMC2209_VACTUAL,          W, OWN, "VACTUAL"      },
+    { TMC2209_SGTHRS,           W, OWN, "SGTHRS"       },
+    { TMC2209_SG_RESULT,    R,     VOL, "SG_RESULT"    },  /* back-EMF estimate */
+    { TMC2209_COOLCONF,         W, OWN, "COOLCONF"     },
+    { TMC2209_MSCNT,        R,     VOL, "MSCNT"        },  /* advances with steps */
+    { TMC2209_CHOPCONF,     R | W, OWN, "CHOPCONF"     },
+    { TMC2209_DRV_STATUS,   R,     VOL, "DRV_STATUS"   },
 
-    { TMC2209_IHOLD_IRUN,       W | CFG, 0x00071703u, "IHOLD_IRUN"   },
-    { TMC2209_TPOWERDOWN,       W | CFG, 0x00000014u, "TPOWERDOWN"   },
-    { TMC2209_TSTEP,        R,           0x000FFFFFu, "TSTEP"        },
-    { TMC2209_TPWMTHRS,         W | CFG, 0x00000000u, "TPWMTHRS"     },
-    { TMC2209_TCOOLTHRS,        W | CFG, 0x00000000u, "TCOOLTHRS"    },
-    { TMC2209_VACTUAL,          W | CFG, 0x00000000u, "VACTUAL"      },
-    { TMC2209_SGTHRS,           W | CFG, 0x00000000u, "SGTHRS"       },
-    { TMC2209_SG_RESULT,    R,           0x00000000u, "SG_RESULT"    },
-    { TMC2209_COOLCONF,         W | CFG, 0x00000000u, "COOLCONF"     },
-    { TMC2209_MSCNT,        R,           0x00000000u, "MSCNT"        },
-    { TMC2209_CHOPCONF,     R | W | CFG, 0x10000053u, "CHOPCONF"     },
-    { TMC2209_DRV_STATUS,   R,           0x00000000u, "DRV_STATUS"   },
+    /* Never written by policy, and nothing else writes them either, so their
+       value is knowable after one read. PWMCONF is R/W in silicon; autoscale
+       and autograd tune PWM_SCALE and PWM_AUTO instead of touching it. */
+    { TMC2209_OTP_READ,     R,     CST, "OTP_READ"     },
+    { TMC2209_PWMCONF,      R,     CST, "PWMCONF"      },
 
-    /* Readable, never configured. Reachable so the diagnostic can see the
-       whole device; carrying no CONFIG flag so they stay out of reflush.
-       PWMCONF is R/W in silicon, but pwm_autoscale and pwm_autograd tune it
-       better than we would, so our policy makes it read-only. */
-    { TMC2209_OTP_READ,     R,           0x00000000u, "OTP_READ"     },
-    { TMC2209_MSCURACT,     R,           0x00000000u, "MSCURACT"     },
-    { TMC2209_PWMCONF,      R,           0xC10D0024u, "PWMCONF"      },
-    { TMC2209_PWM_SCALE,    R,           0x00000000u, "PWM_SCALE"    },
-    { TMC2209_PWM_AUTO,     R,           0x00000000u, "PWM_AUTO"     },
+    /* Diagnostic only. No firmware decision depends on these. */
+    { TMC2209_MSCURACT,     R,     VOL, "MSCURACT"     },
+    { TMC2209_PWM_SCALE,    R,     VOL, "PWM_SCALE"    },
+    { TMC2209_PWM_AUTO,     R,     VOL, "PWM_AUTO"     },
 };
 
 int tmc2209_reg_slot(tmc2209_reg_t reg)
@@ -68,10 +76,10 @@ uint8_t tmc2209_reg_access(tmc2209_reg_t reg)
     return (slot < 0) ? 0u : k_regs[slot].access;
 }
 
-uint32_t tmc2209_reg_reset_value(tmc2209_reg_t reg)
+tmc2209_class_t tmc2209_reg_class(tmc2209_reg_t reg)
 {
     int slot = tmc2209_reg_slot(reg);
-    return (slot < 0) ? 0u : k_regs[slot].reset;
+    return (slot < 0) ? TMC2209_CLASS_UNKNOWN : k_regs[slot].cls;
 }
 
 const char *tmc2209_reg_name(tmc2209_reg_t reg)
@@ -80,10 +88,9 @@ const char *tmc2209_reg_name(tmc2209_reg_t reg)
     return (slot < 0) ? "?" : k_regs[slot].name;
 }
 
-/* Used by tmc2209.c to seed the shadow and to build the reflush set. */
-uint32_t tmc2209_reg_reset_at(int slot) { return k_regs[slot].reset; }
-uint8_t  tmc2209_reg_access_at(int slot) { return k_regs[slot].access; }
-tmc2209_reg_t tmc2209_reg_at(int slot) { return k_regs[slot].reg; }
+uint8_t         tmc2209_reg_access_at(int slot) { return k_regs[slot].access; }
+tmc2209_class_t tmc2209_reg_class_at(int slot)  { return k_regs[slot].cls; }
+tmc2209_reg_t   tmc2209_reg_at(int slot)        { return k_regs[slot].reg; }
 
 /* ── Field codecs ───────────────────────────────────────────────────────── */
 
@@ -227,13 +234,6 @@ tmc2209_drv_status_t tmc2209_drv_status_decode(uint32_t raw)
     return s;
 }
 
-bool tmc2209_drv_status_faulted(const tmc2209_drv_status_t *s)
-{
-    /* Open load is deliberately excluded: it reads true at standstill and at
-       low current, so treating it as a fault would trip on healthy motors. */
-    return s->ot || s->s2ga || s->s2gb || s->s2vsa || s->s2vsb;
-}
-
 uint32_t tmc2209_gstat_encode(const tmc2209_gstat_t *g)
 {
     return ((uint32_t)g->reset   << 0) |
@@ -279,6 +279,11 @@ int32_t tmc2209_vactual_decode(uint32_t raw)
         v |= 0xFF000000u;   /* sign-extend the 24-bit field */
     }
     return (int32_t)v;
+}
+
+uint32_t tmc2209_vactual_encode(int32_t v)
+{
+    return (uint32_t)v & 0x00FFFFFFu;   /* truncate to the 24-bit field */
 }
 
 /* ── Diagnostic-only decoders ───────────────────────────────────────────── */

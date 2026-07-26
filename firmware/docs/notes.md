@@ -48,10 +48,19 @@ feed.
   a power rail on those pins. Key the connectors, label the keystones loudly,
   or accept it knowingly.
 
-**Registers:** 23 of 24 readable; only 10 are configured and reflushed. Never
-written: `FACTORY_CONF` (holds the factory oscillator trim) and `PWMCONF`
-(auto-tuned better than we would). `OTP_PROG` is absent entirely, reachable
-only by hand-assembled passthrough, on purpose. Table in `design.md` §1.
+**Registers:** 23 of 24 reachable, classified by who can change them: 10
+`VOLATILE` (the silicon writes them, so poll), 10 `OWNED` (the firmware
+configures them, so cache), 3 `CONSTANT` (read once at bring-up). Never
+written: `FACTORY_CONF` (holds the factory oscillator trim), `PWMCONF`
+(auto-tuning does better) and `OTP_READ`. `OTP_PROG` is absent entirely,
+reachable only by hand-assembled passthrough, on purpose. Table in
+`design.md` §1.
+
+A driver must be handed a configuration covering all ten `OWNED` registers.
+There are no defaults to fall back on, deliberately: the datasheet reset
+values for `GCONF` and `CHOPCONF` are not properties of the part (OTP bits and
+the address straps respectively), and writing them would undo
+`mstep_reg_select`. See `design.md` §7 item 7.
 
 ## "Permission denied" on /dev/ttyACM0
 

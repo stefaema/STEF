@@ -40,3 +40,11 @@ InlayHints:
   Enabled: Yes
   ParameterNames: Yes
   DeducedTypes: No
+
+# Without this, hover dumps the comment verbatim, so tmc2209.h's @brief/@param/
+# @retval blocks show up as literal text with the underscores backslash-escaped.
+# Doxygen makes clangd parse them into Brief/Parameters/Returns sections, which
+# is the only way the per-error @retval list is readable at a call site.
+# Needs clangd 20 or newer; older builds ignore the key.
+Documentation:
+  CommentFormat: Doxygen

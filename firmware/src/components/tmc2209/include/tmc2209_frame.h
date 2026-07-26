@@ -1,5 +1,5 @@
 /*
- * tmc2209_frame.h — the UART datagram format, as pure functions.
+ * tmc2209_frame.h: the UART datagram format, as pure functions.
  *
  * No structs, no callbacks, no state, no I/O. Everything here is a function
  * over byte arrays, which is why it is where the unit tests bite hardest.

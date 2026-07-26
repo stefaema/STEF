@@ -21,3 +21,8 @@ Diagnostics:
 InlayHints:
   Enabled: Yes
   ParameterNames: Yes
+
+# Same as firmware/src/.clangd: render the library's doxygen blocks as sections
+# instead of literal @brief text. The tests hover the same headers.
+Documentation:
+  CommentFormat: Doxygen

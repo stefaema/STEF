@@ -115,11 +115,19 @@ void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes)
     m->addr   = addr;
     m->echoes = echoes;
 
-    /* Power-on state the library will find. */
-    m->regs[TMC2209_IOIN]     = (uint32_t)TMC2209_IOIN_VERSION << 24;
-    m->regs[TMC2209_GCONF]    = tmc2209_reg_reset_value(TMC2209_GCONF);
-    m->regs[TMC2209_CHOPCONF] = tmc2209_reg_reset_value(TMC2209_CHOPCONF);
-    m->regs[TMC2209_TSTEP]    = tmc2209_reg_reset_value(TMC2209_TSTEP);
+    /* Power-on state the library will find. The reset values live here, in the
+       device model, rather than in the register table: they describe what a
+       chip holds before anyone configures it, which is the mock's business and
+       not something the library should carry defaults for. */
+    m->regs[TMC2209_IOIN]         = (uint32_t)TMC2209_IOIN_VERSION << 24;
+    m->regs[TMC2209_GCONF]        = MOCK_RESET_GCONF;
+    m->regs[TMC2209_GSTAT]        = MOCK_RESET_GSTAT;
+    m->regs[TMC2209_CHOPCONF]     = MOCK_RESET_CHOPCONF;
+    m->regs[TMC2209_IHOLD_IRUN]   = MOCK_RESET_IHOLD_IRUN;
+    m->regs[TMC2209_TPOWERDOWN]   = MOCK_RESET_TPOWERDOWN;
+    m->regs[TMC2209_TSTEP]        = MOCK_RESET_TSTEP;
+    m->regs[TMC2209_PWMCONF]      = MOCK_RESET_PWMCONF;
+    m->regs[TMC2209_FACTORY_CONF] = MOCK_RESET_FACTORY_CONF;
 
     memset(port, 0, sizeof *port);
     port->tx       = mock_tx;

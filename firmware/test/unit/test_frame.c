@@ -1,5 +1,5 @@
 /*
- * test_frame.c — the pure layer: CRC, datagram construction, reply parsing.
+ * test_frame.c: the pure layer: CRC, datagram construction, reply parsing.
  *
  * The CRC vectors are not self-generated. They come from the Python
  * implementation in cinescaner-drive, which was exercised against real

@@ -8,21 +8,34 @@
 - 23 of 24 registers reachable, but only 10 configured, and `OTP_PROG` left
   out entirely. StallGuard is for **runtime tension sensing**,
   not homing: the reels have no hard stop, so there is no zero to home to.
-- The Base/Motion config split **does not survive**. Replaced by a shadow
-  register file, which is the only honest way to represent the eight
-  registers that are write-only in silicon.
-- One shared single-wire UART, addresses strapped 0/1/2. Echo discarded by
-  length; reads sized exactly, not slept for.
+- The Base/Motion config split **does not survive**. Replaced by a register
+  cache, which is the only honest way to represent the eight registers that
+  are write-only in silicon.
+- Registers are classified by **who can change them**: `VOLATILE` (the
+  silicon, so poll), `OWNED` (the firmware, so cache), `CONSTANT` (nobody, so
+  read once). Cache by ownership, never by cost.
+- **State is not a value.** Values are read from cache, conditions are polled
+  off the wire, and the distinction lives in the verb rather than a flag.
+- One shared single-wire UART, addresses strapped 0/1/2. Echo verified, not
+  merely discarded; reads sized exactly, not slept for.
 - Six inherited defects in `cinescaner-drive` recorded so we don't port
-  them. Wiring facts are in `notes.md`.
+  them, plus one found in our own first pass. Wiring facts are in `notes.md`.
 
 ## Implementation
 
-Layering is fixed by `design.md` §3:
-- **Library** (`tmc2209`): [DONE] `src/components/tmc2209/`. Registers with
-  access flags, framing, CRC, echo verification, shadow file with dirty
-  bitmap and trust bit, IFCNT-verified writes, batch flush, passthrough.
-  Zero dependencies, not even ESP-IDF, so it compiles natively for the unit tier.
+Layering is fixed by `design.md` §4:
+- **Library** (`tmc2209`): [in progress] `src/components/tmc2209/`. Framing,
+  CRC, echo verification, IFCNT-verified writes and passthrough are done and
+  tested. Zero dependencies, not even ESP-IDF, so it compiles natively for the
+  unit tier. The API is being reworked to the design in `design.md` §3:
+  - register table gains the `VOLATILE`/`OWNED`/`CONSTANT` class column, and
+    loses the reset-value column (see §7 item 7)
+  - `stage`/`recall`/`flush`/`impose` collapse into batch `write()` and
+    cached `read()`
+  - `poll_health`/`poll_load`/`poll_pins`/`poll_raw` replace raw telemetry
+    reads; `identify`/`verify_config` added
+  - `set_velocity`/`set_current` for the two runtime writes
+  - dirty bitmap and trust bit collapse into one validity bitmap
 - **`stepgen` / `actuator`**: [next] STEP/DIR/EN timing, and the layer that
   owns one of each plus calibration, and enforces the `VACTUAL == 0`
   precondition. Three of them: `feed`, `capstan`, `takeup`. Not "axis": these
@@ -36,7 +49,11 @@ Layering is fixed by `design.md` §3:
 Named for the tiers themselves, not for "host", which already means the PC in
 these docs.
 
-- **Unit** (`test/unit/`): [DONE] 67 Unity tests, natively compiled, no ESP32.
+- **Unit** (`test/unit/`): [rework pending] 67 Unity tests, natively compiled,
+  no ESP32. The transport and framing tests stand; the device tests follow the
+  API rework above. Note that the existing suite could not catch §7 item 7,
+  because it asserted the device matched the cache and the cache was the bug.
+  Classification and configuration-coverage assertions are what close that gap.
   Runs against a mock that models the device rather than replaying scripted
   bytes, so tests read as "the register should now hold X". Fault injection
   covers CRC corruption, echo corruption, silence, wrong-register replies and

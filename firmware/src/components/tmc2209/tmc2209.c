@@ -1,4 +1,5 @@
 #include "tmc2209.h"
+#include "tmc2209_frame.h"
 
 #include <string.h>
 
@@ -54,10 +55,10 @@ static tmc2209_err_t port_rx(const tmc2209_bus_t *bus, uint8_t *buf, size_t len)
     return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TIMEOUT;
 }
 
-/* On the single-wire bus everything we transmit lands back on rx. We do not
-   merely discard it: a mismatch means something else drove the line while we
-   were talking, which is the cheapest bus-collision detector available. */
-static tmc2209_err_t consume_echo(const tmc2209_bus_t *bus, const uint8_t *sent, size_t len)
+/* On the single-wire bus everything transmitted lands back on rx. It is not
+   merely discarded: a mismatch means something else drove the line during
+   transmission, which is the cheapest bus-collision detector available. */
+static tmc2209_err_t verify_echo(const tmc2209_bus_t *bus, const uint8_t *sent, size_t len)
 {
     if (!bus->port->echoes) {
         return TMC2209_OK;
@@ -75,8 +76,8 @@ static tmc2209_err_t consume_echo(const tmc2209_bus_t *bus, const uint8_t *sent,
 
 /* ── Single transactions, one attempt each ──────────────────────────────── */
 
-static tmc2209_err_t try_read(const tmc2209_bus_t *bus, uint8_t addr,
-                              tmc2209_reg_t reg, uint32_t *out)
+static tmc2209_err_t read_once(const tmc2209_bus_t *bus, uint8_t addr,
+                               tmc2209_reg_t reg, uint32_t *out)
 {
     uint8_t req[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(req, addr, (uint8_t)reg);
@@ -87,7 +88,7 @@ static tmc2209_err_t try_read(const tmc2209_bus_t *bus, uint8_t addr,
     if (err != TMC2209_OK) {
         return err;
     }
-    err = consume_echo(bus, req, sizeof req);
+    err = verify_echo(bus, req, sizeof req);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -100,8 +101,8 @@ static tmc2209_err_t try_read(const tmc2209_bus_t *bus, uint8_t addr,
     return tmc2209_frame_parse_reply(reply, (uint8_t)reg, out);
 }
 
-static tmc2209_err_t try_write(const tmc2209_bus_t *bus, uint8_t addr,
-                               tmc2209_reg_t reg, uint32_t value)
+static tmc2209_err_t write_once(const tmc2209_bus_t *bus, uint8_t addr,
+                                tmc2209_reg_t reg, uint32_t value)
 {
     uint8_t dg[TMC2209_WRITE_LEN];
     tmc2209_frame_write(dg, addr, (uint8_t)reg, value);
@@ -112,19 +113,19 @@ static tmc2209_err_t try_write(const tmc2209_bus_t *bus, uint8_t addr,
     if (err != TMC2209_OK) {
         return err;
     }
-    return consume_echo(bus, dg, sizeof dg);
+    return verify_echo(bus, dg, sizeof dg);
 }
 
 /* Retrying a read is always safe. Retrying a write is safe too, because every
-   register we write is idempotent: writing the same value twice leaves the
+   register written here is idempotent: writing the same value twice leaves the
    same state. The only cost is that IFCNT advances more than once, which is
-   why the verification below accepts a range rather than an exact delta. */
+   why confirm_writes() accepts a range rather than an exact delta. */
 static tmc2209_err_t read_retrying(const tmc2209_bus_t *bus, uint8_t addr,
                                    tmc2209_reg_t reg, uint32_t *out)
 {
     tmc2209_err_t err = TMC2209_ERR_IO;
     for (unsigned attempt = 0; attempt <= bus->retries; attempt++) {
-        err = try_read(bus, addr, reg, out);
+        err = read_once(bus, addr, reg, out);
         if (err == TMC2209_OK) {
             return TMC2209_OK;
         }
@@ -137,10 +138,47 @@ static tmc2209_err_t read_retrying(const tmc2209_bus_t *bus, uint8_t addr,
     return err;
 }
 
+static tmc2209_err_t write_retrying(const tmc2209_bus_t *bus, uint8_t addr,
+                                    tmc2209_reg_t reg, uint32_t value,
+                                    unsigned *issued)
+{
+    tmc2209_err_t err = TMC2209_ERR_IO;
+    for (unsigned attempt = 0; attempt <= bus->retries; attempt++) {
+        (*issued)++;
+        err = write_once(bus, addr, reg, value);
+        if (err == TMC2209_OK) {
+            return TMC2209_OK;
+        }
+    }
+    return err;
+}
+
+/* ── Cache bookkeeping ──────────────────────────────────────────────────── */
+
+/* Slots the firmware is the sole writer of, so the mask impose-like operations
+   and tmc2209_trusted() work from. Built from the table rather than written
+   out, so adding a register cannot leave the two disagreeing. */
+static uint32_t owned_mask(void)
+{
+    uint32_t mask = 0;
+    for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
+        if (tmc2209_reg_class_at(slot) == TMC2209_CLASS_OWNED) {
+            mask |= (1u << slot);
+        }
+    }
+    return mask;
+}
+
+static void mark_valid(tmc2209_t *dev, int slot, uint32_t value)
+{
+    dev->cache[slot] = value;
+    dev->valid |= (1u << slot);
+}
+
 /* ── IFCNT verification ─────────────────────────────────────────────────── */
 
 /* A write datagram gets no reply, so IFCNT is the only acknowledgement the
-   chip offers. Caller states how many datagrams it actually put on the wire;
+   chip offers. The caller states how many datagrams actually went on the wire;
    anything in [distinct, issued] means every distinct write landed, with the
    slack accounting for retried duplicates. */
 static tmc2209_err_t confirm_writes(tmc2209_t *dev, unsigned distinct, unsigned issued)
@@ -160,6 +198,45 @@ static tmc2209_err_t confirm_writes(tmc2209_t *dev, unsigned distinct, unsigned 
     return TMC2209_OK;
 }
 
+/* ── Batch write ────────────────────────────────────────────────────────── */
+
+/* Every op is checked before any byte goes out, so a batch cannot be half
+   sent and then rejected for naming a register it was never allowed to touch. */
+static tmc2209_err_t validate_batch(const tmc2209_regval_t *ops, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (tmc2209_reg_slot(ops[i].reg) < 0) {
+            return TMC2209_ERR_ARG;
+        }
+        if (tmc2209_reg_class(ops[i].reg) != TMC2209_CLASS_OWNED) {
+            return TMC2209_ERR_ACCESS;
+        }
+    }
+    return TMC2209_OK;
+}
+
+/* True when a later op targets the same register, making this one dead. Keeps
+   "last value wins" true without transmitting the values it supersedes. */
+static bool superseded(const tmc2209_regval_t *ops, size_t n, size_t i)
+{
+    for (size_t j = i + 1; j < n; j++) {
+        if (ops[j].reg == ops[i].reg) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void invalidate_batch(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        int slot = tmc2209_reg_slot(ops[i].reg);
+        if (slot >= 0) {
+            dev->valid &= ~(1u << slot);
+        }
+    }
+}
+
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
 tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t addr)
@@ -171,27 +248,45 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t add
         return TMC2209_ERR_ARG;
     }
     memset(dev, 0, sizeof *dev);
-    dev->bus     = bus;
-    dev->addr    = addr;
-    dev->trusted = false;   /* Driver & uC config may be different */
+    dev->bus  = bus;
+    dev->addr = addr;
 
-    /* Although shadow device config cannot be trusted at init, use default register values */
-    for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
-        dev->shadow[slot] = tmc2209_reg_reset_at(slot);
-    }
+    /* No slot is seeded. Datasheet reset values are not properties of the part
+       for GCONF (OTP bits) or CHOPCONF (address straps), and a seeded value is
+       one adopt() would go on to write. See design.md §7 item 7. */
+    dev->valid = 0;
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_begin(tmc2209_t *dev, tmc2209_gstat_t *at_bringup)
+tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
+                            const tmc2209_regval_t *config, size_t n,
+                            tmc2209_gstat_t *at_bringup)
 {
-    if (!dev || !dev->bus) {
+    if (!dev || !dev->bus || !config || n == 0) {
+        return TMC2209_ERR_ARG;
+    }
+
+    tmc2209_err_t err = validate_batch(config, n);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+
+    /* Every owned register must be named. There are no defaults to fill the
+       gaps with, and a gap in GCONF is the difference between microstep
+       resolution coming from CHOPCONF and coming from the address straps. */
+    uint32_t covered = 0;
+    for (size_t i = 0; i < n; i++) {
+        covered |= (1u << tmc2209_reg_slot(config[i].reg));
+    }
+    if (covered != owned_mask()) {
         return TMC2209_ERR_ARG;
     }
 
     uint32_t raw = 0;
 
-    /* Fail-fast if device is not reachable: OK means framing, addressing and wiring work. */
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
+    /* Fail fast if the driver is not reachable: OK means framing, addressing
+       and wiring work. */
+    err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -199,7 +294,7 @@ tmc2209_err_t tmc2209_begin(tmc2209_t *dev, tmc2209_gstat_t *at_bringup)
     /* Baseline for every later write check. Mandatory. */
     dev->ifcnt = tmc2209_ifcnt_decode(raw);
 
-    err = tmc2209_read(dev, TMC2209_GSTAT, &raw);
+    err = read_retrying(dev->bus, dev->addr, TMC2209_GSTAT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -209,19 +304,226 @@ tmc2209_err_t tmc2209_begin(tmc2209_t *dev, tmc2209_gstat_t *at_bringup)
         *at_bringup = tmc2209_gstat_decode(raw);
     }
 
-    /* Bitwise Write-1-to-clear, so raw is already the mask for the flags we saw. */
+    /* Bitwise write-1-to-clear, so raw is already the mask for the flags seen.
+       GSTAT is volatile, so this goes around tmc2209_write() rather than
+       through it: clearing latched flags is not configuration. */
     if (raw != 0) {
-        err = tmc2209_write(dev, TMC2209_GSTAT, raw);
+        unsigned issued = 0;
+        err = write_retrying(dev->bus, dev->addr, TMC2209_GSTAT, raw, &issued);
+        if (err == TMC2209_OK) {
+            err = confirm_writes(dev, 1, issued);
+        }
         if (err != TMC2209_OK) {
             return err;
         }
     }
 
-    /* Shadow config may not be the device's. Reflush overwrites the device to make it so. */
-    return tmc2209_reflush(dev);
+    /* Constant registers hold per-part values, so they are read off this
+       particular chip rather than assumed. A brownout will not change them,
+       which is why tmc2209_distrust() leaves them alone. */
+    for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
+        if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_CONSTANT) {
+            continue;
+        }
+        err = read_retrying(dev->bus, dev->addr, tmc2209_reg_at(slot), &raw);
+        if (err != TMC2209_OK) {
+            return err;
+        }
+        mark_valid(dev, slot, raw);
+    }
+
+    return tmc2209_write(dev, config, n, NULL);
 }
 
 tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
+{
+    if (!dev || !out) {
+        return TMC2209_ERR_ARG;
+    }
+    int slot = tmc2209_reg_slot(reg);
+    if (slot < 0) {
+        return TMC2209_ERR_ARG;
+    }
+    /* A volatile register has no cached value by construction. Answering from
+       the slot would return a plausible number that describes a moment which
+       has passed, and would report a healthy driver sitting in overtemperature. */
+    if (tmc2209_reg_class_at(slot) == TMC2209_CLASS_VOLATILE) {
+        return TMC2209_ERR_ACCESS;
+    }
+    if (!(dev->valid & (1u << slot))) {
+        return TMC2209_ERR_STALE;
+    }
+    *out = dev->cache[slot];
+    return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_write(tmc2209_t *dev,
+                            const tmc2209_regval_t *ops, size_t n,
+                            size_t *failed_at)
+{
+    if (!dev || !dev->bus || !ops || n == 0) {
+        return TMC2209_ERR_ARG;
+    }
+
+    tmc2209_err_t err = validate_batch(ops, n);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+
+    bus_lock(dev->bus);
+
+    /* The IFCNT baseline is part of knowing the device, so an untrusted cache
+       has an untrustworthy baseline too. A passthrough write, for instance,
+       advances the chip's counter without passing through here. Re-seed before
+       verifying, or the batch that exists to recover would fail on its own
+       stale baseline. */
+    if (!tmc2209_trusted(dev)) {
+        uint32_t raw = 0;
+        err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
+        if (err == TMC2209_OK) {
+            dev->ifcnt = tmc2209_ifcnt_decode(raw);
+        }
+    }
+
+    unsigned distinct = 0, issued = 0;
+    size_t   stopped  = n;
+
+    for (size_t i = 0; i < n && err == TMC2209_OK; i++) {
+        int slot = tmc2209_reg_slot(ops[i].reg);
+
+        /* A superseded op would be overwritten by a later one in the same
+           batch, and an op matching a valid slot changes nothing. Dropping
+           both recovers the "write only what changed" saving with no staging
+           state to carry. */
+        if (superseded(ops, n, i)) {
+            continue;
+        }
+        if ((dev->valid & (1u << slot)) && dev->cache[slot] == ops[i].value) {
+            continue;
+        }
+
+        err = write_retrying(dev->bus, dev->addr, ops[i].reg, ops[i].value, &issued);
+        if (err != TMC2209_OK) {
+            stopped = i;
+            break;
+        }
+        distinct++;
+    }
+
+    /* One verification for the whole batch: n writes plus one read, rather
+       than doubling the traffic with a read after every write. */
+    if (err == TMC2209_OK && distinct > 0) {
+        err = confirm_writes(dev, distinct, issued);
+    }
+
+    bus_unlock(dev->bus);
+
+    if (failed_at) {
+        *failed_at = stopped;
+    }
+
+    /* Nothing in a batch is confirmed until the IFCNT read, so an op that went
+       out before the failure is no better known than one that never went out.
+       The whole batch becomes unknown and the caller re-sends it. */
+    if (err != TMC2209_OK) {
+        invalidate_batch(dev, ops, n);
+        return err;
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        mark_valid(dev, tmc2209_reg_slot(ops[i].reg), ops[i].value);
+    }
+    return TMC2209_OK;
+}
+
+/* ── Conditions ─────────────────────────────────────────────────────────── */
+
+tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
+{
+    if (!dev || !dev->bus || !conditions) {
+        return TMC2209_ERR_ARG;
+    }
+
+    uint32_t raw = 0;
+    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_GSTAT, &raw);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+    tmc2209_gstat_t g = tmc2209_gstat_decode(raw);
+
+    uint32_t found = 0;
+    if (g.reset)   { found |= (uint32_t)TMC2209_LOST_CONFIG;  }
+    if (g.drv_err) { found |= (uint32_t)TMC2209_DRIVER_FAULT; }
+    if (g.uv_cp)   { found |= (uint32_t)TMC2209_UNDERVOLTAGE; }
+
+    err = read_retrying(dev->bus, dev->addr, TMC2209_DRV_STATUS, &raw);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+    tmc2209_drv_status_t s = tmc2209_drv_status_decode(raw);
+
+    if (s.otpw) { found |= (uint32_t)TMC2209_OVERTEMP_WARNING;  }
+    if (s.ot)   { found |= (uint32_t)TMC2209_OVERTEMP_SHUTDOWN; }
+    if (s.stst) { found |= (uint32_t)TMC2209_STANDSTILL;        }
+    if (s.s2ga || s.s2gb || s.s2vsa || s.s2vsb) {
+        found |= (uint32_t)TMC2209_SHORT_CIRCUIT;
+    }
+    /* Open load is reported but kept out of TMC2209_CONDITIONS_FAULT: it reads
+       true at standstill and at low current, so treating it as a fault would
+       trip continuously on a healthy motor. */
+    if (s.ola || s.olb) {
+        found |= (uint32_t)TMC2209_OPEN_LOAD;
+    }
+
+    /* The driver came up holding defaults, so nothing commanded is still in
+       it. Recovery is the caller re-sending its configuration. */
+    if ((found & (uint32_t)TMC2209_LOST_CONFIG) != 0) {
+        tmc2209_distrust(dev);
+    }
+
+    *conditions = found;
+    return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
+{
+    if (!dev || !dev->bus || !out) {
+        return TMC2209_ERR_ARG;
+    }
+
+    uint32_t raw = 0;
+    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_SG_RESULT, &raw);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+
+    /* StallGuard reports nothing outside the TCOOLTHRS window, and a zero
+       threshold closes the window entirely. Checking the speed bound as well
+       needs the current step rate; see design.md §8. */
+    uint32_t tcoolthrs = 0;
+    bool armed = (tmc2209_read(dev, TMC2209_TCOOLTHRS, &tcoolthrs) == TMC2209_OK) &&
+                 (tcoolthrs != 0);
+
+    out->value = (uint16_t)(raw & 0x03FFu);
+    out->valid = armed;
+    return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out)
+{
+    if (!dev || !dev->bus || !out) {
+        return TMC2209_ERR_ARG;
+    }
+    uint32_t raw = 0;
+    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IOIN, &raw);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+    *out = tmc2209_ioin_decode(raw);
+    return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 {
     if (!dev || !dev->bus || !out) {
         return TMC2209_ERR_ARG;
@@ -238,196 +540,95 @@ tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
     tmc2209_err_t err = read_retrying(dev->bus, dev->addr, reg, out);
     bus_unlock(dev->bus);
 
+    /* The cache is not updated. What the device answers says nothing about who
+       owns the value, and adopting it for an owned register would let one
+       stray read stand in for a write that never happened. */
+    return err;
+}
+
+/* ── Verdicts ───────────────────────────────────────────────────────────── */
+
+tmc2209_err_t tmc2209_identify(tmc2209_t *dev)
+{
+    tmc2209_ioin_t pins;
+    tmc2209_err_t err = tmc2209_poll_pins(dev, &pins);
     if (err != TMC2209_OK) {
         return err;
     }
-
-    /* For registers the chip reads back, a fresh read is better evidence than
-       the shadow, so adopt it and drop any pending stage. */
-    if ((access & TMC2209_ACC_R) && (access & TMC2209_ACC_W)) {
-        int slot = tmc2209_reg_slot(reg);
-        dev->shadow[slot] = *out;
-        dev->dirty &= ~(1u << slot);
-    }
-
-    /* GSTAT.reset means the driver browned out and lost its configuration.
-       Everything we believe about it is now fiction. */
-    if (reg == TMC2209_GSTAT && tmc2209_gstat_decode(*out).reset) {
-        dev->trusted = false;
-    }
-    return TMC2209_OK;
+    return (pins.version == TMC2209_IOIN_VERSION) ? TMC2209_OK : TMC2209_ERR_PART;
 }
 
-tmc2209_err_t tmc2209_write(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t value)
+tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
 {
     if (!dev || !dev->bus) {
         return TMC2209_ERR_ARG;
     }
-    uint8_t access = tmc2209_reg_access(reg);
-    if (access == 0) {
-        return TMC2209_ERR_ARG;
-    }
-    if (!(access & TMC2209_ACC_W)) {
-        return TMC2209_ERR_ACCESS;
-    }
 
-    bus_lock(dev->bus);
-
-    unsigned issued = 0;
-    tmc2209_err_t err = TMC2209_ERR_IO;
-    for (unsigned attempt = 0; attempt <= dev->bus->retries; attempt++) {
-        issued++;
-        err = try_write(dev->bus, dev->addr, reg, value);
-        if (err == TMC2209_OK) {
-            break;
-        }
-    }
-    if (err == TMC2209_OK) {
-        err = confirm_writes(dev, 1, issued);
-    }
-
-    bus_unlock(dev->bus);
-
-    if (err != TMC2209_OK) {
-        /* We do not know whether it landed, so we no longer know the device. */
-        dev->trusted = false;
-        return err;
-    }
-
-    int slot = tmc2209_reg_slot(reg);
-    dev->shadow[slot] = value;
-    dev->dirty &= ~(1u << slot);
-    return TMC2209_OK;
-}
-
-tmc2209_err_t tmc2209_shadow(const tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
-{
-    if (!dev || !out) {
-        return TMC2209_ERR_ARG;
-    }
-    int slot = tmc2209_reg_slot(reg);
-    if (slot < 0) {
-        return TMC2209_ERR_ARG;
-    }
-    if (!dev->trusted) {
-        return TMC2209_ERR_STALE;   /* refuse rather than lie quietly */
-    }
-    *out = dev->shadow[slot];
-    return TMC2209_OK;
-}
-
-tmc2209_err_t tmc2209_stage(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t value)
-{
-    if (!dev) {
-        return TMC2209_ERR_ARG;
-    }
-    int slot = tmc2209_reg_slot(reg);
-    if (slot < 0) {
-        return TMC2209_ERR_ARG;
-    }
-    if (!(tmc2209_reg_access_at(slot) & TMC2209_ACC_W)) {
-        return TMC2209_ERR_ACCESS;
-    }
-    dev->shadow[slot] = value;
-    dev->dirty |= (1u << slot);
-    return TMC2209_OK;
-}
-
-tmc2209_err_t tmc2209_flush(tmc2209_t *dev)
-{
-    if (!dev || !dev->bus) {
-        return TMC2209_ERR_ARG;
-    }
-    if (dev->dirty == 0) {
-        return TMC2209_OK;
-    }
-
-    bus_lock(dev->bus);
-
-    unsigned distinct = 0, issued = 0;
-    uint32_t written  = 0;
+    uint32_t bad = 0;
     tmc2209_err_t err = TMC2209_OK;
 
-    /* The IFCNT baseline is part of knowing the device, so an untrusted shadow
-       has an untrustworthy baseline too. A passthrough write, for instance,
-       advances the chip's counter without passing through here. Re-seed before
-       verifying, or reflush would refuse to perform the recovery it exists for. */
-    if (!dev->trusted) {
-        uint32_t raw = 0;
-        err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
-        if (err == TMC2209_OK) {
-            dev->ifcnt = tmc2209_ifcnt_decode(raw);
-        }
-    }
-
+    bus_lock(dev->bus);
     for (int slot = 0; slot < TMC2209_REG_COUNT && err == TMC2209_OK; slot++) {
-        if (!(dev->dirty & (1u << slot))) {
+        /* Only the owned registers the silicon will answer for. The other
+           eight are write-only, so there is nothing to compare against. */
+        if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_OWNED ||
+            !(tmc2209_reg_access_at(slot) & TMC2209_ACC_R)    ||
+            !(dev->valid & (1u << slot))) {
             continue;
         }
-        tmc2209_reg_t reg = tmc2209_reg_at(slot);
-
-        tmc2209_err_t werr = TMC2209_ERR_IO;
-        for (unsigned attempt = 0; attempt <= dev->bus->retries; attempt++) {
-            issued++;
-            werr = try_write(dev->bus, dev->addr, reg, dev->shadow[slot]);
-            if (werr == TMC2209_OK) {
-                break;
-            }
+        uint32_t raw = 0;
+        err = read_retrying(dev->bus, dev->addr, tmc2209_reg_at(slot), &raw);
+        if (err == TMC2209_OK && raw != dev->cache[slot]) {
+            bad |= (1u << slot);
         }
-        if (werr != TMC2209_OK) {
-            err = werr;
-            break;
-        }
-        distinct++;
-        written |= (1u << slot);
     }
-
-    /* One verification for the whole batch: N writes plus one read, rather
-       than doubling the traffic with a read after every write. */
-    if (err == TMC2209_OK) {
-        err = confirm_writes(dev, distinct, issued);
-    }
-
     bus_unlock(dev->bus);
 
+    if (mismatched) {
+        *mismatched = bad;
+    }
     if (err != TMC2209_OK) {
-        dev->trusted = false;
         return err;
     }
-
-    dev->dirty &= ~written;
-    if (dev->dirty == 0) {
-        dev->trusted = true;
-    }
-    return TMC2209_OK;
+    return (bad == 0) ? TMC2209_OK : TMC2209_ERR_MISMATCH;
 }
 
-tmc2209_err_t tmc2209_reflush(tmc2209_t *dev)
+/* ── Runtime writes ─────────────────────────────────────────────────────── */
+
+tmc2209_err_t tmc2209_set_velocity(tmc2209_t *dev, int32_t v)
 {
-    if (!dev) {
+    const tmc2209_regval_t op = { TMC2209_VACTUAL, tmc2209_vactual_encode(v) };
+    return tmc2209_write(dev, &op, 1, NULL);
+}
+
+tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c)
+{
+    if (!c) {
         return TMC2209_ERR_ARG;
     }
-    /* Eight registers are write-only, so the device cannot be interrogated
-       back into agreement. The only way to a trusted shadow is to impose it. */
-    for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
-        if (tmc2209_reg_access_at(slot) & TMC2209_ACC_CONFIG) {
-            dev->dirty |= (1u << slot);
-        }
-    }
-    return tmc2209_flush(dev);
+    const tmc2209_regval_t op = { TMC2209_IHOLD_IRUN, tmc2209_ihold_irun_encode(c) };
+    return tmc2209_write(dev, &op, 1, NULL);
 }
+
+/* ── Cache validity ─────────────────────────────────────────────────────── */
 
 bool tmc2209_trusted(const tmc2209_t *dev)
 {
-    return dev && dev->trusted;
+    if (!dev) {
+        return false;
+    }
+    uint32_t owned = owned_mask();
+    return (dev->valid & owned) == owned;
 }
 
-void tmc2209_invalidate(tmc2209_t *dev)
+void tmc2209_distrust(tmc2209_t *dev)
 {
     if (dev) {
-        dev->trusted = false;
+        dev->valid &= ~owned_mask();
     }
 }
+
+/* ── Passthrough ────────────────────────────────────────────────────────── */
 
 tmc2209_err_t tmc2209_bus_xfer(const tmc2209_bus_t *bus,
                                const uint8_t *tx, size_t tx_len,
@@ -445,7 +646,7 @@ tmc2209_err_t tmc2209_bus_xfer(const tmc2209_bus_t *bus,
 
     tmc2209_err_t err = port_tx(bus, tx, tx_len);
     if (err == TMC2209_OK) {
-        err = consume_echo(bus, tx, tx_len);
+        err = verify_echo(bus, tx, tx_len);
     }
     if (err == TMC2209_OK && rx_len > 0) {
         err = port_rx(bus, rx, rx_len);

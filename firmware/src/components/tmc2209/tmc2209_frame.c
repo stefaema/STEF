@@ -75,7 +75,9 @@ const char *tmc2209_strerror(tmc2209_err_t err)
     case TMC2209_ERR_REG:      return "reply for unexpected register";
     case TMC2209_ERR_NO_ACK:   return "IFCNT did not advance";
     case TMC2209_ERR_ACCESS:   return "register access violation";
-    case TMC2209_ERR_STALE:    return "shadow untrusted";
+    case TMC2209_ERR_STALE:    return "cache slot invalid";
+    case TMC2209_ERR_PART:     return "unexpected silicon version";
+    case TMC2209_ERR_MISMATCH: return "device disagrees with cache";
     }
     return "unknown";
 }

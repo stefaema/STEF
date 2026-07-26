@@ -1,5 +1,5 @@
 /*
- * tmc2209_port.h — everything the library needs from the outside world.
+ * tmc2209_port.h: everything the library needs from the outside world.
  *
  * The library's only output is bytes. It never knows whether they reach a
  * TMC2209 through an ESP32 UART peripheral, a PC serial port, or an array in
@@ -28,8 +28,10 @@ typedef enum {
     TMC2209_ERR_CRC,
     TMC2209_ERR_REG,      /* reply is for a register we did not ask about */
     TMC2209_ERR_NO_ACK,   /* IFCNT did not advance: the write never landed */
-    TMC2209_ERR_ACCESS,   /* read of a write-only register, or write of a read-only one */
-    TMC2209_ERR_STALE,    /* shadow is untrusted; reflush before believing it */
+    TMC2209_ERR_ACCESS,   /* the register does not permit this operation */
+    TMC2209_ERR_STALE,    /* cache slot is invalid; nothing there can be believed */
+    TMC2209_ERR_PART,     /* something answered, but it is not the expected silicon */
+    TMC2209_ERR_MISMATCH, /* the device disagrees with the cache */
 } tmc2209_err_t;
 
 const char *tmc2209_strerror(tmc2209_err_t err);
