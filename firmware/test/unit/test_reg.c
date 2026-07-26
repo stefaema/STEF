@@ -2,7 +2,7 @@
  * test_reg.c: the register table, its classification, and the field codecs.
  *
  * The classification tests are the point of this file. Access says what the
- * silicon permits; class says who can change the value. Confusing the two is
+ * driver permits; class says who can change the value. Confusing the two is
  * what let GSTAT be treated as cacheable when hardware sets its flags, and
  * what kept PWMCONF uncacheable when nothing writes it at all.
  */
@@ -112,7 +112,7 @@ static void test_constant_registers_are_the_ones_nobody_writes(void)
     }
 }
 
-/* FACTORY_CONF is R/W in silicon, but writing it overwrites the factory
+/* FACTORY_CONF is R/W driver-side, but writing it overwrites the factory
    oscillator trim and detunes every timing-derived quantity. The Python
    library did exactly that on every init. */
 static void test_factory_conf_is_never_writable(void)

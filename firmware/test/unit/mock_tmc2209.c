@@ -117,7 +117,7 @@ void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes)
 
     /* Power-on state the library will find. The reset values live here, in the
        device model, rather than in the register table: they describe what a
-       chip holds before anyone configures it, which is the mock's business and
+       driver holds before anyone configures it, which is the mock's business and
        not something the library should carry defaults for. */
     m->regs[TMC2209_IOIN]         = (uint32_t)TMC2209_IOIN_VERSION << 24;
     m->regs[TMC2209_GCONF]        = MOCK_RESET_GCONF;

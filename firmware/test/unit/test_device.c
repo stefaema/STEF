@@ -66,11 +66,11 @@ static void test_init_leaves_every_slot_invalid(void)
 {
     setup_bus(0, true, 0);
     TEST_ASSERT_EQUAL_UINT32(0, g_dev.valid);
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_CHOPCONF, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_CHOPCONF, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 }
 
 static void test_init_does_no_io(void)
@@ -95,7 +95,7 @@ static void test_adopt_writes_the_whole_configuration(void)
         TEST_ASSERT_EQUAL_HEX32(k_config[i].value,
                                 mock_reg(&g_mock, k_config[i].reg));
     }
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
 /* design.md §7 item 7. The old table seeded GCONF with its datasheet reset
@@ -136,7 +136,7 @@ static void test_adopt_rejects_a_register_it_does_not_own(void)
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
-/* The trim differs per part, so it is read off this chip rather than assumed.
+/* The trim differs per part, so it is read off the driver rather than assumed.
    A seeded zero would be a value no real part ever holds. */
 static void test_adopt_reads_constant_registers_off_the_part(void)
 {
@@ -181,7 +181,7 @@ static void test_adopt_fails_when_the_addressed_driver_is_absent(void)
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_TIMEOUT,
         tmc2209_adopt(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
 static void test_addressing_reaches_the_right_driver(void)
@@ -204,7 +204,7 @@ static void test_read_answers_owned_registers_from_the_cache(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_IHOLD_IRUN, &v));
     TEST_ASSERT_EQUAL_HEX32(0x00081810u, v);
 
-    /* Write-only in silicon, so the cache is the only possible source, and no
+    /* Write-only driver-side, so the cache is the only possible source, and no
        bus traffic may have happened. */
     TEST_ASSERT_EQUAL_size_t(before, g_mock.tx_len);
 }
@@ -230,13 +230,13 @@ static void test_read_rejects_an_unknown_register(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_read(&g_dev, (tmc2209_reg_t)0x33, &v));
 }
 
-static void test_read_refuses_after_distrust(void)
+static void test_read_refuses_an_invalidated_slot(void)
 {
     setup_ready();
-    tmc2209_distrust(&g_dev);
+    tmc2209_invalidate_owned(&g_dev);
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 
     /* A brownout does not change the factory trim, so constants survive. */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_FACTORY_CONF, &v));
@@ -286,7 +286,7 @@ static void test_write_skips_ops_that_change_nothing(void)
         tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
 static void test_write_sends_only_the_op_that_changed(void)
@@ -372,16 +372,16 @@ static void test_a_failed_batch_invalidates_every_slot_in_it(void)
         tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), &failed_at));
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_SGTHRS, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_TCOOLTHRS, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_COOLCONF, &v));
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_SGTHRS, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_TCOOLTHRS, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_COOLCONF, &v));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     /* Diagnostic only: which op the library was on when it gave up. */
     TEST_ASSERT_EQUAL_size_t(0, failed_at);
 }
 
-/* The chip accepted the datagram but did not count it, so the write cannot be
+/* The driver accepted the datagram but did not count it, so the write cannot be
    shown to have landed. */
 static void test_a_write_the_device_never_counted_is_reported(void)
 {
@@ -389,10 +389,10 @@ static void test_a_write_the_device_never_counted_is_reported(void)
     g_mock.freeze_ifcnt = 1;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_ACK, write_one(TMC2209_SGTHRS, 0x55u));
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_SGTHRS, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_SGTHRS, &v));
 }
 
 /* No single op is at fault when the batch counter does not add up. */
@@ -435,31 +435,119 @@ static void test_poll_health_merges_both_registers(void)
     TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_UNDERVOLTAGE, conditions);
     TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_OVERTEMP_SHUTDOWN, conditions);
     TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_SHORT_CIRCUIT, conditions);
-    TEST_ASSERT_BITS_LOW((uint32_t)TMC2209_LOST_CONFIG, conditions);
+    TEST_ASSERT_BITS_LOW((uint32_t)TMC2209_DRIVER_RESET, conditions);
 }
 
 /* The driver came up holding defaults, so nothing commanded is still in it.
    Recovery is the caller re-sending its configuration; the library cannot do
    it, because eight registers have no read path. */
-static void test_lost_config_invalidates_every_owned_slot(void)
+static void test_driver_reset_invalidates_every_owned_slot(void)
 {
     setup_ready();
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x1u);   /* reset */
 
     uint32_t conditions = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
-    TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_LOST_CONFIG, conditions);
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_DRIVER_RESET, conditions);
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_STALE, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 
-    /* Re-sending the configuration is the whole recovery. */
+    /* Re-sending the configuration makes the owned slots valid again. */
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
+}
+
+/* GSTAT latches. Without an acknowledgement one brownout would report
+   DRIVER_RESET on every later poll, re-invalidating the config that was just
+   rewritten, forever. */
+static void test_latched_conditions_survive_reconfiguration(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_GSTAT, 0x1U);
+
+    uint32_t conditions = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_DRIVER_RESET, conditions);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+
+    /* Still latched: rewriting the config does not clear a driver flag. */
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_DRIVER_RESET, conditions);
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, conditions));
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_EQUAL_HEX32(0, conditions);
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
+}
+
+/* Polling must not have side effects, or two consecutive polls would disagree. */
+static void test_poll_health_is_repeatable(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_GSTAT, 0x4U);   /* uv_cp */
+
+    uint32_t first = 0, second = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &first));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &second));
+    TEST_ASSERT_EQUAL_HEX32(first, second);
+    TEST_ASSERT_EQUAL_HEX32(0x4U, mock_reg(&g_mock, TMC2209_GSTAT));
+}
+
+/* Acknowledging says the reset was noticed, not that the config was rewritten. */
+static void test_clear_faults_does_not_revalidate(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_GSTAT, 0x1U);
+
+    uint32_t conditions = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, conditions));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
+}
+
+/* A flag that latches between the poll and the acknowledgement must survive to
+   be reported, so only the acknowledged bits are written back. */
+static void test_clear_faults_only_clears_what_it_was_told(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_GSTAT, 0x1U);            /* reset */
+
+    uint32_t conditions = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+
+    mock_set_reg(&g_mock, TMC2209_GSTAT, 0x5U);            /* uv_cp latches late */
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, conditions));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_BITS_LOW((uint32_t)TMC2209_DRIVER_RESET, conditions);
+    TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_UNDERVOLTAGE, conditions);
+}
+
+/* Live conditions have nothing to acknowledge, so passing them costs no bus. */
+static void test_clear_faults_ignores_live_conditions(void)
+{
+    setup_ready();
+    unsigned writes_before = g_mock.writes_seen;
+
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+        tmc2209_clear_faults(&g_dev, (uint32_t)TMC2209_OVERTEMP_SHUTDOWN |
+                                     (uint32_t)TMC2209_STANDSTILL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, 0));
+
+    TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
 }
 
 /* Open load reads true at standstill and at low current, so it is reported but
@@ -487,7 +575,7 @@ static void test_poll_load_is_invalid_when_stallguard_is_disabled(void)
     tmc2209_load_t load = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_load(&g_dev, &load));
     TEST_ASSERT_EQUAL_UINT16(300, load.value);
-    TEST_ASSERT_FALSE(load.valid);
+    TEST_ASSERT_FALSE(load.usable);
 }
 
 static void test_poll_load_is_valid_once_the_window_is_open(void)
@@ -498,7 +586,7 @@ static void test_poll_load_is_valid_once_the_window_is_open(void)
     tmc2209_load_t load = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_load(&g_dev, &load));
     TEST_ASSERT_EQUAL_UINT16(128, load.value);
-    TEST_ASSERT_TRUE(load.valid);   /* k_config sets TCOOLTHRS non-zero */
+    TEST_ASSERT_TRUE(load.usable);   /* k_config sets TCOOLTHRS non-zero */
 }
 
 static void test_poll_pins_decodes_live_state(void)
@@ -554,17 +642,42 @@ static void test_poll_raw_does_not_update_the_cache(void)
 
 /* ── Verdicts ───────────────────────────────────────────────────────────── */
 
-static void test_identify_accepts_the_expected_silicon(void)
+static void test_poll_version_reports_the_revision(void)
 {
     setup_ready();
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_identify(&g_dev));
+    uint8_t version = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
+    TEST_ASSERT_EQUAL_HEX8(TMC2209_IOIN_VERSION, version);
 }
 
-static void test_identify_rejects_a_tmc2208(void)
+/* The field is a compatibility generation, not a model number, so an unfamiliar
+   revision is reported rather than refused. Whether to accept it is the
+   caller's policy, exactly as with the retry thresholds in design.md §8. */
+static void test_poll_version_reports_an_unfamiliar_revision_without_judging(void)
 {
     setup_ready();
-    mock_set_reg(&g_mock, TMC2209_IOIN, 0x20000000u);
-    TEST_ASSERT_EQUAL(TMC2209_ERR_PART, tmc2209_identify(&g_dev));
+    mock_set_reg(&g_mock, TMC2209_IOIN, 0x22000000U);
+
+    uint8_t version = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
+    TEST_ASSERT_EQUAL_HEX8(0x22, version);
+}
+
+/* IOIN carries both, but the two answer different questions and are read
+   through different calls. */
+static void test_poll_version_and_poll_pins_read_the_same_register(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_IOIN,
+                 ((uint32_t)TMC2209_IOIN_VERSION << 24) | (1U << 6));
+
+    uint8_t version = 0;
+    tmc2209_ioin_t pins = { 0 };
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_pins(&g_dev, &pins));
+
+    TEST_ASSERT_EQUAL_HEX8(TMC2209_IOIN_VERSION, version);
+    TEST_ASSERT_TRUE(pins.pdn_uart);
 }
 
 static void test_verify_config_agrees_after_adopt(void)
@@ -575,7 +688,7 @@ static void test_verify_config_agrees_after_adopt(void)
     TEST_ASSERT_EQUAL_HEX32(0, mismatched);
 }
 
-/* The test that validates the caching scheme itself: if the silicon ever
+/* The test that validates the caching scheme itself: if the driver ever
    disagrees with the cache, this is what says so. */
 static void test_verify_config_reports_a_disagreeing_register(void)
 {
@@ -596,7 +709,7 @@ static void test_set_velocity_writes_and_is_recallable(void)
     TEST_ASSERT_EQUAL_HEX32(tmc2209_vactual_encode(-1000),
                             mock_reg(&g_mock, TMC2209_VACTUAL));
 
-    /* VACTUAL cannot be read back from silicon, so the cache is the only place
+    /* VACTUAL cannot be read back from the driver, so the cache is the only place
        the coordinated-motion precondition can be checked. */
     uint32_t v = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
@@ -686,7 +799,7 @@ static void test_non_echoing_port_works(void)
     setup_bus(0, false, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_adopt(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
 /* ── Passthrough ────────────────────────────────────────────────────────── */
@@ -711,7 +824,7 @@ static void test_passthrough_moves_bytes_verbatim(void)
 
 /* Bytes the library did not build are bytes it cannot account for, including
    the IFCNT they advanced. */
-static void test_passthrough_write_desyncs_until_distrusted(void)
+static void test_passthrough_write_desyncs_until_invalidated(void)
 {
     setup_ready();
 
@@ -719,14 +832,14 @@ static void test_passthrough_write_desyncs_until_distrusted(void)
     tmc2209_frame_write(dg, 0, (uint8_t)TMC2209_SGTHRS, 0x99u);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bus_xfer(&g_bus, dg, sizeof dg, NULL, 0));
 
-    tmc2209_distrust(&g_dev);
-    TEST_ASSERT_FALSE(tmc2209_trusted(&g_dev));
+    tmc2209_invalidate_owned(&g_dev);
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     /* The next batch re-seeds the IFCNT baseline, or it would fail against a
        counter that moved without it. */
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
-    TEST_ASSERT_TRUE(tmc2209_trusted(&g_dev));
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
     TEST_ASSERT_EQUAL_HEX32(0x00000050u, mock_reg(&g_mock, TMC2209_SGTHRS));
 }
 
@@ -758,7 +871,7 @@ void run_device_tests(void)
     RUN_TEST(test_read_answers_owned_registers_from_the_cache);
     RUN_TEST(test_read_refuses_volatile_registers);
     RUN_TEST(test_read_rejects_an_unknown_register);
-    RUN_TEST(test_read_refuses_after_distrust);
+    RUN_TEST(test_read_refuses_an_invalidated_slot);
 
     RUN_TEST(test_write_lands_on_the_device_and_updates_the_cache);
     RUN_TEST(test_write_verifies_the_batch_once);
@@ -774,7 +887,12 @@ void run_device_tests(void)
 
     RUN_TEST(test_poll_health_is_clear_on_a_healthy_driver);
     RUN_TEST(test_poll_health_merges_both_registers);
-    RUN_TEST(test_lost_config_invalidates_every_owned_slot);
+    RUN_TEST(test_driver_reset_invalidates_every_owned_slot);
+    RUN_TEST(test_latched_conditions_survive_reconfiguration);
+    RUN_TEST(test_poll_health_is_repeatable);
+    RUN_TEST(test_clear_faults_does_not_revalidate);
+    RUN_TEST(test_clear_faults_only_clears_what_it_was_told);
+    RUN_TEST(test_clear_faults_ignores_live_conditions);
     RUN_TEST(test_open_load_is_reported_but_is_not_a_fault);
     RUN_TEST(test_poll_load_is_invalid_when_stallguard_is_disabled);
     RUN_TEST(test_poll_load_is_valid_once_the_window_is_open);
@@ -783,8 +901,9 @@ void run_device_tests(void)
     RUN_TEST(test_poll_raw_refuses_write_only_registers);
     RUN_TEST(test_poll_raw_does_not_update_the_cache);
 
-    RUN_TEST(test_identify_accepts_the_expected_silicon);
-    RUN_TEST(test_identify_rejects_a_tmc2208);
+    RUN_TEST(test_poll_version_reports_the_revision);
+    RUN_TEST(test_poll_version_reports_an_unfamiliar_revision_without_judging);
+    RUN_TEST(test_poll_version_and_poll_pins_read_the_same_register);
     RUN_TEST(test_verify_config_agrees_after_adopt);
     RUN_TEST(test_verify_config_reports_a_disagreeing_register);
 
@@ -799,6 +918,6 @@ void run_device_tests(void)
     RUN_TEST(test_non_echoing_port_works);
 
     RUN_TEST(test_passthrough_moves_bytes_verbatim);
-    RUN_TEST(test_passthrough_write_desyncs_until_distrusted);
+    RUN_TEST(test_passthrough_write_desyncs_until_invalidated);
     RUN_TEST(test_passthrough_rejects_oversized_frames);
 }

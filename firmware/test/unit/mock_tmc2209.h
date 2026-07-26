@@ -4,7 +4,7 @@
  * A scripted byte queue would test the framing but make the transaction tests
  * unreadable, because every expectation would be a hand-assembled datagram.
  * So the mock models the device instead: it holds registers, echoes what it
- * receives, answers reads, and counts writes in IFCNT the way the silicon
+ * receives, answers reads, and counts writes in IFCNT the way the driver
  * does. Tests then say "the register should now hold X" rather than "byte 4
  * should be 0x17".
  *

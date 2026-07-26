@@ -1,14 +1,12 @@
 /*
- * tmc2209_port.h: everything the library needs from the outside world.
+ * tmc2209_port.h: everything the library needs to communicate.
  *
- * The library's only output is bytes. It never knows whether they reach a
- * TMC2209 through an ESP32 UART peripheral, a PC serial port, or an array in
+ * The library's only output is bytes. It is channel agnostic:
+ * you can use a ESP32 UART peripheral, a PC serial port, or an array in
  * a unit test. Supply a port and it works anywhere.
  *
  * Note what is absent: there is no clock. Timeouts are passed down as a
- * millisecond count and the port decides how to wait. That is what keeps this
- * core free of ESP-IDF and lets the unit tests run instantly instead of
- * sleeping. The consequence is that retries are immediate, with no backoff.
+ * millisecond count and the port decides how to wait.
  */
 
 #ifndef TMC2209_PORT_H
@@ -20,18 +18,19 @@
 
 typedef enum {
     TMC2209_OK = 0,
-    TMC2209_ERR_ARG,      /* caller passed something impossible */
-    TMC2209_ERR_TIMEOUT,  /* port did not deliver the bytes in time */
-    TMC2209_ERR_IO,       /* port failed for its own reasons */
-    TMC2209_ERR_ECHO,     /* what came back is not what we sent: collision or jammed line */
-    TMC2209_ERR_SYNC,     /* reply sync byte or master address wrong */
-    TMC2209_ERR_CRC,
-    TMC2209_ERR_REG,      /* reply is for a register we did not ask about */
-    TMC2209_ERR_NO_ACK,   /* IFCNT did not advance: the write never landed */
-    TMC2209_ERR_ACCESS,   /* the register does not permit this operation */
-    TMC2209_ERR_STALE,    /* cache slot is invalid; nothing there can be believed */
-    TMC2209_ERR_PART,     /* something answered, but it is not the expected silicon */
-    TMC2209_ERR_MISMATCH, /* the device disagrees with the cache */
+    TMC2209_ERR_ARG,          /**< caller passed something impossible */
+    TMC2209_ERR_TIMEOUT,      /**< port did not deliver the bytes in time */
+    TMC2209_ERR_IO,           /**< port failed for its own reasons */
+    TMC2209_ERR_ECHO,         /**< what came back is not what we sent: collision or jammed line */
+    TMC2209_ERR_SYNC,         /**< reply sync byte or master address wrong */
+    TMC2209_ERR_CRC,          /**< CRC error */
+    TMC2209_ERR_REG,          /**< reply is for a register we did not ask about */
+    TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance: the write never landed */
+    TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation */
+    TMC2209_ERR_INVALID_SLOT, /**< the cache holds no usable value for that register,
+                                   because none was ever written or because the driver
+                                   reset. Not a complaint about the argument */
+    TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
 } tmc2209_err_t;
 
 const char *tmc2209_strerror(tmc2209_err_t err);

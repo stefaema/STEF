@@ -11,15 +11,15 @@
 
 typedef struct {
     tmc2209_reg_t   reg;
-    uint8_t         access;   /* what the silicon permits */
+    uint8_t         access;   /* what the driver permits */
     tmc2209_class_t cls;      /* who can change the value */
     const char     *name;
 } reg_info_t;
 
 /* Order defines the cache slot, and therefore the validity bit.
  *
- * Access and class are independent. VACTUAL is write-only in silicon yet
- * OWNED, because the chip refusing to read it back says nothing about who
+ * Access and class are independent. VACTUAL is write-only driver-side yet
+ * OWNED, because the driver refusing to read it back says nothing about who
  * changes it. GSTAT is readable and writable yet VOLATILE, because the
  * hardware sets its flags. Getting those two backwards is the bug this column
  * exists to prevent.
@@ -49,7 +49,7 @@ static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_DRV_STATUS,   R,     VOL, "DRV_STATUS"   },
 
     /* Never written by policy, and nothing else writes them either, so their
-       value is knowable after one read. PWMCONF is R/W in silicon; autoscale
+       value is knowable after one read. PWMCONF is R/W driver-side; autoscale
        and autograd tune PWM_SCALE and PWM_AUTO instead of touching it. */
     { TMC2209_OTP_READ,     R,     CST, "OTP_READ"     },
     { TMC2209_PWMCONF,      R,     CST, "PWMCONF"      },
@@ -253,7 +253,7 @@ tmc2209_gstat_t tmc2209_gstat_decode(uint32_t raw)
 
 uint8_t tmc2209_ifcnt_decode(uint32_t raw)
 {
-    return (uint8_t)raw;   /* low byte; the chip reads the rest back as zero */
+    return (uint8_t)raw;   /* low byte; the driver reads the rest back as zero */
 }
 
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw)

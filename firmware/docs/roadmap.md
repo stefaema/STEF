@@ -24,18 +24,18 @@
 ## Implementation
 
 Layering is fixed by `design.md` §4:
-- **Library** (`tmc2209`): [in progress] `src/components/tmc2209/`. Framing,
-  CRC, echo verification, IFCNT-verified writes and passthrough are done and
-  tested. Zero dependencies, not even ESP-IDF, so it compiles natively for the
-  unit tier. The API is being reworked to the design in `design.md` §3:
-  - register table gains the `VOLATILE`/`OWNED`/`CONSTANT` class column, and
-    loses the reset-value column (see §7 item 7)
-  - `stage`/`recall`/`flush`/`impose` collapse into batch `write()` and
-    cached `read()`
-  - `poll_health`/`poll_load`/`poll_pins`/`poll_raw` replace raw telemetry
-    reads; `identify`/`verify_config` added
-  - `set_velocity`/`set_current` for the two runtime writes
-  - dirty bitmap and trust bit collapse into one validity bitmap
+- **Library** (`tmc2209`): [DONE] `src/components/tmc2209/`. Framing, CRC, echo
+  verification, IFCNT-verified batch writes, an ownership-classified register
+  cache, condition polling, and passthrough. Zero dependencies, not even
+  ESP-IDF, so it compiles natively for the unit tier. API in `design.md` §3.
+
+  Two pieces are designed and deliberately unbuilt, both recorded in §8:
+  - **Link statistics.** Per-device retry and error counters, so a bus that
+    silently retries on every transaction stops looking identical to a healthy
+    one.
+  - **Strap cross-check.** The driver answering at address N should have
+    MS1/MS2 straps consistent with N. Needs the address-to-strap bit mapping
+    confirmed against the datasheet first.
 - **`stepgen` / `actuator`**: [next] STEP/DIR/EN timing, and the layer that
   owns one of each plus calibration, and enforces the `VACTUAL == 0`
   precondition. Three of them: `feed`, `capstan`, `takeup`. Not "axis": these

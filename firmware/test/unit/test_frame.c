@@ -3,7 +3,7 @@
  *
  * The CRC vectors are not self-generated. They come from the Python
  * implementation in cinescaner-drive, which was exercised against real
- * silicon, so agreeing with them means agreeing with hardware rather than
+ * drivers, so agreeing with them means agreeing with hardware rather than
  * merely agreeing with ourselves.
  */
 

@@ -4,8 +4,8 @@
  *
  * Two independent questions are answered here and must be kept apart.
  *
- * Access (@ref TMC2209_ACC_R, @ref TMC2209_ACC_W) is the chip's. Eight
- * registers are write-only in silicon, so asking the device what they hold is
+ * Access (@ref TMC2209_ACC_R, @ref TMC2209_ACC_W) is the driver's. Eight
+ * registers are write-only driver-side, so asking the device what they hold is
  * a question it cannot answer.
  *
  * Class (@ref tmc2209_class_t) is who can change the value, which decides
@@ -52,7 +52,7 @@ typedef enum {
 /** Registers a configuration must cover. See tmc2209_adopt(). */
 #define TMC2209_OWNED_COUNT 10
 
-/** What the silicon permits. */
+/** What the driver permits. */
 enum {
     TMC2209_ACC_R = 1u << 0,
     TMC2209_ACC_W = 1u << 1,
@@ -62,7 +62,7 @@ enum {
 typedef enum {
     /** Not in the table. */
     TMC2209_CLASS_UNKNOWN = 0,
-    /** The silicon or the outside world writes it. Poll; never cache. */
+    /** The driver or the outside world writes it. Poll; never cache. */
     TMC2209_CLASS_VOLATILE,
     /** Only the firmware writes it. Cacheable while the slot stays valid. */
     TMC2209_CLASS_OWNED,
@@ -93,17 +93,32 @@ tmc2209_class_t tmc2209_reg_class_at(int slot);
  * Conditions, not register contents: the caller asks whether the driver is
  * healthy without learning that brownout lives in GSTAT and overtemperature
  * lives in DRV_STATUS.
+ *
+ * The two halves behave differently in time, which the caller must know.
+ * Latched conditions report that something *happened* and stay asserted until
+ * tmc2209_clear_faults() acknowledges them. Live conditions report what is
+ * *true now* and clear themselves when the situation passes.
  */
 typedef enum {
-    TMC2209_LOST_CONFIG       = 1u << 0,  /**< GSTAT.reset: driver reset, config gone */
-    TMC2209_DRIVER_FAULT      = 1u << 1,  /**< GSTAT.drv_err */
-    TMC2209_UNDERVOLTAGE      = 1u << 2,  /**< GSTAT.uv_cp, charge pump */
-    TMC2209_OVERTEMP_WARNING  = 1u << 3,  /**< DRV_STATUS.otpw */
-    TMC2209_OVERTEMP_SHUTDOWN = 1u << 4,  /**< DRV_STATUS.ot */
-    TMC2209_SHORT_CIRCUIT     = 1u << 5,  /**< DRV_STATUS s2ga/s2gb/s2vsa/s2vsb */
-    TMC2209_OPEN_LOAD         = 1u << 6,  /**< DRV_STATUS ola/olb. Also true at standstill */
-    TMC2209_STANDSTILL        = 1u << 7,  /**< DRV_STATUS.stst */
+    /* Latched in GSTAT. Set once, asserted until acknowledged. */
+    TMC2209_DRIVER_RESET      = 1U << 0,  /**< GSTAT.reset: the driver restarted, so
+                                               every register is back at its default
+                                               and the configuration is gone */
+    TMC2209_DRIVER_FAULT      = 1U << 1,  /**< GSTAT.drv_err */
+    TMC2209_UNDERVOLTAGE      = 1U << 2,  /**< GSTAT.uv_cp, charge pump */
+
+    /* Live in DRV_STATUS. True now; nothing to acknowledge. */
+    TMC2209_OVERTEMP_WARNING  = 1U << 3,  /**< DRV_STATUS.otpw */
+    TMC2209_OVERTEMP_SHUTDOWN = 1U << 4,  /**< DRV_STATUS.ot */
+    TMC2209_SHORT_CIRCUIT     = 1U << 5,  /**< DRV_STATUS s2ga/s2gb/s2vsa/s2vsb */
+    TMC2209_OPEN_LOAD         = 1U << 6,  /**< DRV_STATUS ola/olb. Also true at standstill */
+    TMC2209_STANDSTILL        = 1U << 7,  /**< DRV_STATUS.stst */
 } tmc2209_condition_t;
+
+/** Conditions that latch, and are therefore the ones tmc2209_clear_faults() acts on. */
+#define TMC2209_CONDITIONS_LATCHED                                       \
+    ((uint32_t)TMC2209_DRIVER_RESET | (uint32_t)TMC2209_DRIVER_FAULT |   \
+     (uint32_t)TMC2209_UNDERVOLTAGE)
 
 /** Conditions that mean the output stage has a real problem. */
 #define TMC2209_CONDITIONS_FAULT                                        \
@@ -112,8 +127,8 @@ typedef enum {
 
 /** What tmc2209_poll_load() reports. */
 typedef struct {
-    uint16_t value;   /**< SG_RESULT, 0..510. Higher means less load */
-    bool     valid;   /**< false when the reading cannot be believed */
+    uint16_t value;    /**< SG_RESULT, 0..510. Higher means less load */
+    bool     usable;   /**< false when the reading carries no information */
 } tmc2209_load_t;
 
 /* ── Field enums ────────────────────────────────────────────────────────── */
@@ -191,7 +206,7 @@ typedef struct {
     bool    s2vsa, s2vsb;         /**< short to supply */
     bool    ola, olb;             /**< open load */
     bool    t120, t143, t150, t157;
-    uint8_t cs_actual;            /**< 0..31, the current the chip settled on */
+    uint8_t cs_actual;            /**< 0..31, the current the driver settled on */
     bool    stealth;
     bool    stst;                 /**< standstill */
 } tmc2209_drv_status_t;
@@ -217,7 +232,7 @@ typedef struct {
 
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw);
 
-/* Silicon version byte in IOIN, fixed for the part: what this driver was
+/* Driver revision byte in IOIN, fixed for the part: what this library was
    written and tested against. A TMC2208 reads 0x20. Overridable at build time
    for register-compatible siblings that identify differently. */
 #ifndef TMC2209_IOIN_VERSION

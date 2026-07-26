@@ -52,7 +52,7 @@ actuator layer.
 One consequence of §1: `VACTUAL` is write-only in silicon, so the precondition
 can only ever be checked against the firmware's own record of what it wrote.
 That record is authoritative under the ownership rule in §2, but its
-authority ends the moment the driver resets, which is why `LOST_CONFIG` is a
+authority ends the moment the driver resets, which is why `DRIVER_RESET` is a
 fault rather than a cache miss.
 
 ### About position
@@ -117,10 +117,10 @@ setting configuration.
 | Register | Addr | Silicon | Class | What it is | Policy |
 |---|---|---|---|---|---|
 | `GCONF` | 0x00 | RW | `OWNED` | Global mode flags: UART enable, microstep source, direction invert, chopper mode | Carries `pdn_disable` and `mstep_reg_select`, both required. `shaft` flips a motor wired backwards without touching the harness. |
-| `GSTAT` | 0x01 | R/WC | `VOLATILE` | Three latched fault flags: reset, driver error, charge-pump undervoltage | Reported through `poll_health()`. Cleared once at adopt. |
+| `GSTAT` | 0x01 | R/WC | `VOLATILE` | Three latched fault flags: reset, driver error, charge-pump undervoltage | Reported through `poll_health()`. Cleared at adopt, and thereafter by `clear_faults()`. |
 | `IFCNT` | 0x02 | R | `VOLATILE` | Counts write datagrams the driver accepted. Wraps at 255 | Internal. The only acknowledgement a write can get. See §5. |
 | `SLAVECONF` | 0x03 | W | `OWNED` | `senddelay`: how long the driver waits before answering | Must be non-zero so the master can release a shared line before the reply starts. |
-| `IOIN` | 0x06 | R | `VOLATILE` | Live state of the input pins, plus a chip version byte | Pin states confirm wiring at bring-up. The version byte backs `identify()`. |
+| `IOIN` | 0x06 | R | `VOLATILE` | Live state of the input pins, plus a chip version byte | Pin states confirm wiring at bring-up through `poll_pins()`. The version byte is reported by `poll_version()`. |
 | `FACTORY_CONF` | 0x07 | RW | `CONSTANT` | Factory-trimmed oscillator frequency and overtemperature thresholds | Never written. Writing it detunes every timing-derived value; see §7. Read at adopt because the trim differs per part. |
 | `IHOLD_IRUN` | 0x10 | W | `OWNED` | Run current, standstill current, and the ramp between them | Sets motor torque. `ihold` holds film tension at rest. Adjusted at runtime through `set_current()`. |
 | `TPOWERDOWN` | 0x11 | W | `OWNED` | Delay from standstill before dropping to hold current | Must be at least 2 or StealthChop auto-tuning never runs. |
@@ -221,7 +221,7 @@ to `UNKNOWN` in three situations:
 | Cause | Why the record stops being true |
 |---|---|
 | fresh construction | nothing has been written to the device yet |
-| `LOST_CONFIG` from `poll_health()` | the driver browned out and lost its configuration |
+| `DRIVER_RESET` from `poll_health()` | the driver browned out and lost its configuration |
 | raw transport | bytes the library did not build, deliberately uninterpreted |
 
 `tmc2209_trusted()` is the derived query "no `OWNED` slot is `UNKNOWN`". It is
@@ -237,7 +237,7 @@ holds the configuration and re-sends it.
 That is a deliberate narrowing. A driver that reset mid-reel has lost more
 than its registers: it has lost `VACTUAL`, and with it any position estimate
 built on the assumption that STEP pulses were being obeyed. Treating that as a
-cache miss to paper over would hide a mechanical event. `LOST_CONFIG` is
+cache miss to paper over would hide a mechanical event. `DRIVER_RESET` is
 surfaced as a fault condition, the actuator layer decides what to do, and
 reconfiguration is an ordinary batch write afterwards.
 
@@ -311,10 +311,41 @@ tmc2209_err_t tmc2209_poll_raw   (tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *o
 ```
 
 `poll_health()` reads both `GSTAT` and `DRV_STATUS` and returns a single
-condition set: `LOST_CONFIG`, `DRIVER_FAULT`, `UNDERVOLTAGE`,
+condition set: `DRIVER_RESET`, `DRIVER_FAULT`, `UNDERVOLTAGE`,
 `OVERTEMP_WARNING`, `OVERTEMP_SHUTDOWN`, `SHORT_CIRCUIT`, `OPEN_LOAD`,
 `STANDSTILL`. The caller asks whether the driver is healthy and never learns
 that brownout and overtemperature live in different registers.
+
+The set spans two different notions of time, and the caller has to know which
+is which. The three `GSTAT` conditions are **latched**: they report that
+something happened and stay asserted until acknowledged. The five `DRV_STATUS`
+conditions are **live**: they report what is true now and clear themselves when
+the situation passes. An overtemperature shutdown disappears once the chip
+cools; an undervoltage does not.
+
+`poll_health()` is purely observational, so polling twice yields the same
+answer. That is what makes `clear_faults()` necessary:
+
+```c
+tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
+```
+
+The caller hands back the conditions it received. Only the latched ones are
+acted on, so passing the whole set is the intended use. Acknowledging exactly
+what was seen is also what makes it safe against a flag that latches between
+the poll and the acknowledgement: that flag was never reported, so it is not
+cleared, and it survives to be reported next time.
+
+Acknowledging does not restore trust. Clearing `DRIVER_RESET` states that the
+reset was noticed, not that the configuration was rewritten; only a successful
+`write()` over the owned registers does that. The two are deliberately separate,
+because a driver that reset mid-reel needs the actuator layer to decide what
+happens to the film before anything is written back to it.
+
+Skipping the acknowledgement does not merely lose information. A single
+brownout would assert `DRIVER_RESET` on every subsequent poll for the rest of
+the session, and each poll would invalidate the configuration the previous
+recovery had just written, so the loop never converges.
 
 `poll_load()` returns the `SG_RESULT` estimate together with whether the
 reading can be believed. The validity rule needs `TCOOLTHRS`, which is in
@@ -335,15 +366,13 @@ The library reports conditions and never decides responses. What
 `GSTAT.reset` means is a fact about the chip. Whether it should fault the reel
 or trigger a quiet reconfiguration is control policy, and lives above.
 
-### Verdicts: `identify` and `verify_*`
+### Verdicts: `verify_*`
 
 ```c
-tmc2209_err_t tmc2209_identify     (tmc2209_t *dev);
 tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched);
 ```
 
-Both perform transactions and return a pass or fail rather than a number.
-`identify()` checks the `IOIN` version byte against the expected part.
+Performs transactions and returns a pass or fail rather than a number.
 `verify_config()` re-reads the config registers the silicon will answer for,
 `GCONF` and `CHOPCONF`, and reports which disagree with the cache. It exists
 so the HIL tier can assert that the cache is telling the truth, which is the
@@ -501,8 +530,11 @@ second driver answered, which no number of attempts will fix. One wedged
 driver must not stall the other two, so each transaction has a timeout,
 bounded retries, and then faults the actuator.
 
-**`GSTAT` is polled** through `poll_health()`. `LOST_CONFIG` means the driver
-lost its configuration and every `OWNED` slot is now `UNKNOWN`.
+**`GSTAT` is polled** through `poll_health()`. `DRIVER_RESET` means the driver
+lost its configuration and every `OWNED` slot is now `UNKNOWN`. Because the
+flag latches in silicon, recovery is two steps and not one: `write()` restores
+the configuration, `clear_faults()` acknowledges the flag. Doing only the first
+leaves the condition asserted forever. See §3.
 
 ---
 
@@ -580,3 +612,115 @@ as the PC-side diagnostic. Item 7 was found in the first C implementation.
   and set aside: an ownership-based cache already gives the actuator layer
   most of what the struct would provide, and the batch write in §3 covers the
   rest.
+
+### Strap cross-check
+
+Designed, not built. `notes.md` warns that MS1/MS2 carry the bus address *and*
+the power-on microstep resolution, and that a strap resistor that is not
+populated changes both at once. `IOIN` reports the live state of those two
+pins, and the library already knows which address it is talking to, so it can
+compare them without any input from the caller:
+
+```c
+tmc2209_err_t tmc2209_verify_straps(tmc2209_t *dev);
+```
+
+It catches an unpopulated strap and, with three drivers on one wire, two
+drivers sharing an address. It belongs to the `verify_` family because it
+returns a verdict about something that should be true, and unlike a silicon
+revision there is no policy involved: the correct answer is fixed by which
+address the caller opened the device on.
+
+Blocked only on confirming the address-to-`MS1`/`MS2` bit mapping against the
+datasheet, which is not worth asserting from memory.
+
+`ENN` is deliberately excluded. `notes.md` calls the pull-up on it the only
+kill path that works when firmware is hung, so reading it back is worth doing,
+but whether it *should* read high depends on whether the actuator has enabled
+the motor. That is state this layer does not own, so `poll_pins()` reports the
+pin and the caller judges it.
+
+### Link statistics
+
+Designed, not built. Recorded here because the decisions are settled and the
+implementation is small enough that a later attempt would otherwise redo them.
+
+**The problem.** A retry that succeeds is invisible. A bus that needs a second
+attempt on every single transaction returns `TMC2209_OK` exactly like a
+perfect one. Given §6's cable (one shared wire, a metre long, running near
+24 V motor leads, with the weak DIR/EN pair described in `notes.md`), marginal
+signal integrity is the most likely real fault, and it degrades across a reel
+rather than failing cleanly. Nothing currently reports that.
+
+**Shape.** A counter block per device, exported by a plain accessor:
+
+```c
+typedef struct {
+    uint32_t datagrams;       /* attempts, including retries */
+    uint32_t retries;         /* attempts beyond the first */
+    uint32_t giveups;         /* transactions that exhausted retries */
+    uint32_t crc_errors;      /* reply corrupted in flight */
+    uint32_t echo_errors;     /* collision, or outbound corruption */
+    uint32_t timeouts;        /* nothing answered */
+    uint32_t io_errors;       /* the port itself failed */
+    uint32_t wrong_register;  /* another driver answered: strap collision */
+} tmc2209_link_stats_t;
+
+void tmc2209_link_stats(const tmc2209_t *dev, tmc2209_link_stats_t *out);
+```
+
+The per-error split is the part that earns its keep: each counter names a
+different physical cause. CRC means noise on the reply, echo means something
+drove the line mid-transmission, timeout means a driver is wedged or
+unpowered, and `wrong_register` means two drivers share an address.
+
+**Per device, not per bus.** "Driver 2 retries ten times as often as the
+others" identifies one cable and one connector; a bus-wide total only says
+something is wrong somewhere. It is also the cheaper option, since
+`tmc2209_bus_t` is `const` throughout including in the public
+`tmc2209_bus_xfer()` signature, and counting into it would break that.
+
+A side effect worth taking: `read_retrying()` and `write_retrying()` take the
+bus and address separately today, but every caller already holds a `tmc2209_t`.
+Passing the device instead removes a redundant parameter and supplies the place
+to count.
+
+**Datagram-oriented.** The datagram is the unit that can fail, so it is the
+denominator. A ten-register batch contributes ten, not one. Any rate computed
+downstream is per datagram.
+
+**Zeroed at `init()`, never at `adopt()`,** which is the one decision worth
+arguing. The counters have to be monotonic, because the consumer derives rates
+by sampling twice and subtracting. `adopt()` can be called again to recover
+from `DRIVER_RESET`, and if that reset the counters, a difference spanning the
+recovery would go negative and wrap into a nonsense figure. Since `init()`
+already zeroes the whole struct, this costs no code: it is a matter of
+`adopt()` not touching them. Traffic during adoption then gets counted, which
+is correct, because a driver that needed retries while being configured is
+exactly what this is for.
+
+**No window, and no verdict.** A lifetime average is the wrong statistic: a bad
+thirty seconds at power-on would taint the figure for the rest of the reel.
+Rather than pick a window size, the counters stay monotonic and the PC
+differences them, the way OS network counters work. Wrapping is harmless under
+unsigned subtraction, the same trick `confirm_writes()` uses on IFCNT. For the
+same reason there is no `verify_channel_health()` in the library: "too many
+retries" is a threshold, thresholds depend on cable length and installation,
+and §3 puts policy above this layer. Such a verdict belongs in the actuator or
+RPC layer and can be built entirely from these counters.
+
+**Constraint this must not break.** §4 states that there is no clock in the
+port interface, which is what keeps the core free of ESP-IDF and lets the unit
+tests run without sleeping. Counters can therefore express failures *per
+datagram* and never *per second*. The PC has a clock and converts. Do not add a
+timestamp here to make a rate; that trades an architectural property for
+arithmetic the consumer can already do.
+
+**Known costs.** Counting must happen in exactly one place, or a future error
+path added elsewhere will silently under-report; `read_retrying()` and
+`write_retrying()` are that place and should stay so. The mock's fault
+injectors are one-shot decrements, so testing a rate needs sustained patterned
+injection, which is the bulk of the work. And the port's `trace` hook already
+sees every byte, so a PC-side tool could derive the same numbers; counters win
+for always-on use on target, but the overlap is real and only one of the two
+should be treated as authoritative.

@@ -9,11 +9,11 @@
  *     touch the bus; writes go out as a batch and are verified once.
  *   - Conditions are @b polled. Every poll_ call performs a transaction and
  *     returns meaning rather than register contents.
- *   - Verdicts come from tmc2209_identify() and tmc2209_verify_config(), which
- *     return pass or fail rather than a number.
+ *   - Verdicts come from tmc2209_verify_config(), which returns pass or fail
+ *     rather than a number.
  *
  * The library reports conditions and never decides responses. What
- * GSTAT.reset means is a fact about the chip; whether it should fault the reel
+ * GSTAT.reset means is a fact about the driver; whether it should fault the reel
  * is control policy and lives above.
  *
  * Not thread-safe: one device, one owner.
@@ -28,20 +28,22 @@
 /** Element count of a configuration array literal. */
 #define TMC2209_NELEM(a) (sizeof(a) / sizeof((a)[0]))
 
+/** @brief The shared wire. One bus, up to four drivers addressed on it. */
 typedef struct {
     const tmc2209_port_t *port;
     uint32_t timeout_ms;   /**< per port call */
     uint8_t  retries;      /**< additional attempts after a CRC or timeout failure */
 } tmc2209_bus_t;
 
-/** One register and the value intended for it. The unit of tmc2209_write(). */
+/** @brief One register and the value intended for it. The unit of tmc2209_write(). */
 typedef struct {
     tmc2209_reg_t reg;
     uint32_t      value;
 } tmc2209_regval_t;
 
+/** @brief One driver, and everything known about what it currently holds. */
 typedef struct {
-    const tmc2209_bus_t *bus;
+    const tmc2209_bus_t *bus;            /**< UART comm channel */
     uint8_t  addr;                       /**< 0..3, set by the MS1/MS2 straps */
     uint8_t  ifcnt;                      /**< last observed write counter */
     uint32_t cache[TMC2209_REG_COUNT];   /**< last known value per slot */
@@ -49,10 +51,9 @@ typedef struct {
 } tmc2209_t;
 
 /**
- * @brief Construction only. No I/O, no defaults.
+ * @brief Construction only.
  *
- * Every slot starts invalid. There are no datasheet reset values to fall back
- * on, so nothing can be read or written until tmc2209_adopt() supplies a
+ * Every slot starts invalid. Nothing can be read or written until `tmc2209_adopt()` supplies a
  * configuration.
  *
  * @param dev   device to initialise; overwritten entirely
@@ -71,10 +72,7 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t add
  * CONSTANT registers off this particular part, and writes the configuration.
  *
  * @p config must cover all @ref TMC2209_OWNED_COUNT owned registers. A partial
- * configuration is rejected rather than completed from defaults: the datasheet
- * reset values for GCONF and CHOPCONF are not properties of the part number,
- * and writing them would clear mstep_reg_select and hand microstep resolution
- * back to the address straps.
+ * configuration is rejected.
  *
  * GSTAT as found is handed back through @p at_bringup before it is cleared,
  * which is the only chance to see what the driver went through before this
@@ -100,10 +98,10 @@ tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
 /* ── Values ─────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Reads a register from the cache. Never touches the bus.
+ * @brief Reads a register from the cache.
  *
  * Serves owned and constant registers. Volatile registers are refused: the
- * silicon changes them, so a remembered copy describes a moment that has
+ * driver changes them, so a remembered copy describes a moment that has
  * passed. tmc2209_poll_health() and friends are the way to obtain those.
  *
  * @param dev  device
@@ -113,7 +111,7 @@ tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
  * @retval TMC2209_ERR_ACCESS  volatile register; there is no cached value
- * @retval TMC2209_ERR_STALE   slot is invalid; nothing here can be believed
+ * @retval TMC2209_ERR_INVALID_SLOT   slot is invalid; nothing here can be believed
  */
 tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
 
@@ -158,15 +156,13 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
 /**
  * @brief Reads GSTAT and DRV_STATUS, and reports what is wrong.
  *
- * One condition set from two registers, so the caller never learns which
- * register a given fault came from.
+ * One condition set from two registers.
  *
- * TMC2209_LOST_CONFIG invalidates every owned slot: the driver browned out and
- * no longer holds the configuration. Recovery is not this library's job, since
- * eight registers cannot be read back; the PC re-sends the configuration. That
- * is deliberate, because a driver that reset mid-reel also lost VACTUAL and any
- * position estimate built on it, which is a mechanical event rather than a
- * cache miss.
+ * TMC2209_DRIVER_RESET invalidates every owned slot as sync was lost with the driver.
+ * Configuration backup should be handled outside the library.
+ *
+ * Purely observational: the latched half of @ref tmc2209_condition_t therefore stays
+ * asserted across polls until tmc2209_clear_faults() acknowledges it.
  *
  * @param dev         device
  * @param conditions  bitmask of @ref tmc2209_condition_t, 0 when healthy
@@ -176,6 +172,32 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
  * @return any transport error from either read
  */
 tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
+
+/**
+ * @brief Acknowledges latched conditions so they stop being reported.
+ *
+ * GSTAT flags are latched in the driver: once set they stay set until a 1 is
+ * written back.
+ *
+ * Pass back the conditions received from `tmc2209_poll_health()`. Only the bits
+ * in @ref TMC2209_CONDITIONS_LATCHED are acted on; live conditions are ignored,
+ * so handing the whole set straight back is the intended use. Acknowledging
+ * only what was actually seen is also what makes this safe against a fault that
+ * latches between the poll and the acknowledgement: it survives to be reported.
+ *
+ * This validates nothing. Clearing `TMC2209_DRIVER_RESET` says the reset was
+ * noticed, not that the configuration was rewritten; only a successful
+ * `tmc2209_write()` covering the owned registers does that (see `tmc2209_adopt()`).
+ *
+ * @param dev         device
+ * @param conditions  conditions to acknowledge; 0 does nothing and touches no bus
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG     null argument
+ * @retval TMC2209_ERR_NO_ACK  IFCNT did not account for the write
+ * @return any transport error from the write or its confirmation
+ */
+tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
 
 /**
  * @brief Reads the StallGuard load estimate, with whether it can be believed.
@@ -200,7 +222,8 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
  * @brief Reads the live input pin states.
  *
  * Returns the decoded struct rather than a condition, because pin-level detail
- * is exactly what a bring-up caller is asking for.
+ * is exactly what a bring-up caller is asking for. IOIN also carries the
+ * driver revision; tmc2209_poll_version() is the way to ask for that.
  *
  * @param dev  device
  * @param out  decoded pin state
@@ -212,12 +235,32 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
 tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
 
 /**
+ * @brief Reads the revision of the driver answering at this address.
+ *
+ * The IOIN version field is a compatibility generation, not a model number:
+ * @ref TMC2209_IOIN_VERSION is the first revision of the TMC2209, and a
+ * TMC2208 answering 0x20 is a side effect rather than the field's purpose.
+ * A later revision would report a different number and still be a TMC2209.
+ *
+ * Reported rather than judged. Which revisions an installation accepts is a
+ * policy question, so the caller compares against @ref TMC2209_IOIN_VERSION,
+ * or against a set of its own, and decides.
+ *
+ * @param dev      device
+ * @param version  the revision byte, untouched on failure
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG  null argument
+ * @return any transport error from the read
+ */
+tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
+
+/**
  * @brief Reads any readable register off the device, uninterpreted.
  *
  * The path for MSCNT, MSCURACT, PWM_SCALE and PWM_AUTO, which carry no
  * condition worth naming, and for a diagnostic that dumps the whole device.
- * Does not update the cache: a device read is not evidence about who owns the
- * value.
+ * Does not update the cache.
  *
  * @param dev  device
  * @param reg  register to read
@@ -225,7 +268,7 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
- * @retval TMC2209_ERR_ACCESS  write-only in silicon; the chip cannot answer
+ * @retval TMC2209_ERR_ACCESS  write-only driver-side; there is nothing to read
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
@@ -233,27 +276,10 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 /* ── Verdicts ───────────────────────────────────────────────────────────── */
 
 /**
- * @brief Confirms that the part at this address is the expected silicon.
- *
- * Checks the IOIN version byte, which is fixed for the part. A TMC2208 answers
- * 0x20 and is rejected.
- *
- * @param dev  device
- *
- * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG   null argument
- * @retval TMC2209_ERR_PART  something answered, but it is not this part
- * @return any transport error from the read
- */
-tmc2209_err_t tmc2209_identify(tmc2209_t *dev);
-
-/**
- * @brief Checks the cache against the silicon for the registers that read back.
+ * @brief Checks the cache against the driver for the registers that read back.
  *
  * Only GCONF and CHOPCONF can be checked, since the other eight owned
- * registers are write-only. Exists so the HIL tier can assert that the cache
- * is telling the truth, which is the test that validates the whole caching
- * scheme. Nothing in the control path calls it.
+ * registers are write-only.
  *
  * @param dev         device
  * @param mismatched  bitmask of slots that disagree, 0 when all agree.
@@ -275,9 +301,9 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched);
  * fault raised, so it must be returned to zero before coordinated motion. The
  * actuator layer owns that precondition; this is the verb it uses.
  *
- * VACTUAL is write-only in silicon, so the value can only ever be checked
+ * VACTUAL is write-only driver-side, so the value can only ever be checked
  * against the cache. That is authoritative while the slot is valid, and
- * TMC2209_LOST_CONFIG is what ends the guarantee.
+ * TMC2209_DRIVER_RESET is what ends the guarantee.
  *
  * @param dev  device
  * @param v    signed 24-bit velocity; 0 returns control to the STEP pin
@@ -302,7 +328,7 @@ tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c)
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 
 /** @brief True when every owned slot is valid. False for a NULL device. */
-bool tmc2209_trusted(const tmc2209_t *dev);
+bool tmc2209_all_owned_valid(const tmc2209_t *dev);
 
 /**
  * @brief Invalidates every owned slot.
@@ -311,7 +337,7 @@ bool tmc2209_trusted(const tmc2209_t *dev);
  * Callers that write through tmc2209_bus_xfer() must call this: a datagram the
  * library did not build is one it cannot account for.
  */
-void tmc2209_distrust(tmc2209_t *dev);
+void tmc2209_invalidate_owned(tmc2209_t *dev);
 
 /* ── Passthrough ────────────────────────────────────────────────────────── */
 
