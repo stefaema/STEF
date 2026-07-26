@@ -21,8 +21,8 @@ void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN],
                          uint8_t slave_addr, uint8_t reg, uint32_t value)
 {
     out[0] = TMC2209_SYNC;
-    out[1] = (uint8_t)(slave_addr & 0x03U);
-    out[2] = (uint8_t)(reg | 0x80U);          /* bit 7 marks the datagram a write */
+    out[1] = (uint8_t)(slave_addr & TMC2209_ADDR_MASK);
+    out[2] = (uint8_t)(reg | TMC2209_WRITE_FLAG);
     out[3] = (uint8_t)(value >> 24);
     out[4] = (uint8_t)(value >> 16);
     out[5] = (uint8_t)(value >> 8);
@@ -34,8 +34,8 @@ void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN],
                                 uint8_t slave_addr, uint8_t reg)
 {
     out[0] = TMC2209_SYNC;
-    out[1] = (uint8_t)(slave_addr & 0x03U);
-    out[2] = (uint8_t)(reg & 0x7FU);
+    out[1] = (uint8_t)(slave_addr & TMC2209_ADDR_MASK);
+    out[2] = (uint8_t)(reg & TMC2209_REG_MASK);
     out[3] = tmc2209_crc8(out, 3);
 }
 
@@ -51,7 +51,7 @@ tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
     /* Check the register before the CRC. A reply for the wrong register is a
        different failure from a corrupted one: it means a second driver
        answered, which retrying will not fix. */
-    if ((in[2] & 0x7FU) != (expect_reg & 0x7FU)) {
+    if ((in[2] & TMC2209_REG_MASK) != (expect_reg & TMC2209_REG_MASK)) {
         return TMC2209_ERR_REG;
     }
     if (in[7] != tmc2209_crc8(in, 7)) {

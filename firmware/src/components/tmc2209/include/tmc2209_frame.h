@@ -13,12 +13,21 @@
 
 #include "tmc2209_err.h"
 
-#define TMC2209_SYNC          0x05u
-#define TMC2209_MASTER_ADDR   0xFFu
+#define TMC2209_SYNC          0x05U
+#define TMC2209_MASTER_ADDR   0xFFU
 
-#define TMC2209_WRITE_LEN     8u  /* sync, addr, reg|0x80, 4 data, crc */
-#define TMC2209_READ_REQ_LEN  4u  /* sync, addr, reg, crc */
-#define TMC2209_REPLY_LEN     8u  /* sync, 0xFF, reg, 4 data, crc */
+/* The register byte carries the direction: bit 7 set means write. Three
+   functions build or inspect that byte and all of them have to agree, which
+   is why this is a constant and the field widths below are not. */
+#define TMC2209_WRITE_FLAG    0x80U
+#define TMC2209_REG_MASK      0x7FU
+
+/* Two bits of slave address, so up to four drivers share one bus. */
+#define TMC2209_ADDR_MASK     0x03U
+
+#define TMC2209_WRITE_LEN     8U  /* sync, addr, reg|write flag, 4 data, crc */
+#define TMC2209_READ_REQ_LEN  4U  /* sync, addr, reg, crc */
+#define TMC2209_REPLY_LEN     8U  /* sync, master addr, reg, 4 data, crc */
 
 /* CRC-8/ATM, polynomial 0x07, LSB-first. */
 uint8_t tmc2209_crc8(const uint8_t *data, size_t len);
