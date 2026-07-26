@@ -73,7 +73,7 @@ int tmc2209_reg_slot(tmc2209_reg_t reg)
 uint8_t tmc2209_reg_access(tmc2209_reg_t reg)
 {
     int slot = tmc2209_reg_slot(reg);
-    return (slot < 0) ? 0u : k_regs[slot].access;
+    return (slot < 0) ? 0U : k_regs[slot].access;
 }
 
 tmc2209_class_t tmc2209_reg_class(tmc2209_reg_t reg)
@@ -110,7 +110,7 @@ uint16_t tmc2209_mres_microsteps(tmc2209_mres_t mres)
     return 0;
 }
 
-#define BIT(v, n)  (((v) >> (n)) & 1u)
+#define BIT(v, n)  (((v) >> (n)) & 1U)
 
 uint32_t tmc2209_gconf_encode(const tmc2209_gconf_t *g)
 {
@@ -145,12 +145,12 @@ tmc2209_gconf_t tmc2209_gconf_decode(uint32_t raw)
 
 uint32_t tmc2209_chopconf_encode(const tmc2209_chopconf_t *c)
 {
-    return ((uint32_t)(c->toff  & 0x0Fu))        |
-           ((uint32_t)(c->hstrt & 0x07u) << 4)   |
-           ((uint32_t)(c->hend  & 0x0Fu) << 7)   |
-           ((uint32_t)(c->tbl   & 0x03u) << 15)  |
+    return ((uint32_t)(c->toff  & 0x0FU))        |
+           ((uint32_t)(c->hstrt & 0x07U) << 4)   |
+           ((uint32_t)(c->hend  & 0x0FU) << 7)   |
+           ((uint32_t)(c->tbl   & 0x03U) << 15)  |
            ((uint32_t)c->vsense          << 17)  |
-           ((uint32_t)(c->mres  & 0x0Fu) << 24)  |
+           ((uint32_t)(c->mres  & 0x0FU) << 24)  |
            ((uint32_t)c->intpol          << 28)  |
            ((uint32_t)c->dedge           << 29)  |
            ((uint32_t)c->diss2g          << 30)  |
@@ -160,12 +160,12 @@ uint32_t tmc2209_chopconf_encode(const tmc2209_chopconf_t *c)
 tmc2209_chopconf_t tmc2209_chopconf_decode(uint32_t raw)
 {
     tmc2209_chopconf_t c = {
-        .toff    = (uint8_t)(raw & 0x0Fu),
-        .hstrt   = (uint8_t)((raw >> 4) & 0x07u),
-        .hend    = (uint8_t)((raw >> 7) & 0x0Fu),
-        .tbl     = (tmc2209_tbl_t)((raw >> 15) & 0x03u),
+        .toff    = (uint8_t)(raw & 0x0FU),
+        .hstrt   = (uint8_t)((raw >> 4) & 0x07U),
+        .hend    = (uint8_t)((raw >> 7) & 0x0FU),
+        .tbl     = (tmc2209_tbl_t)((raw >> 15) & 0x03U),
         .vsense  = BIT(raw, 17),
-        .mres    = (tmc2209_mres_t)((raw >> 24) & 0x0Fu),
+        .mres    = (tmc2209_mres_t)((raw >> 24) & 0x0FU),
         .intpol  = BIT(raw, 28),
         .dedge   = BIT(raw, 29),
         .diss2g  = BIT(raw, 30),
@@ -176,37 +176,37 @@ tmc2209_chopconf_t tmc2209_chopconf_decode(uint32_t raw)
 
 uint32_t tmc2209_ihold_irun_encode(const tmc2209_ihold_irun_t *i)
 {
-    return ((uint32_t)(i->ihold      & 0x1Fu))       |
-           ((uint32_t)(i->irun       & 0x1Fu) << 8)  |
-           ((uint32_t)(i->iholddelay & 0x0Fu) << 16);
+    return ((uint32_t)(i->ihold      & 0x1FU))       |
+           ((uint32_t)(i->irun       & 0x1FU) << 8)  |
+           ((uint32_t)(i->iholddelay & 0x0FU) << 16);
 }
 
 tmc2209_ihold_irun_t tmc2209_ihold_irun_decode(uint32_t raw)
 {
     tmc2209_ihold_irun_t i = {
-        .ihold      = (uint8_t)(raw & 0x1Fu),
-        .irun       = (uint8_t)((raw >> 8) & 0x1Fu),
-        .iholddelay = (uint8_t)((raw >> 16) & 0x0Fu),
+        .ihold      = (uint8_t)(raw & 0x1FU),
+        .irun       = (uint8_t)((raw >> 8) & 0x1FU),
+        .iholddelay = (uint8_t)((raw >> 16) & 0x0FU),
     };
     return i;
 }
 
 uint32_t tmc2209_coolconf_encode(const tmc2209_coolconf_t *c)
 {
-    return ((uint32_t)(c->semin & 0x0Fu))        |
-           ((uint32_t)(c->seup  & 0x03u) << 5)   |
-           ((uint32_t)(c->semax & 0x0Fu) << 8)   |
-           ((uint32_t)(c->sedn  & 0x03u) << 13)  |
+    return ((uint32_t)(c->semin & 0x0FU))        |
+           ((uint32_t)(c->seup  & 0x03U) << 5)   |
+           ((uint32_t)(c->semax & 0x0FU) << 8)   |
+           ((uint32_t)(c->sedn  & 0x03U) << 13)  |
            ((uint32_t)c->seimin          << 15);
 }
 
 tmc2209_coolconf_t tmc2209_coolconf_decode(uint32_t raw)
 {
     tmc2209_coolconf_t c = {
-        .semin  = (uint8_t)(raw & 0x0Fu),
-        .seup   = (tmc2209_seup_t)((raw >> 5) & 0x03u),
-        .semax  = (uint8_t)((raw >> 8) & 0x0Fu),
-        .sedn   = (tmc2209_sedn_t)((raw >> 13) & 0x03u),
+        .semin  = (uint8_t)(raw & 0x0FU),
+        .seup   = (tmc2209_seup_t)((raw >> 5) & 0x03U),
+        .semax  = (uint8_t)((raw >> 8) & 0x0FU),
+        .sedn   = (tmc2209_sedn_t)((raw >> 13) & 0x03U),
         .seimin = BIT(raw, 15),
     };
     return c;
@@ -227,7 +227,7 @@ tmc2209_drv_status_t tmc2209_drv_status_decode(uint32_t raw)
         .t143      = BIT(raw, 9),
         .t150      = BIT(raw, 10),
         .t157      = BIT(raw, 11),
-        .cs_actual = (uint8_t)((raw >> 16) & 0x1Fu),
+        .cs_actual = (uint8_t)((raw >> 16) & 0x1FU),
         .stealth   = BIT(raw, 30),
         .stst      = BIT(raw, 31),
     };
@@ -267,23 +267,23 @@ tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw)
         .step      = BIT(raw, 7),
         .spread_en = BIT(raw, 8),
         .dir       = BIT(raw, 9),
-        .version   = (uint8_t)((raw >> 24) & 0xFFu),
+        .version   = (uint8_t)((raw >> 24) & 0xFFU),
     };
     return i;
 }
 
 int32_t tmc2209_vactual_decode(uint32_t raw)
 {
-    uint32_t v = raw & 0x00FFFFFFu;
-    if (v & (1u << 23)) {
-        v |= 0xFF000000u;   /* sign-extend the 24-bit field */
+    uint32_t v = raw & 0x00FFFFFFU;
+    if (v & (1U << 23)) {
+        v |= 0xFF000000U;   /* sign-extend the 24-bit field */
     }
     return (int32_t)v;
 }
 
 uint32_t tmc2209_vactual_encode(int32_t v)
 {
-    return (uint32_t)v & 0x00FFFFFFu;   /* truncate to the 24-bit field */
+    return (uint32_t)v & 0x00FFFFFFU;   /* truncate to the 24-bit field */
 }
 
 /* ── Diagnostic-only decoders ───────────────────────────────────────────── */
@@ -292,9 +292,9 @@ uint32_t tmc2209_vactual_encode(int32_t v)
    registers get decoders at all. */
 static int16_t sign_extend_9(uint32_t field)
 {
-    uint32_t v = field & 0x1FFu;
-    if (v & (1u << 8)) {
-        v |= 0xFFFFFE00u;
+    uint32_t v = field & 0x1FFU;
+    if (v & (1U << 8)) {
+        v |= 0xFFFFFE00U;
     }
     return (int16_t)(int32_t)v;
 }
@@ -311,7 +311,7 @@ tmc2209_mscuract_t tmc2209_mscuract_decode(uint32_t raw)
 tmc2209_pwm_scale_t tmc2209_pwm_scale_decode(uint32_t raw)
 {
     tmc2209_pwm_scale_t p = {
-        .sum       = (uint8_t)(raw & 0xFFu),
+        .sum       = (uint8_t)(raw & 0xFFU),
         .automatic = sign_extend_9(raw >> 16),
     };
     return p;
@@ -320,8 +320,8 @@ tmc2209_pwm_scale_t tmc2209_pwm_scale_decode(uint32_t raw)
 tmc2209_pwm_auto_t tmc2209_pwm_auto_decode(uint32_t raw)
 {
     tmc2209_pwm_auto_t p = {
-        .ofs_auto  = (uint8_t)(raw & 0xFFu),
-        .grad_auto = (uint8_t)((raw >> 16) & 0xFFu),
+        .ofs_auto  = (uint8_t)(raw & 0xFFU),
+        .grad_auto = (uint8_t)((raw >> 16) & 0xFFU),
     };
     return p;
 }
