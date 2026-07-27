@@ -37,7 +37,13 @@ static void answer_read(mock_dev_t *m, uint8_t reg)
         m->fail_crc--;
         reply[7] ^= 0xFFu;
     }
-    push(m, reply, sizeof reply);
+
+    size_t n = sizeof reply;
+    if (m->truncate_reply) {
+        m->truncate_reply--;
+        n = (m->reply_keep < n) ? m->reply_keep : n;
+    }
+    push(m, reply, n);
 }
 
 static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_ms)
@@ -57,6 +63,10 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
         if (m->corrupt_echo) {
             m->corrupt_echo--;
             echo[n - 1] ^= 0x01u;
+        }
+        if (m->truncate_echo) {
+            m->truncate_echo--;
+            n = (m->echo_keep < n) ? m->echo_keep : n;
         }
         push(m, echo, n);
     }

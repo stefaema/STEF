@@ -85,7 +85,7 @@ static void test_volatile_registers_are_the_ones_hardware_writes(void)
    on a driver that browned out a second ago. */
 static void test_gstat_is_volatile_despite_being_writable(void)
 {
-    TEST_ASSERT_BITS_HIGH(TMC2209_ACC_W, tmc2209_reg_access(TMC2209_GSTAT));
+    TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_WRITE, tmc2209_reg_access(TMC2209_GSTAT));
     TEST_ASSERT_EQUAL(TMC2209_CLASS_VOLATILE, tmc2209_reg_class(TMC2209_GSTAT));
 }
 
@@ -93,7 +93,7 @@ static void test_gstat_is_volatile_despite_being_writable(void)
    ever changes it, so the cache is the authoritative answer. */
 static void test_vactual_is_owned_despite_being_write_only(void)
 {
-    TEST_ASSERT_BITS_LOW(TMC2209_ACC_R, tmc2209_reg_access(TMC2209_VACTUAL));
+    TEST_ASSERT_BITS_LOW(TMC2209_ACCESS_READ, tmc2209_reg_access(TMC2209_VACTUAL));
     TEST_ASSERT_EQUAL(TMC2209_CLASS_OWNED, tmc2209_reg_class(TMC2209_VACTUAL));
 }
 
@@ -107,8 +107,8 @@ static void test_constant_registers_are_the_ones_nobody_writes(void)
     };
     for (size_t i = 0; i < sizeof never_written / sizeof never_written[0]; i++) {
         TEST_ASSERT_EQUAL(TMC2209_CLASS_CONSTANT, tmc2209_reg_class(never_written[i]));
-        TEST_ASSERT_BITS_HIGH(TMC2209_ACC_R, tmc2209_reg_access(never_written[i]));
-        TEST_ASSERT_BITS_LOW(TMC2209_ACC_W, tmc2209_reg_access(never_written[i]));
+        TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_READ, tmc2209_reg_access(never_written[i]));
+        TEST_ASSERT_BITS_LOW(TMC2209_ACCESS_WRITE, tmc2209_reg_access(never_written[i]));
     }
 }
 
@@ -117,14 +117,14 @@ static void test_constant_registers_are_the_ones_nobody_writes(void)
    library did exactly that on every init. */
 static void test_factory_conf_is_never_writable(void)
 {
-    TEST_ASSERT_BITS_LOW(TMC2209_ACC_W, tmc2209_reg_access(TMC2209_FACTORY_CONF));
+    TEST_ASSERT_BITS_LOW(TMC2209_ACCESS_WRITE, tmc2209_reg_access(TMC2209_FACTORY_CONF));
 }
 
 static void test_owned_registers_are_all_writable(void)
 {
     for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
         if (tmc2209_reg_class_at(slot) == TMC2209_CLASS_OWNED) {
-            TEST_ASSERT_BITS_HIGH(TMC2209_ACC_W, tmc2209_reg_access_at(slot));
+            TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_WRITE, tmc2209_reg_access_at(slot));
         }
     }
 }
@@ -140,7 +140,7 @@ static void test_nothing_unowned_is_writable_except_gstat(void)
         if (tmc2209_reg_at(slot) == TMC2209_GSTAT) {
             continue;   /* write-1-to-clear, handled inside adopt() */
         }
-        TEST_ASSERT_BITS_LOW(TMC2209_ACC_W, tmc2209_reg_access_at(slot));
+        TEST_ASSERT_BITS_LOW(TMC2209_ACCESS_WRITE, tmc2209_reg_access_at(slot));
     }
 }
 
@@ -153,8 +153,8 @@ static void test_write_only_registers_are_not_readable(void)
     };
     for (size_t i = 0; i < sizeof write_only / sizeof write_only[0]; i++) {
         uint8_t access = tmc2209_reg_access(write_only[i]);
-        TEST_ASSERT_BITS_LOW(TMC2209_ACC_R, access);
-        TEST_ASSERT_BITS_HIGH(TMC2209_ACC_W, access);
+        TEST_ASSERT_BITS_LOW(TMC2209_ACCESS_READ, access);
+        TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_WRITE, access);
     }
     TEST_ASSERT_EQUAL_INT(8, (int)(sizeof write_only / sizeof write_only[0]));
 }
@@ -166,13 +166,13 @@ static void test_only_gconf_and_chopconf_read_back(void)
     int readable = 0;
     for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
         if (tmc2209_reg_class_at(slot) == TMC2209_CLASS_OWNED &&
-            (tmc2209_reg_access_at(slot) & TMC2209_ACC_R)) {
+            (tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ)) {
             readable++;
         }
     }
     TEST_ASSERT_EQUAL_INT(2, readable);
-    TEST_ASSERT_BITS_HIGH(TMC2209_ACC_R, tmc2209_reg_access(TMC2209_GCONF));
-    TEST_ASSERT_BITS_HIGH(TMC2209_ACC_R, tmc2209_reg_access(TMC2209_CHOPCONF));
+    TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_READ, tmc2209_reg_access(TMC2209_GCONF));
+    TEST_ASSERT_BITS_HIGH(TMC2209_ACCESS_READ, tmc2209_reg_access(TMC2209_CHOPCONF));
 }
 
 static void test_names_are_present_and_unknown_is_marked(void)

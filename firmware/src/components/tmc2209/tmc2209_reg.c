@@ -2,8 +2,8 @@
 
 #include <stddef.h>
 
-#define R  TMC2209_ACC_R
-#define W  TMC2209_ACC_W
+#define R  TMC2209_ACCESS_READ
+#define W  TMC2209_ACCESS_WRITE
 
 #define VOL TMC2209_CLASS_VOLATILE
 #define OWN TMC2209_CLASS_OWNED

@@ -120,8 +120,9 @@ static void test_parse_reply_rejects_non_master_address(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_SYNC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
-/* A reply for a register we did not ask about means a second driver answered.
-   That is a distinct failure from corruption, because retrying cannot fix it. */
+/* An intact reply naming a register we did not ask about: the reply stream has
+   slipped and this is the answer to an earlier transaction. The CRC is valid,
+   which is the only thing that makes the verdict mean anything. */
 static void test_parse_reply_rejects_wrong_register(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
@@ -129,6 +130,30 @@ static void test_parse_reply_rejects_wrong_register(void)
 
     uint32_t value = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_REG, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+}
+
+/* The ordering these three pin down: a corrupted byte is corruption, whichever
+   field it lands on. Checked in the other order, noise on the register byte
+   reports ERR_REG and noise on the sync byte reports ERR_SYNC, and the caller
+   declines to retry something a retry would have fixed. */
+static void test_corrupt_register_byte_is_corruption_not_a_wrong_register(void)
+{
+    uint8_t reply[TMC2209_REPLY_LEN];
+    make_reply(reply, TMC2209_GCONF, 0x12345678u);
+    reply[2] ^= 0x01u;   /* CRC deliberately left stale */
+
+    uint32_t value = 0;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+}
+
+static void test_corrupt_sync_byte_is_corruption_not_a_framing_fault(void)
+{
+    uint8_t reply[TMC2209_REPLY_LEN];
+    make_reply(reply, TMC2209_GCONF, 0x12345678u);
+    reply[0] ^= 0x01u;
+
+    uint32_t value = 0;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
 static void test_parse_reply_rejects_bad_crc(void)
@@ -163,9 +188,12 @@ static void test_parse_reply_detects_every_single_bit_corruption(void)
             memcpy(corrupt, clean, sizeof clean);
             corrupt[byte] ^= (uint8_t)(1u << bit);
 
+            /* Every one of the 64, as CRC-8 catches all single-bit errors, and
+               every one reports as corruption rather than as a field being
+               wrong. That is the whole ordering invariant in one loop. */
             uint32_t value = 0;
-            TEST_ASSERT_NOT_EQUAL(
-                TMC2209_OK,
+            TEST_ASSERT_EQUAL(
+                TMC2209_ERR_CRC,
                 tmc2209_frame_parse_reply(corrupt, TMC2209_DRV_STATUS, &value));
         }
     }
@@ -182,6 +210,8 @@ void run_frame_tests(void)
     RUN_TEST(test_parse_reply_rejects_bad_sync);
     RUN_TEST(test_parse_reply_rejects_non_master_address);
     RUN_TEST(test_parse_reply_rejects_wrong_register);
+    RUN_TEST(test_corrupt_register_byte_is_corruption_not_a_wrong_register);
+    RUN_TEST(test_corrupt_sync_byte_is_corruption_not_a_framing_fault);
     RUN_TEST(test_parse_reply_rejects_bad_crc);
     RUN_TEST(test_parse_reply_leaves_output_untouched_on_failure);
     RUN_TEST(test_parse_reply_detects_every_single_bit_corruption);

@@ -58,6 +58,14 @@ typedef struct {
     unsigned corrupt_echo;    /* flip a bit in the echo */
     unsigned wrong_reg;       /* answer with a different register id */
     unsigned freeze_ifcnt;    /* accept a write without counting it */
+
+    /* Truncation models a link that drops bytes mid-datagram, which is a
+       different fault from silence and has to be told apart from it. Each
+       keeps only the first n bytes of what it would otherwise deliver. */
+    unsigned truncate_echo;
+    size_t   echo_keep;
+    unsigned truncate_reply;
+    size_t   reply_keep;
 } mock_dev_t;
 
 /* Zeroes the mock, seeds the power-on register values a real part would show,

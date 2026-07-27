@@ -4,9 +4,9 @@
  *
  * Two independent questions are answered here and must be kept apart.
  *
- * Access (@ref TMC2209_ACC_R, @ref TMC2209_ACC_W) is the driver's. Eight
- * registers are write-only driver-side, so asking the device what they hold is
- * a question it cannot answer.
+ * Access (@ref TMC2209_ACCESS_READ, @ref TMC2209_ACCESS_WRITE) is the driver's.
+ * Eight registers are write-only driver-side, so asking the device what they
+ * hold is a question it cannot answer.
  *
  * Class (@ref tmc2209_class_t) is who can change the value, which decides
  * whether a remembered value is still true. It is a physical property of the
@@ -54,19 +54,19 @@ typedef enum {
 
 /** What the driver permits. */
 enum {
-    TMC2209_ACC_R = 1U << 0,
-    TMC2209_ACC_W = 1U << 1,
+    TMC2209_ACCESS_READ  = 1U << 0,
+    TMC2209_ACCESS_WRITE = 1U << 1,
 };
 
 /** Who can change the value, and therefore whether it can be cached. */
 typedef enum {
     /** Not in the table. */
     TMC2209_CLASS_UNKNOWN = 0,
-    /** The driver or the outside world writes it. Poll; never cache. */
+    /** The driver itself writes the register. Poll; never cache. */
     TMC2209_CLASS_VOLATILE,
-    /** Only the firmware writes it. Cacheable while the slot stays valid. */
+    /** Only the firmware writes to this register. Cacheable while the slot stays valid. */
     TMC2209_CLASS_OWNED,
-    /** Nothing writes it in this design. Read once at adopt, cached after. */
+    /** Nothing writes to this register in this design. Read once at adopt, cached after. */
     TMC2209_CLASS_CONSTANT,
 } tmc2209_class_t;
 

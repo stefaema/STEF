@@ -335,7 +335,7 @@ bool tmc2209_all_owned_valid(const tmc2209_t *dev);
  * @brief Invalidates every owned slot.
  *
  * Constant slots survive, since a brownout does not change the factory trim.
- * Callers that write through tmc2209_bus_xfer() must call this: a datagram the
+ * Callers that write through tmc2209_bus_send() must call this: a datagram the
  * library did not build is one it cannot account for.
  */
 void tmc2209_invalidate_owned(tmc2209_t *dev);
@@ -343,27 +343,43 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
 /* ── Passthrough ────────────────────────────────────────────────────────── */
 
 /**
- * @brief Sends raw bytes and optionally waits for a fixed-length reply.
+ * @brief Sends raw bytes and optionally collects a fixed-length reply.
  *
  * Bytes in, bytes out, no interpretation. Keeps the lock and the echo
  * discipline, skips framing and the cache entirely. This is what the RPC
- * passthrough mode and the HIL tier drive.
+ * passthrough level and the HIL tier drive.
+ *
+ * Nothing about the reply is judged. A wrong CRC, a reply for a register that
+ * was not asked about, and outright nonsense all come back as bytes, because
+ * the caller here is diagnosing the driver and an opinion from this library
+ * would be the thing under suspicion.
+ *
+ * Short replies are reported rather than discarded. @p rx_got says how many
+ * bytes arrived, which separates nothing at all from something incomplete and
+ * is what makes the bytes that did arrive safe to look at.
  *
  * @param bus     bus to drive; no device state is consulted or updated
  * @param tx      bytes to send, 1..32
  * @param tx_len  length of @p tx
  * @param rx      reply buffer, or NULL when @p rx_len is 0
- * @param rx_len  exact number of bytes to wait for; 0 to send only
+ * @param rx_len  number of bytes to wait for; 0 to send only
+ * @param rx_got  how many bytes arrived, 0..@p rx_len. Set on every return,
+ *                including the failures that carry bytes. NULL to discard
  *
- * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG      null bus or tx, empty or oversized tx, rx_len
- *                              without rx
- * @retval TMC2209_ERR_TIMEOUT  fewer than @p rx_len bytes arrived in time
- * @retval TMC2209_ERR_IO       the port failed for its own reasons
- * @retval TMC2209_ERR_ECHO     our own bytes came back altered: bus collision
+ * @retval TMC2209_OK              exactly @p rx_len bytes arrived
+ * @retval TMC2209_ERR_ARG         null bus or tx, empty or oversized tx, rx_len
+ *                                 without rx
+ * @retval TMC2209_ERR_TX_TIMEOUT  the port took fewer bytes than it was given,
+ *                                 so no reply was waited for
+ * @retval TMC2209_ERR_RX_TIMEOUT  fewer than @p rx_len bytes came back.
+ *                                 @p rx_got says how many did
+ * @retval TMC2209_ERR_IO          the port failed for its own reasons
+ * @retval TMC2209_ERR_ECHO        what came back is not what was sent, altered
+ *                                 or short. The reply is still collected, so
+ *                                 @p rx_got and @p rx remain worth reading
  */
-tmc2209_err_t tmc2209_bus_xfer(const tmc2209_bus_t *bus,
+tmc2209_err_t tmc2209_bus_send(const tmc2209_bus_t *bus,
                                const uint8_t *tx, size_t tx_len,
-                               uint8_t *rx, size_t rx_len);
+                               uint8_t *rx, size_t rx_len, size_t *rx_got);
 
 #endif /* TMC2209_H */

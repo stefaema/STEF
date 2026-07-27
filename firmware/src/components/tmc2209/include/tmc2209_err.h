@@ -20,17 +20,21 @@
 typedef enum {
     TMC2209_OK = 0,
     TMC2209_ERR_ARG,          /**< caller passed something impossible */
-    TMC2209_ERR_TIMEOUT,      /**< port did not deliver the bytes in time */
+    /* Two directions, two codes. A single timeout would leave the caller unable
+       to tell its own transmit path from a driver that said nothing, which are
+       opposite ends of the cable. */
+    TMC2209_ERR_TX_TIMEOUT,   /**< port accepted fewer bytes than it was given */
+    TMC2209_ERR_RX_TIMEOUT,   /**< port delivered fewer bytes than were asked for */
     TMC2209_ERR_IO,           /**< port failed for its own reasons */
     TMC2209_ERR_ECHO,         /**< what came back is not what we sent: collision or jammed line */
     TMC2209_ERR_SYNC,         /**< reply sync byte or master address wrong */
     TMC2209_ERR_CRC,          /**< CRC error */
     TMC2209_ERR_REG,          /**< reply is for a register we did not ask about */
-    TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance: the write never landed */
+    TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance enough: the write didn't land right */
     TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation */
-    TMC2209_ERR_INVALID_SLOT, /**< the cache holds no usable value for that register,
+    TMC2209_ERR_INVALID_SLOT, /**< the cache holds an invalid value for that register,
                                    because none was ever written or because the driver
-                                   reset. Not a complaint about the argument */
+                                   may have a different value than the cached one. */
     TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
 } tmc2209_err_t;
 

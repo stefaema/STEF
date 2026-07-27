@@ -45,17 +45,23 @@ tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
     if (!in || !out) {
         return TMC2209_ERR_ARG;
     }
+    /* CRC first, because it covers every other byte. Inspecting a field before
+       the CRC clears it means noise landing on that field gets reported as a
+       semantic failure: a flipped bit in the register byte would come back as
+       "wrong register" rather than "corrupted", and the two call for opposite
+       responses. Checked first, corruption always reports as corruption. */
+    if (in[7] != tmc2209_crc8(in, 7)) {
+        return TMC2209_ERR_CRC;
+    }
+    /* Past here the bytes are known good, so what follows reports what they
+       say, not what caused them to say it. A driver sends only reply
+       datagrams, so anything else here is well-formed and not a reply to us.
+       Which frame it is instead is not derivable from one datagram. */
     if (in[0] != TMC2209_SYNC || in[1] != TMC2209_MASTER_ADDR) {
         return TMC2209_ERR_SYNC;
     }
-    /* Check the register before the CRC. A reply for the wrong register is a
-       different failure from a corrupted one: it means a second driver
-       answered, which retrying will not fix. */
     if ((in[2] & TMC2209_REG_MASK) != (expect_reg & TMC2209_REG_MASK)) {
         return TMC2209_ERR_REG;
-    }
-    if (in[7] != tmc2209_crc8(in, 7)) {
-        return TMC2209_ERR_CRC;
     }
     *out = ((uint32_t)in[3] << 24) | ((uint32_t)in[4] << 16) |
            ((uint32_t)in[5] << 8)  | (uint32_t)in[6];

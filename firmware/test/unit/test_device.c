@@ -179,7 +179,7 @@ static void test_adopt_fails_when_the_addressed_driver_is_absent(void)
     setup_bus(1, true, 0);            /* library talks to address 1 */
     g_mock.addr = 2;                  /* only address 2 answers */
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_TIMEOUT,
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
         tmc2209_adopt(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
@@ -776,12 +776,12 @@ static void test_silence_from_the_driver_times_out(void)
     setup_bus(0, true, 0);
     g_mock.drop_reply = 1;
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_TIMEOUT,
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
         tmc2209_adopt(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
 
-/* A reply for the wrong register means a second driver answered, which no
-   number of attempts will fix. */
+/* An intact reply naming a register nobody asked for: the reply stream has
+   slipped a transaction. Not retried, so the read count stays at one. */
 static void test_wrong_register_reply_fails_without_retrying(void)
 {
     setup_bus(0, true, 3);
@@ -813,8 +813,86 @@ static void test_passthrough_moves_bytes_verbatim(void)
     tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
+    size_t got = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bus_xfer(&g_bus, req, sizeof req, reply, sizeof reply));
+        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+    TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
+
+    uint32_t v = 0;
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+        tmc2209_frame_parse_reply(reply, (uint8_t)TMC2209_MSCNT, &v));
+    TEST_ASSERT_EQUAL_HEX32(0x1234u, v);
+}
+
+/* Silence and a severed reply are different faults at different ends of the
+   cable, and the count is the only thing that tells them apart. */
+static void test_passthrough_reports_silence_as_zero_bytes(void)
+{
+    setup_ready();
+    g_mock.drop_reply = 1;
+
+    uint8_t req[TMC2209_READ_REQ_LEN];
+    tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
+
+    uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
+    size_t got = 99;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
+        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+    TEST_ASSERT_EQUAL_size_t(0, got);
+}
+
+static void test_passthrough_reports_a_partial_reply(void)
+{
+    setup_ready();
+    g_mock.truncate_reply = 1;
+    g_mock.reply_keep     = 5;
+
+    uint8_t req[TMC2209_READ_REQ_LEN];
+    tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
+
+    uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
+    size_t got = 0;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
+        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+    TEST_ASSERT_EQUAL_size_t(5, got);
+
+    /* The bytes that did arrive are the real ones, which is what makes them
+       worth handing back. */
+    TEST_ASSERT_EQUAL_HEX8(TMC2209_SYNC, reply[0]);
+    TEST_ASSERT_EQUAL_HEX8(TMC2209_MASTER_ADDR, reply[1]);
+}
+
+/* Our own bytes failing to return is a fault on the transmit side. Reporting it
+   as a timeout would send someone to the far end of the cable. */
+static void test_passthrough_short_echo_is_not_a_driver_timeout(void)
+{
+    setup_ready();
+    g_mock.truncate_echo = 1;
+    g_mock.echo_keep     = 2;
+
+    uint8_t req[TMC2209_READ_REQ_LEN];
+    tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
+
+    uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
+        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, NULL));
+}
+
+/* A collision does not gag the driver, so the answer is still collected. */
+static void test_passthrough_echo_mismatch_still_collects_the_reply(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_MSCNT, 0x1234u);
+    g_mock.corrupt_echo = 1;
+
+    uint8_t req[TMC2209_READ_REQ_LEN];
+    tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
+
+    uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
+    size_t got = 0;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
+        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+    TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
 
     uint32_t v = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK,
@@ -830,7 +908,8 @@ static void test_passthrough_write_desyncs_until_invalidated(void)
 
     uint8_t dg[TMC2209_WRITE_LEN];
     tmc2209_frame_write(dg, 0, (uint8_t)TMC2209_SGTHRS, 0x99u);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bus_xfer(&g_bus, dg, sizeof dg, NULL, 0));
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+        tmc2209_bus_send(&g_bus, dg, sizeof dg, NULL, 0, NULL));
 
     tmc2209_invalidate_owned(&g_dev);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
@@ -848,8 +927,9 @@ static void test_passthrough_rejects_oversized_frames(void)
     setup_ready();
     uint8_t big[64] = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_bus_xfer(&g_bus, big, sizeof big, NULL, 0));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_bus_xfer(&g_bus, big, 0, NULL, 0));
+        tmc2209_bus_send(&g_bus, big, sizeof big, NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
+        tmc2209_bus_send(&g_bus, big, 0, NULL, 0, NULL));
 }
 
 void run_device_tests(void)
@@ -918,6 +998,10 @@ void run_device_tests(void)
     RUN_TEST(test_non_echoing_port_works);
 
     RUN_TEST(test_passthrough_moves_bytes_verbatim);
+    RUN_TEST(test_passthrough_reports_silence_as_zero_bytes);
+    RUN_TEST(test_passthrough_reports_a_partial_reply);
+    RUN_TEST(test_passthrough_short_echo_is_not_a_driver_timeout);
+    RUN_TEST(test_passthrough_echo_mismatch_still_collects_the_reply);
     RUN_TEST(test_passthrough_write_desyncs_until_invalidated);
     RUN_TEST(test_passthrough_rejects_oversized_frames);
 }

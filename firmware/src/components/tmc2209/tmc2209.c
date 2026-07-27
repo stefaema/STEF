@@ -42,30 +42,43 @@ static tmc2209_err_t port_tx(const tmc2209_bus_t *bus, const uint8_t *buf, size_
     if (n < 0) {
         return TMC2209_ERR_IO;
     }
-    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TIMEOUT;
+    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TX_TIMEOUT;
 }
 
-static tmc2209_err_t port_rx(const tmc2209_bus_t *bus, uint8_t *buf, size_t len)
+/* @p got reports how many bytes actually arrived, which is the difference
+   between a driver that stayed silent and one that answered and was cut off.
+   NULL when the caller only needs the verdict. */
+static tmc2209_err_t port_rx(const tmc2209_bus_t *bus, uint8_t *buf, size_t len,
+                             size_t *got)
 {
+    if (got) {
+        *got = 0;
+    }
     int n = bus->port->rx(bus->port->ctx, buf, len, bus->timeout_ms);
     if (n < 0) {
         return TMC2209_ERR_IO;
     }
+    if (got) {
+        *got = (size_t)n;
+    }
     trace(bus, false, buf, (size_t)n);
-    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TIMEOUT;
+    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_RX_TIMEOUT;
 }
 
-/* Echo is evidence, not litter: a mismatch means something else drove the line. */
+/* Echo is evidence, not litter. Short and altered are both "not what we sent". */
 static tmc2209_err_t verify_echo(const tmc2209_bus_t *bus, const uint8_t *sent, size_t len)
 {
     if (!bus->port->echoes) {
         return TMC2209_OK;
     }
-    uint8_t echo[MAX_XFER];
     if (len > MAX_XFER) {
         return TMC2209_ERR_ARG;
     }
-    tmc2209_err_t err = port_rx(bus, echo, len);
+    uint8_t echo[MAX_XFER];
+    tmc2209_err_t err = port_rx(bus, echo, len, NULL);
+    if (err == TMC2209_ERR_RX_TIMEOUT) {
+        return TMC2209_ERR_ECHO;
+    }
     if (err != TMC2209_OK) {
         return err;
     }
@@ -92,7 +105,7 @@ static tmc2209_err_t read_once(const tmc2209_bus_t *bus, uint8_t addr,
     }
 
     uint8_t reply[TMC2209_REPLY_LEN];
-    err = port_rx(bus, reply, sizeof reply);
+    err = port_rx(bus, reply, sizeof reply, NULL);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -127,8 +140,8 @@ static tmc2209_err_t read_retrying(const tmc2209_bus_t *bus, uint8_t addr,
         if (err == TMC2209_OK) {
             return TMC2209_OK;
         }
-        /* A reply for the wrong register means another driver answered.
-           Retrying will not change that. */
+        /* Draining what is already buffered needs purge_rx, which the port need
+           not supply, so a retry can read the same bytes back. */
         if (err == TMC2209_ERR_REG || err == TMC2209_ERR_ARG) {
             return err;
         }
@@ -227,8 +240,8 @@ static tmc2209_err_t validate_batch(const tmc2209_regval_t *ops, size_t n)
     return TMC2209_OK;
 }
 
-/* True when a later op targets the same register. Makes "last value wins" true
-   without transmitting what it overwrites. @p at indexes @p ops. */
+/* True when a later op targets the same register (thus it will have no effect after batch completes).
+ @p at indexes @p ops. */
 static bool superseded(const tmc2209_regval_t *ops, size_t count, size_t at)
 {
     for (size_t later = at + 1; later < count; later++) {
@@ -544,8 +557,6 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version)
     if (err != TMC2209_OK) {
         return err;
     }
-    /* The one field of IOIN that never changes. Reported, not judged: which
-       revisions are acceptable is the caller's policy. */
     *version = tmc2209_ioin_decode(raw).version;
     return TMC2209_OK;
 }
@@ -559,7 +570,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
     if (access == 0) {
         return TMC2209_ERR_ARG;
     }
-    if (!(access & TMC2209_ACC_R)) {
+    if (!(access & TMC2209_ACCESS_READ)) {
         return TMC2209_ERR_ACCESS;   /* write-only driver-side; nothing to read */
     }
 
@@ -586,7 +597,7 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
     for (int slot = 0; slot < TMC2209_REG_COUNT && err == TMC2209_OK; slot++) {
         /* Only owned registers the driver answers for; the other eight are W-O. */
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_OWNED ||
-            !(tmc2209_reg_access_at(slot) & TMC2209_ACC_R)    ||
+            !(tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ)    ||
             !(dev->valid & (1U << slot))) {
             continue;
         }
@@ -644,10 +655,13 @@ void tmc2209_invalidate_owned(tmc2209_t *dev)
 
 /* ── Passthrough ────────────────────────────────────────────────────────── */
 
-tmc2209_err_t tmc2209_bus_xfer(const tmc2209_bus_t *bus,
+tmc2209_err_t tmc2209_bus_send(const tmc2209_bus_t *bus,
                                const uint8_t *tx, size_t tx_len,
-                               uint8_t *rx, size_t rx_len)
+                               uint8_t *rx, size_t rx_len, size_t *rx_got)
 {
+    if (rx_got) {
+        *rx_got = 0;
+    }
     if (!bus || !bus->port || !tx || tx_len == 0 || tx_len > MAX_XFER) {
         return TMC2209_ERR_ARG;
     }
@@ -662,8 +676,20 @@ tmc2209_err_t tmc2209_bus_xfer(const tmc2209_bus_t *bus,
     if (err == TMC2209_OK) {
         err = verify_echo(bus, tx, tx_len);
     }
-    if (err == TMC2209_OK && rx_len > 0) {
-        err = port_rx(bus, rx, rx_len);
+
+    /* A collision does not stop the driver from answering, and whether it did
+       is exactly what a diagnostic is asking. So the reply is collected even
+       after a bad echo, and the echo verdict survives as the return value
+       because it names the earlier and more specific fault. */
+    if ((err == TMC2209_OK || err == TMC2209_ERR_ECHO) && rx_len > 0) {
+        size_t got = 0;
+        tmc2209_err_t reply_err = port_rx(bus, rx, rx_len, &got);
+        if (rx_got) {
+            *rx_got = got;
+        }
+        if (err == TMC2209_OK) {
+            err = reply_err;
+        }
     }
 
     bus_unlock(bus);
