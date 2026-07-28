@@ -12,6 +12,11 @@
  *   - Verdicts come from tmc2209_verify_config(), which returns pass or fail
  *     rather than a number.
  *
+ * Alongside those, the driver's four control lines. They are levels rather
+ * than registers, so they do not fit the three families above, but what each
+ * one means is the datasheet's answer and not the board's. See
+ * tmc2209_lines.h.
+ *
  * The library reports conditions and never decides responses. What
  * GSTAT.reset means is a fact about the driver; whether it should fault the reel
  * is control policy and lives above.
@@ -23,6 +28,7 @@
 #define TMC2209_H
 
 #include "tmc2209_err.h"
+#include "tmc2209_lines.h"
 #include "tmc2209_port.h"
 #include "tmc2209_reg.h"
 
@@ -45,6 +51,7 @@ typedef struct {
 /** @brief One driver, and everything known about what it currently holds. */
 typedef struct {
     const tmc2209_bus_t *bus;            /**< UART comm channel */
+    const tmc2209_lines_t *lines;        /**< control lines, NULL until attached */
     uint8_t  addr;                       /**< 0..3, set by the MS1/MS2 straps */
     uint8_t  ifcnt;                      /**< last observed write counter */
     uint32_t cache[TMC2209_REG_COUNT];   /**< last known value per slot */
@@ -325,6 +332,101 @@ tmc2209_err_t tmc2209_set_velocity(tmc2209_t *dev, int32_t v);
  * @return as tmc2209_write() for a one-register batch
  */
 tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c);
+
+/* ── Lines ──────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Gives the device its control lines.
+ *
+ * Separate from tmc2209_init() because it is optional. A configuration-only
+ * caller, and the unit suite, never attach any, and every line call then
+ * reports TMC2209_ERR_UNWIRED rather than needing a stub backend.
+ *
+ * @param dev    initialised device
+ * @param lines  borrowed, must outlive @p dev. NULL detaches
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG  null device, or a backend without read/write
+ */
+tmc2209_err_t tmc2209_attach_lines(tmc2209_t *dev, const tmc2209_lines_t *lines);
+
+/** @brief True when @p line is attached and this board connects it. */
+bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line);
+
+/**
+ * @brief Reads the level presently on a line.
+ *
+ * Electrical, uninterpreted. An output answers with the level being driven,
+ * which is what makes this the read-back after a write.
+ *
+ * This and IOIN observe the same pins from opposite ends of the trace, one
+ * from the ESP32 and one from the driver, so a disagreement between them is
+ * evidence neither reading can produce alone. See tmc2209_poll_pins().
+ *
+ * @param dev    device
+ * @param line   line to read
+ * @param level  the level, untouched on failure
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG      null argument, or a line outside the enum
+ * @retval TMC2209_ERR_UNWIRED  no backend, or this board does not connect it
+ * @retval TMC2209_ERR_IO       the backend failed for its own reasons
+ */
+tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool *level);
+
+/**
+ * @brief Drives a line to a level.
+ *
+ * Electrical and immediate: no polarity applied, no sequencing, no
+ * preconditions checked. Driving STEP low then high is one microstep only if
+ * each level was held for the part's minimum pulse width, which nothing here
+ * measures and nothing here waits for.
+ *
+ * @param dev    device
+ * @param line   an output line
+ * @param level  level to drive
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG      null device, or a line outside the enum
+ * @retval TMC2209_ERR_UNWIRED  no backend, or this board does not connect it
+ * @retval TMC2209_ERR_ACCESS   the line is an input, in practice DIAG
+ * @retval TMC2209_ERR_IO       the backend failed for its own reasons
+ */
+tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level);
+
+/**
+ * @brief Enables or disables the power stage.
+ *
+ * ENN's polarity is a property of the part, so it is applied here and the
+ * caller says what it wants rather than what level achieves it.
+ *
+ * Nothing is checked and nothing is refused. A driver whose CHOPCONF.toff is
+ * zero enables and still holds no current, which is a fact worth learning from
+ * a poll rather than from a rejected call.
+ *
+ * Worth knowing when reading DRV_STATUS afterwards: open load and cs_actual
+ * describe a power stage that is driving. A disabled driver reports them
+ * anyway, and they mean nothing.
+ *
+ * @param dev  device
+ * @param on   true drives ENN low
+ *
+ * @return as tmc2209_line_write() for ENN
+ */
+tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on);
+
+/**
+ * @brief Reads back whether the power stage is enabled.
+ *
+ * The ESP32's view. IOIN.enn is the driver's, and tmc2209_poll_pins() is how
+ * to ask for it.
+ *
+ * @param dev  device
+ * @param on   true when ENN is low, untouched on failure
+ *
+ * @return as tmc2209_line_read() for ENN
+ */
+tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on);
 
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 

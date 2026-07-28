@@ -31,7 +31,9 @@ typedef enum {
     TMC2209_ERR_CRC,          /**< CRC error */
     TMC2209_ERR_REG,          /**< reply is for a register we did not ask about */
     TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance enough: the write didn't land right */
-    TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation */
+    TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation,
+                                   or the line named is one the driver drives rather than reads */
+    TMC2209_ERR_UNWIRED,      /**< the line is not connected on this board */
     TMC2209_ERR_INVALID_SLOT, /**< the cache holds an invalid value for that register,
                                    because none was ever written or because the driver
                                    may have a different value than the cached one. */
