@@ -4,9 +4,9 @@
    what makes them writable from here. */
 bool tmc2209_line_is_output(tmc2209_line_t line)
 {
-    return line == TMC2209_LINE_ENN
-        || line == TMC2209_LINE_DIR
-        || line == TMC2209_LINE_STEP;
+    return (bool)(line == TMC2209_LINE_ENN
+               || line == TMC2209_LINE_DIR
+               || line == TMC2209_LINE_STEP);
 }
 
 bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line)
@@ -89,7 +89,7 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
 
 tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on)
 {
-    return tmc2209_line_write(dev, TMC2209_LINE_ENN, !on);
+    return tmc2209_line_write(dev, TMC2209_LINE_ENN, (bool)!on);
 }
 
 tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on)
@@ -97,7 +97,7 @@ tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on)
     bool level = false;
     tmc2209_err_t err = tmc2209_line_read(dev, TMC2209_LINE_ENN, &level);
     if (err == TMC2209_OK) {
-        *on = !level;
+        *on = (bool)!level;
     }
     return err;
 }
