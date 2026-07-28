@@ -12,25 +12,19 @@ Scope: what this is, how to build, flash and test, and where the source lives.
 One tree, one language per file. Translations are deferred: each file gets its
 pair once its content freezes, and the layout for that is decided then.
 
-One directory per thesis chapter, so assembly is a concatenation and not a
-surgery.
+One file per thesis section, so assembly is a concatenation and not a surgery.
 
 | Path | Contents | Thesis | Language |
 |---|---|---|---|
-| `docs/theory/` | What a reader must have read to follow the body. Linear, read once. | Marco Teórico | castellano |
-| `docs/appendix/` | What a reader consults to verify or reproduce. Tables, lookups. | Apéndice | castellano |
-| `docs/development/` | How this firmware is built and why. | Desarrollo de Firmware | English |
-| `docs/dev/` | Bench notes and roadmap. | never | English |
-| `docs/design.md` | **Superseded.** The quarry the three tiers above are being cut from. Delete when empty. | never | English |
-
-The `theory` / `appendix` split is by **how the reader uses the file**, not by
-topic: front-to-back once, or looked up at random. A register table is
-consult-material by definition, so it lands in `appendix/` no matter how
-theoretical its subject.
+| `docs/README.md` | Architecture, then the design of each component. | Desarrollo de Firmware | English |
+| `docs/api_reference.md` | Generated from the source headers by CI/CD. | Apéndice | English |
+| `docs/theory.md` | What a reader must have read to follow the body. Linear, read once. | Marco Teórico | castellano |
+| `docs/top-bottom-assessment.md` | Where the design stands against its targets. | never | English |
+| `docs/dev_notes.md` | Bench notes. | never | English |
 
 Hardware (carrier board, driver boards, RJ45 pinout, straps) is deliberately
 **not** here. It belongs to `boards/`, not to the firmware. Until that tree
-exists the material stays in `docs/design.md` §6 and `docs/dev/notes.md`.
+exists the material stays in `docs/dev_notes.md`.
 
 Filenames stay English everywhere, including in the Spanish tier, so a file and
 its future translation can share a name.
