@@ -23,7 +23,7 @@
 #include "devices.h"
 #include "rpc_dispatch.h"
 #include "rpc_methods.h"
-#include "rpc_proto.h"
+#include "rpc_api.h"
 #include "rpc_status.h"
 #include "rpc_wire.h"
 #include "tmc2209.h"

@@ -13,7 +13,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "rpc_dispatch.h"
-#include "rpc_proto.h"
+#include "rpc_api.h"
 #include "rpc_wire.h"
 #include "watchdog.h"
 

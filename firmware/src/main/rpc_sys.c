@@ -4,7 +4,7 @@
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "rpc_proto.h"
+#include "rpc_api.h"
 #include "rpc_wire.h"
 #include "tmc2209.h"
 #include "watchdog.h"

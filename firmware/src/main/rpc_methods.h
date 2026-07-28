@@ -14,8 +14,8 @@
 #ifndef RPC_METHODS_H
 #define RPC_METHODS_H
 
+#include "rpc_api.h"
 #include "rpc_dispatch.h"
-#include "rpc_proto.h"
 
 /** @brief `sys` methods, indexed by @ref rpc_sys_method_t. */
 extern const rpc_handler_fn rpc_sys_methods[RPC_SYS_COUNT];

@@ -13,11 +13,11 @@ typedef struct {
     size_t                count;
 } rpc_namespace_t;
 
-static rpc_namespace_t s_namespaces[RPC_NS_COUNT];
+static rpc_namespace_t s_namespaces[RPC_NS_MAX];
 
 bool rpc_register(uint8_t ns, const rpc_handler_fn *methods, size_t count)
 {
-    if (ns >= RPC_NS_COUNT || methods == NULL) {
+    if (ns >= RPC_NS_MAX || methods == NULL) {
         return false;
     }
 
@@ -28,7 +28,7 @@ bool rpc_register(uint8_t ns, const rpc_handler_fn *methods, size_t count)
 
 void rpc_reset_registry(void)
 {
-    for (size_t i = 0; i < RPC_NS_COUNT; i++) {
+    for (size_t i = 0; i < RPC_NS_MAX; i++) {
         s_namespaces[i].methods = NULL;
         s_namespaces[i].count   = 0;
     }
@@ -41,7 +41,7 @@ rpc_status_t rpc_dispatch(const rpc_req_t *req, rpc_reader_t *args,
         return RPC_INTERNAL;
     }
 
-    if (req->ns >= RPC_NS_COUNT) {
+    if (req->ns >= RPC_NS_MAX) {
         return RPC_NO_METHOD;
     }
 

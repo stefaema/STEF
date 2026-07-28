@@ -304,4 +304,131 @@ Características:
 
 - **`VACTUAL` y `STEP` se pelean el motor.** Es el mismo conflicto que aparece en el bus UART, visto desde este lado. Se revisa solo cuando el shadow puede contestar, porque una negativa fabricada a partir de un slot inválido es peor que la ausencia del chequeo.
 
-### Comunicación con la PC: Librería `rpc`
+## Comunicación con la PC: Librería `rpc`
+
+Del otro lado del firmware, habrá una PC que quiere cosas distintas según el momento: diagnosticar un driver que no contesta, verificar que la librería hace lo que dice, saber si el firmware está en condiciones de recibir órdenes, pedir un escaneo. Son pedidos de naturaleza distinta, pero todos necesitan lo mismo: que un mensaje llegue entero, que se sepa a qué función corresponde, y que la respuesta vuelva asociada a su pedido.
+
+Eso es lo que se conoce como un Remote Procedure Call (RPC) y es todo lo que hace este componente. `rpc` no nombra ni un solo método, solamente mueve tramas. Para poder hacer que el pasaje de mensajes sea realmente llamadas a procedimientos, `main` mapea las tramas a funciones al arrancar, y es de lo que habla la sección siguiente.
+
+Lo que entonces engloba a la librería en sí son cuatro componentes:
+
+| Componente | Qué resuelve |
+| --- | --- |
+| `cobs` | Una trama debe ser identificada como tal. La codificación `cobs` garantiza que no quede ningún cero adentro de la trama, entonces podemos utilizar ese cero para darle fin a la misma, nunca significando otra cosa. De esta forma, un receptor perdido se resincroniza a lo sumo una trama después. No se perdería el canal de comunicación indefinidamente, como sí pasaría si se usara un campo de longitud, por ejemplo.|
+| `crc16` | Una trama bien delimitada todavía puede venir corrupta. El CRC hace que se rechace en vez de decodificarse. |
+| `rpc_wire` | Lee y escribe los campos de una trama, con ancho y orden de bytes explícitos y nada copiado desde memoria. |
+| `rpc_dispatch` | Convierte un namespace y un número de método en una llamada, contra tablas que alguien de afuera registra. |
+| `rpc_proto` | Lo mínimo que las dos puntas tienen que acordar para intercambiar una trama: qué tipos de trama hay, cuán grande puede ser, y que un estado es un byte. |
+
+De esta forma, además podemos concluir:
+
+**Por el cable viajan escalares, nunca structs.** Un struct es un layout de memoria, y un layout es padding, ancho de enum y tamaño de `bool`. Dos compiladores, uno apuntando a xtensa y otro a x86-64, tienen todo el derecho a no coincidir en los tres, y agregarle un campo a una estructura corre de lugar todo lo que sigue mientras los dos extremos siguen reportando la misma versión. Ningún handshake atrapa eso, porque los dos están diciendo la verdad. Como cada struct decodificado de la librería es una vista de un `uint32_t`, lo que cruza es ese `uint32_t` y la PC reconstruye la vista de su lado.
+
+**El serializador se escribe una sola vez.** Escribirlo de los dos lados son dos implementaciones de un mismo acuerdo, y la segunda se desincroniza. Así que `rpc_wire.c` y los codecs de registro son C portable sin nada de ESP-IDF, la PC los compila como biblioteca compartida, y las dos puntas ejecutan el mismo código objeto. Ese es también el motivo de que no haya CBOR ni protobuf: existen para negociar estructura entre partes que no pueden compartir código, y estas dos sí pueden.
+
+Lo que no está en `rpc_proto.h` es tan importante como lo que está: ni un namespace, ni un número de método, ni ninguno de los estados que puede devolver un handler. Eso describe qué sirve este firmware y no cómo viaja una trama, así que vive en `main`. Un componente que nombrara `raw.move` sería un componente que hay que tocar cada vez que cambia la librería.
+
+Por eso el estado es un `uint8_t` y no un enum: el componente se queda con los suyos, los tres que puede producir sin llegar a un handler, numerados desde el 32 para que el vocabulario de arriba crezca por debajo sin chocar nunca.
+
+Sobre esa base, tres tipos de trama comparten el enlace y el primer byte dice cuál es: pedido, respuesta y log. La respuesta repite el identificador del pedido que contesta, lo que evita que una respuesta demorada se lea como la de otra pregunta. El log es la única trama que sale sin que nadie la haya pedido: no espera acuse, no obliga a nada, y un cliente al que no le interesa la descarta mirando un solo byte. Que exista como tipo de trama es del transporte; quién la produce y por qué es de `main`.
+
+## Interfaces RPC. `main` I
+
+`rpc` mueve tramas y no sabe qué significan. Los significados viven acá, en `rpc_api.h`, y se registran al arrancar con una llamada por namespace.
+
+Ese header es el otro lado de la división, y está en `main` por el mismo motivo que `board.h`: nombra drivers, registros y llamadas de la librería, así que cambia cuando cambia esta máquina y el transporte no. Los dos extremos lo compilan, igual que al del componente, porque un número de método escrito dos veces se desincroniza en silencio: la PC pide el método 4 y el firmware ejecuta el que antes era el 4.
+
+Son cuatro namespaces, y la pregunta que los ordena es a quién le está hablando la PC en cada caso:
+
+| Namespace | La PC le habla | Quién arma los bytes que van al driver |
+| --- | --- | --- |
+| `passthrough` | al **driver** | la PC |
+| `raw` | a la **librería** | el firmware, a partir del registro que le nombres |
+| `sys` | al **sistema** | nadie, no hay driver en la pregunta |
+| `smart` | al **digitalizador** | el firmware, a partir del resultado que le pidas |
+
+### Hablarle al driver: `passthrough`
+
+La primera necesidad es probar el driver, y ahí el ESP32 tiene que desaparecer lo más posible. Si el datagrama que sale del cable lo armó el firmware, entonces cuando algo no anda hay dos sospechosos y no uno.
+
+Por eso este namespace nació pegado a `tmc2209_bus_send()`, que es la función de la librería que existe para esto mismo: bytes crudos adentro, bytes crudos afuera. La PC arma el datagrama completo, con su dirección y su CRC, usando los mismos codecs que usa el firmware, y recibe de vuelta lo que el driver haya contestado sin interpretar. Un CRC malo no es un error acá, es el dato: puede ser exactamente lo que el experimento quería provocar. Una respuesta corta se informa con cuántos bytes llegaron.
+
+Tiene un solo método, `passthrough.send`, y va a seguir teniendo uno solo.
+
+Lo único que el firmware sí hace por su cuenta es invalidar el shadow después de una escritura por acá, porque un datagrama que la librería no armó es uno del que no puede responder.
+
+### Hablarle a la librería: `raw`
+
+La segunda necesidad es probar la librería, y para eso hace falta poder llamarla. `raw` es exactamente eso: una proyección de la API pública de `tmc2209.h` sobre RPC, un método por función, mismos parámetros, misma semántica y mismos errores. Los nombres de error son los de la librería sin el prefijo, porque `raw` no inventa errores y entonces tampoco necesita inventar un vocabulario para nombrarlos.
+
+Esa correspondencia es la regla de borde: si es una llamada `tmc2209_*` va acá, y nada de lo que hay acá decide nada que la librería no haya decidido antes. La numeración de métodos sigue el orden del header.
+
+Una consecuencia que conviene tener presente: el shadow es visible en este nivel, no está escondido detrás. `raw` es crudo respecto del ESP32, y el shadow es parte de lo que el ESP32 es, así que preguntarle a la caché y preguntarle al silicio son dos preguntas distintas y por lo tanto dos métodos distintos.
+
+### Hablarle al sistema: `sys`
+
+El único namespace cuyas preguntas no son sobre un driver. Antes de que un `raw` signifique algo, la PC necesita saber que está hablando con este firmware, en una versión de protocolo que entiende, y sobre una placa donde los nombres de dispositivo significan lo que ella supone. Ninguno de los otros tres puede contestar eso, porque los tres lo dan por sentado.
+
+`sys.version` es el método que se contesta primero y el único que tiene que poder contestarse en un enlace cuya versión todavía no se acordó, así que la forma de su respuesta no puede cambiar nunca. Después vienen las preguntas de estado: qué está haciendo el firmware, si hay un escaneo en curso que hace que un `raw` o `passthrough` sea inválido en este momento, y qué dispositivos declara la placa. Todo eso son hechos sobre el ESP32 y no llamadas `tmc2209_*`, que es justamente lo que los mantiene fuera de `raw`.
+
+### hablarle al digitalizador: `smart`
+
+La cuarta necesidad es que la PC deje de mandar señales una por una. Un lazo de tensión que vive del otro lado de un cable serie paga latencia en cada iteración, y el firmware ya tiene todo lo que ese lazo necesita.
+
+Pero `smart` todavía no se puede diseñar, porque dos de sus respuestas son mediciones y no decisiones:
+
+1. ¿Cómo se mantiene la película lo suficientemente tensa?
+2. ¿Cómo converge un movimiento a un cuadro que el algoritmo de visión acepte, lo suficientemente rápido?
+
+Las dos se contestan experimentando, y lo bueno es que el experimento no necesita que `smart` exista: cada estrategia candidata se maneja con corriente y velocidad por dispositivo, que es exactamente lo que `raw` ya expone. Se prueban desde Python sobre el RPC que ya está, y `smart` después implementa la que ganó. Lo que queda configurable son los números, no la estrategia: una API con una bandera para elegir estrategia suele ser una decisión que nunca se tomó.
+
+Con eso en mente, las funciones tentativas se parecerían más a esto que a un espejo de la librería:
+
+- `set_initial_reels_radii(feed_mm, takeup_mm)`
+- `enforce_tension(level)`
+- `move(mm)`
+- `calibrate()`
+
+## Orquestación. `main` II
+
+Las dos librerías no se conocen entre sí y ninguna sabe en qué placa está. Alguien tiene que decidir qué existe, construirlo, conectarlo y decidir qué hacer cuando algo sale mal. Eso es el resto de `main`, y son cinco archivos con una responsabilidad cada uno.
+
+| Archivo | Qué decide |
+| --- | --- |
+| `board.h` / `board.c` | Qué drivers existen, con qué dirección, en qué pines y a qué velocidad. Los números salen de Kconfig, así que una placa de banco cableada distinta es `idf.py menuconfig` y no un parche. |
+| `backends.c` | Cómo se cumplen los contratos de la librería contra periféricos reales: UART, GPIO. Nada de política acá, solo "los bytes salieron" y "el pin está en alto". |
+| `devices.c` | Construye cada driver de la tabla y le acopla sus backends, una sola vez y al arrancar. |
+| `watchdog.c` | Qué pasa cuando la PC deja de hablar. |
+| `dev_main.c` | El orden en que todo eso ocurre. |
+
+### La raíz de composición
+
+Que las dos librerías existen ya lo saben los puentes: `rpc_raw.c` incluye `tmc2209.h` y `rpc_dispatch.h`, porque es justamente donde se tocan. Lo que ninguno de ellos decide es si están instalados. `dev_main.c` sí, y es el único archivo al que nadie llama: los demás ofrecen una capacidad, este elige cuáles entran en esta imagen. Registra los tres namespaces, levanta el enlace y recién después construye los dispositivos.
+
+Ese orden es a propósito y es al revés de lo que uno escribiría primero. La construcción es lo más probable que falle en una placa cableada a mano, y una falla que ocurre antes de que exista un lugar donde reportarla es una falla que nadie ve. Por eso el enlace sube primero, y por eso una construcción fallida no es fatal: el enlace queda arriba, `sys.state` responde `FAULT`, y la PC se entera de qué pasó. Una placa que se queda muda cuando su cableado está mal es una placa que se depura con un multímetro en vez de con la herramienta que ya tenés abierta.
+
+La otra decisión de esa raíz es que no hace nada por su cuenta. Una placa de desarrollo que mueve un motor al arrancar es una placa que no podés dejar enchufada, y además todo lo que esta imagen sabe hacer es alcanzable desde la PC de todos modos.
+
+### Construir siempre, no cuando haga falta
+
+`devices.c` construye todos los drivers de la tabla al arrancar, sin condiciones. No hay un modo en el que un dispositivo todavía no exista.
+
+La alternativa, construirlos cuando alguien los pide, hace que el camino de producción y el camino probado sean dos caminos distintos. Así, en cambio, el estado desde el que arranca un escaneo y el estado que ve un script de diagnóstico son el mismo estado, alcanzado por el mismo código.
+
+Lo que varía entre placas entonces no es *si* un dispositivo existe, sino qué tiene. Un driver sin generador de pasos contesta `NO_BACKEND` a un `move`; una línea que la placa no cablea contesta `UNWIRED`. Las dos son respuestas de la librería, por llamada y con motivo, y es lo que evita que haga falta una bandera de compilación para cada variante de placa.
+
+### El enlace como hombre muerto
+
+Una corrida arrancada por RPC sobrevive a la llamada que la arrancó. Si el orquestador se cae, o alguien pisa el cable, lo último que el firmware escuchó sigue vigente y el capstan sigue enrollando. El modelo pedido y respuesta no se entera, porque justamente nadie preguntó nada.
+
+Así que el enlace de control es un hombre muerto: cualquier pedido válido lo alimenta. Eso no cuesta nada, porque una PC que está moviendo ya está consultando el reporte de la corrida, y un latido dedicado solo llevaría información en las raras ocasiones en que no hubiera nada más que decir. Solo lo arma una corrida en vuelo, así que una placa quieta puede quedarse una hora sin que nadie le hable.
+
+Dos detalles de implementación que valen más que su tamaño. El chequeo no es una tarea ni un callback de timer: corre en la misma tarea que ya es dueña de los dispositivos, porque la librería es de un solo dueño por diseño y un segundo contexto llamando a un dispositivo en medio de una transacción sería una carrera con un motor colgando. Y el plazo se acota por arriba, para que un llamador no lo desactive de hecho pidiendo un año.
+
+### Un solo cable
+
+El USB nativo hace todo: flashear, JTAG y esto. Entonces `ESP_LOGI` no puede seguir escribiendo texto plano, porque texto suelto entre tramas es exactamente lo que un desentramador no debe recibir. Levantar el enlace redirige el flujo de log hacia adentro, y desde ese momento un log es una trama como cualquier otra, que termina del lado de la PC junto a los eventos que explica.
+
+El precio es que el puerto tiene un solo dueño: no hay una segunda terminal mirando el mismo cable, y flashear implica cerrar el enlace.
+
+Un detalle del lado de la PC que no es del protocolo pero interesa igual: abrir el puerto serie afirma DTR y RTS por defecto, que es justamente lo que usa `esptool` para meter al chip en el bootloader. Hay que suprimirlos al abrir, o cada conexión reinicia la placa.

@@ -21,6 +21,7 @@ unsigned fake_watchdog_arms(void);
 #include "mock_tmc2209.h"
 #include "rpc_dispatch.h"
 #include "rpc_methods.h"
+#include "rpc_api.h"
 #include "rpc_proto.h"
 #include "rpc_wire.h"
 #include "tmc2209_frame.h"

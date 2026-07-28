@@ -8,6 +8,14 @@
 #include <string.h>
 
 #include "rpc_wire.h"
+
+/* The wire moves bytes and does not know what a namespace or a status means,
+   so neither does this test. Any numbers will do, and using the ones this
+   image happens to serve would be the coupling rpc_proto.h was split to
+   avoid. */
+#define A_NAMESPACE  2u
+#define A_METHOD     7u
+#define A_STATUS     10u
 #include "unity.h"
 
 void test_wire_writes_little_endian_fixed_widths(void)
@@ -111,7 +119,7 @@ void test_wire_request_frame_roundtrips(void)
     uint8_t      buf[64];
     rpc_writer_t w;
 
-    rpc_frame_begin_req(&w, buf, sizeof(buf), 0x1234, RPC_NS_SYS, RPC_SYS_VERSION);
+    rpc_frame_begin_req(&w, buf, sizeof(buf), 0x1234, A_NAMESPACE, A_METHOD);
     size_t len = rpc_frame_finish(&w);
     TEST_ASSERT_GREATER_THAN(0, len);
 
@@ -123,8 +131,8 @@ void test_wire_request_frame_roundtrips(void)
     rpc_req_t req;
     TEST_ASSERT_TRUE(rpc_req_header(&r, &req));
     TEST_ASSERT_EQUAL_UINT16(0x1234, req.id);
-    TEST_ASSERT_EQUAL_UINT8(RPC_NS_SYS, req.ns);
-    TEST_ASSERT_EQUAL_UINT8(RPC_SYS_VERSION, req.method);
+    TEST_ASSERT_EQUAL_UINT8(A_NAMESPACE, req.ns);
+    TEST_ASSERT_EQUAL_UINT8(A_METHOD, req.method);
     TEST_ASSERT_TRUE(rpc_r_done(&r)); /* no arguments, and none left over */
 }
 
@@ -159,7 +167,7 @@ void test_wire_rewind_and_restate_status(void)
 
     rpc_w_u32(&w, 0xAAAAAAAAu);
     rpc_w_rewind(&w, mark);
-    rpc_frame_set_status(&w, RPC_ACCESS);
+    rpc_frame_set_status(&w, A_STATUS);
 
     size_t       len = rpc_frame_finish(&w);
     uint8_t      type = 0xFF;
@@ -167,7 +175,7 @@ void test_wire_rewind_and_restate_status(void)
 
     TEST_ASSERT_TRUE(rpc_frame_open(buf, len, &type, &r));
     TEST_ASSERT_EQUAL_UINT16(9, rpc_r_u16(&r));
-    TEST_ASSERT_EQUAL_UINT8(RPC_ACCESS, rpc_r_u8(&r));
+    TEST_ASSERT_EQUAL_UINT8(A_STATUS, rpc_r_u8(&r));
     TEST_ASSERT_TRUE(rpc_r_done(&r)); /* nothing survived the rewind */
 }
 
@@ -176,7 +184,7 @@ void test_wire_rejects_corrupt_frames(void)
     uint8_t      buf[64];
     rpc_writer_t w;
 
-    rpc_frame_begin_req(&w, buf, sizeof(buf), 1, RPC_NS_RAW, 0);
+    rpc_frame_begin_req(&w, buf, sizeof(buf), 1, A_NAMESPACE, A_METHOD);
     rpc_w_u32(&w, 0x11223344u);
     size_t len = rpc_frame_finish(&w);
 
