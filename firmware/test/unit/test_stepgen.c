@@ -8,10 +8,10 @@
  * and needs hardware.
  *
  * Two themes. A move states both halves of its direction, the DIR level and the
- * shaft bit it is counting on, and a driver holding the other shaft bit refuses
- * the run rather than winding film the wrong way. And a run's count must
- * survive long enough to be collected: the backend holds one, so a second move
- * before anyone read the first is refused.
+ * shaft bit it was planned around, and both are in effect before the first
+ * pulse: a driver holding the other shaft bit is written first. And a run's
+ * count must survive long enough to be collected: the backend holds one, so a
+ * second move before anyone read the first is refused.
  */
 
 #include "unity.h"
@@ -199,7 +199,7 @@ static tmc2209_move_t a_move(bool dir, uint32_t pulses)
 static tmc2209_motion_t motion_now(void)
 {
     tmc2209_motion_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_get_motion_report(&g_dev, &motion));
     return motion;
 }
 
@@ -224,7 +224,7 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_halt(&g_dev, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_retarget(&g_dev, 1000));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_running(&g_dev, &running));
     TEST_ASSERT_EQUAL(0u, g_gen.runs);
 }
@@ -304,30 +304,48 @@ static void test_the_dir_level_reaches_the_pin_uninterpreted(void)
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
 }
 
-/* A move declares the shaft bit it is counting on. If the driver holds the
-   other one, the same DIR level winds film the opposite way, so the run is
-   refused rather than started on a belief that is already wrong. */
-static void test_a_move_that_misreads_the_shaft_bit_is_refused(void)
+/* A move states the shaft bit it was planned around, and gets it: a driver
+   holding the other value is written before the first pulse, because the level
+   and the bit only mean something as a pair. */
+static void test_a_move_writes_the_shaft_bit_it_declares(void)
+{
+    setup_ready(CFG_GCONF);
+    TEST_ASSERT_FALSE(tmc2209_gconf_decode(mock_reg(&g_mock, TMC2209_GCONF)).shaft);
+
+    tmc2209_move_t m = a_move(true, 1000);
+    m.shaft = true;
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_TRUE(tmc2209_gconf_decode(mock_reg(&g_mock, TMC2209_GCONF)).shaft);
+    TEST_ASSERT_EQUAL(1u, g_gen.runs);
+    TEST_ASSERT_TRUE(g_gen.dir_at_run);   /* DIR is still what was asked for */
+}
+
+/* The rest of GCONF survives that write. Turning the motor around must not
+   quietly undo the configuration bringup put there. */
+static void test_setting_the_shaft_bit_leaves_the_rest_of_gconf_alone(void)
 {
     setup_ready(CFG_GCONF);
 
     tmc2209_move_t m = a_move(true, 1000);
-    m.shaft = !g_shaft;
+    m.shaft = true;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_MISMATCH, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
+    TEST_ASSERT_EQUAL_HEX32(CFG_GCONF_SHAFT, mock_reg(&g_mock, TMC2209_GCONF));
 }
 
-/* And the same board with shaft set accepts the declaration that matches it. */
-static void test_a_move_that_declares_the_shaft_bit_correctly_runs(void)
+/* A driver that already holds the bit costs nothing: the write is dropped
+   before it reaches the wire, which is what the shadow is for. */
+static void test_a_move_that_needs_no_shaft_change_writes_nothing(void)
 {
     setup_ready(CFG_GCONF_SHAFT);
 
+    const unsigned writes_before = g_mock.writes_seen;
     tmc2209_move_t m = a_move(false, 1000);
     m.shaft = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(writes_before, g_mock.writes_seen);
     TEST_ASSERT_FALSE(g_gen.dir_at_run);
 }
 
@@ -720,7 +738,7 @@ static void test_dir_is_held_for_the_duration_of_a_run(void)
     TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);
 }
 
-/* The hold ends with the run and not with a call to tmc2209_poll_motion(): the
+/* The hold ends with the run and not with a call to tmc2209_get_motion_report(): the
    pin is free as soon as the last pulse is out, whether anyone asked or not. */
 static void test_dir_is_free_once_the_pulses_stop(void)
 {
@@ -769,7 +787,7 @@ static void test_a_backend_failure_yields_no_count(void)
     tmc2209_motion_t motion;
 
     g_gen.fail_state = 1;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_get_motion_report(&g_dev, &motion));
 
     g_gen.fail_state = 0;
     g_gen.fail_halt  = 1;
@@ -783,7 +801,7 @@ static void test_null_arguments_are_bad_arguments(void)
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(NULL, &m));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_motion(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_get_motion_report(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_halt(NULL, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_retarget(NULL, 1000));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_is_running(&g_dev, NULL));
@@ -798,7 +816,7 @@ static void test_init_leaves_the_stepgen_detached(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
     tmc2209_motion_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
     TEST_ASSERT_FALSE(g_dev.count_unread);
 }
 
@@ -812,8 +830,9 @@ void run_stepgen_tests(void)
 
     RUN_TEST(test_dir_is_set_before_the_first_pulse);
     RUN_TEST(test_the_dir_level_reaches_the_pin_uninterpreted);
-    RUN_TEST(test_a_move_that_misreads_the_shaft_bit_is_refused);
-    RUN_TEST(test_a_move_that_declares_the_shaft_bit_correctly_runs);
+    RUN_TEST(test_a_move_writes_the_shaft_bit_it_declares);
+    RUN_TEST(test_setting_the_shaft_bit_leaves_the_rest_of_gconf_alone);
+    RUN_TEST(test_a_move_that_needs_no_shaft_change_writes_nothing);
     RUN_TEST(test_an_unknown_gconf_stops_the_move);
 
     RUN_TEST(test_a_finished_run_reports_its_count);

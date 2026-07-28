@@ -78,7 +78,7 @@ static void stop_everything(const char *why)
 
 /*
  * A device that finished its run stops being watched. The question is asked
- * with tmc2209_is_running() and not with tmc2209_poll_motion(), because the
+ * with tmc2209_is_running() and not with tmc2209_get_motion_report(), because the
  * latter also collects the run's count, and a supervisor that collected it
  * would let the next move go ahead on an acknowledgement its owner never made.
  */

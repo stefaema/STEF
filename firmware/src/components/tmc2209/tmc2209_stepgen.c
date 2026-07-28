@@ -3,7 +3,7 @@
  *
  * The backend emits edges and counts them. What it cannot know is what has to
  * be true for those edges to move the motor: that DIR is settled and stays
- * settled, that GCONF.shaft is what the caller thinks it is, and that a
+ * settled, that GCONF.shaft is the one the move was planned around, and that a
  * non-zero VACTUAL has not quietly taken the driver off its STEP pin.
  *
  * Same division as tmc2209_enable(), which exists so that no caller has to
@@ -46,21 +46,33 @@ static tmc2209_err_t run_state(const tmc2209_t *dev, tmc2209_run_state_t *st)
         : TMC2209_OK;
 }
 
-/* GCONF.shaft inverts the phase order, so the same DIR level winds film one way
-   or the other depending on a register. The caller states which one it is
-   counting on and this refuses to move if the driver holds the other. An
-   invalid slot is a real answer here: nothing knows which way this driver would
-   turn. */
-static tmc2209_err_t shaft_is_as_declared(tmc2209_t *dev, bool shaft)
+/* GCONF.shaft inverts the phase order, so a level on DIR only means something
+   once paired with a shaft bit. The move states both and this makes the second
+   one true, which costs a datagram exactly when the driver holds the other
+   value and nothing at all when it already agrees.
+
+   The bit position stays in tmc2209_reg.c: this decodes, sets and re-encodes
+   rather than masking a 3 into a register in a second file.
+
+   An invalid slot is a real answer here. GCONF's other bits would have to be
+   invented to build the new value, and inventing configuration is worse than
+   refusing to move. */
+static tmc2209_err_t ensure_shaft(tmc2209_t *dev, bool shaft)
 {
     uint32_t raw = 0;
     tmc2209_err_t err = tmc2209_read(dev, TMC2209_GCONF, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
-    return (tmc2209_gconf_decode(raw).shaft == shaft)
-        ? TMC2209_OK
-        : TMC2209_ERR_MISMATCH;
+
+    tmc2209_gconf_t g = tmc2209_gconf_decode(raw);
+    if (g.shaft == shaft) {
+        return TMC2209_OK;
+    }
+    g.shaft = shaft;
+
+    const tmc2209_regval_t op = { TMC2209_GCONF, tmc2209_gconf_encode(&g) };
+    return tmc2209_write(dev, &op, 1, NULL);
 }
 
 /* The internal velocity generator wins over the STEP pin, silently and with no
@@ -180,7 +192,7 @@ tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m)
         return TMC2209_ERR_UNREAD;
     }
 
-    err = shaft_is_as_declared(dev, m->shaft);
+    err = ensure_shaft(dev, m->shaft);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -251,7 +263,7 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate)
         : TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_poll_motion(tmc2209_t *dev, tmc2209_motion_t *out)
+tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_t *out)
 {
     if (!out) {
         return TMC2209_ERR_ARG;

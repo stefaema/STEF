@@ -466,7 +466,7 @@ static rpc_status_t raw_motion(rpc_reader_t *args, rpc_writer_t *ret)
     }
 
     tmc2209_motion_t m   = { 0 };
-    tmc2209_err_t    err = tmc2209_poll_motion(dev, &m);
+    tmc2209_err_t    err = tmc2209_get_motion_report(dev, &m);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
     }

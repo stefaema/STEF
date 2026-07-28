@@ -224,17 +224,19 @@ Sobre esa base, la API pública:
 | Función | Qué hace |
 | --- | --- |
 | `tmc2209_attach_stepgen(dev, stepgen)` | Acopla la fuente de pulsos, una por driver. Rechaza un backend al que le falte cualquiera de sus cuatro llamadas, uno que declare `max_pps` cero, o uno que no garantice el ancho mínimo. A partir de acá el pin `STEP` es suyo y `tmc2209_line_write()` sobre `STEP` se rechaza. |
-| `tmc2209_is_running(dev, *running)` | Pregunta si están saliendo pulsos, y nada más. Es lo que consulta un supervisor, porque no recoge la cuenta. |
+| `tmc2209_is_running(dev, *running)` | Pregunta si están saliendo pulsos, y nada más. |
 | `tmc2209_move(dev, *m)` | Arranca una corrida según un plan de acción que marca sentido, velocidades, aceleración y cotas. La única llamada asíncrona de toda la librería y vuelve enseguida. |
 | `tmc2209_retarget(dev, cruise_pps)` | Cambia la tasa de crucero de una corrida en vuelo, manteniendo la rampa con la aceleración del plan de acción original. |
 | `tmc2209_halt(dev, immediate)` | Termina la corrida, cortando en el próximo pulso o desacelerando hasta `pullin_pps`. |
-| `tmc2209_poll_motion(dev, *out)` | Recoge los pulsos de la corrida, la tasa actual y si todavía está andando. Recogerla una vez terminada la corrida es lo que habilita la siguiente. |
+| `tmc2209_get_motion_report(dev, *out)` | Recoge los pulsos de la corrida, la tasa actual y si todavía está andando. Recogerlo una vez terminada la corrida es lo que habilita la siguiente. |
 
 La librería no lleva posición. Sin encoder, una posición es una suma de cuentas de corridas y nada más, y sumarlas ya es decidir qué significaron esos pulsos: hacia dónde es positivo, cuántos milímetros vale un pulso, si la película patinó. Nada de eso se puede saber acá, así que se informa la cuenta de cada corrida y quien acumula es `main`, o la capa que venga después.
 
-Lo que sí garantiza la librería es que ninguna cuenta se pierda en el camino. El backend guarda una sola, la de la corrida en curso o la última, así que arrancar una segunda corrida pisa un total que quizás nadie miró, y esos pulsos ya movieron película. Por eso un `tmc2209_move()` con una cuenta pendiente responde `TMC2209_ERR_UNREAD`, y un `tmc2209_poll_motion()` después de que la corrida terminó es lo que la salda. Consultar en el medio no salda nada, porque el total que estaría reconociendo todavía no existe.
+Lo que sí garantiza la librería es que ninguna cuenta se pierda en el camino. El backend guarda una sola, la de la corrida en curso o la última, así que arrancar una segunda corrida pisa un total que quizás nadie miró, y esos pulsos ya movieron película. Por eso un `tmc2209_move()` con una cuenta pendiente responde `TMC2209_ERR_UNREAD`, y un `tmc2209_get_motion_report()` después de que la corrida terminó es lo que la salda. Consultar en el medio no salda nada, porque el total que estaría reconociendo todavía no existe.
 
-`tmc2209_move()` es donde se junta todo, porque `DIR` es una línea, `STEP` es una tasa, y las dos tienen que estar de acuerdo antes del primer flanco. Además el sentido no se deduce: la corrida declara el nivel de `DIR` que quiere y el `GCONF.shaft` con el que está contando, y si el driver tiene el otro se rechaza en vez de moverse al revés. Qué combinación es "adelante" depende de cómo esté montado el motor, y eso no es un dato que este componente pueda tener.
+`tmc2209_move()` es donde se junta todo, porque `DIR` es una línea, `STEP` es una tasa, y las dos tienen que estar de acuerdo antes del primer flanco. Y hay un tercer dato en juego: `GCONF.shaft` invierte el orden de fases, así que un nivel en `DIR` no significa nada por sí solo, solo el par `DIR` más `shaft` decide hacia dónde gira el motor. Son cuatro combinaciones que colapsan en dos sentidos.
+
+Por eso la corrida declara los dos valores y la librería los deja en efecto: pone el nivel en `DIR` y, si el driver tiene el otro `shaft`, lo escribe antes del primer pulso. Cuando ya coincide no cuesta nada, porque el shadow descarta la escritura antes de que llegue al cable. Cuál de las combinaciones es "adelante" depende de cómo esté montado el motor y del cableado, y esa elección es de `main`: fijar `shaft` en 0 y usar `dir` para elegir el sentido es una convención perfectamente válida, y es una decisión que no pertenece acá.
 
 ```mermaid
 sequenceDiagram
@@ -253,7 +255,10 @@ sequenceDiagram
     Lib->>Lib: ¿quedó alguna cuenta sin recoger?
     Note over Lib: la anterior sin leer se perdería<br/>al arrancar esta: ERR_UNREAD
     Lib->>Lib: compara el shaft declarado contra GCONF del shadow
-    Note over Lib: slot inválido: ERR_INVALID_SLOT.<br/>El driver tiene el otro: ERR_MISMATCH
+    Note over Lib: slot inválido: ERR_INVALID_SLOT, porque el resto<br/>de GCONF habría que inventarlo
+    opt el driver tiene el otro shaft
+        Lib->>Drv: escribe GCONF con el bit corregido, verificado por IFCNT
+    end
     Lib->>Lib: lee VACTUAL del shadow
     Note over Lib: distinto de cero significa que el driver<br/>no está mirando su pin STEP: ERR_ACCESS
 
@@ -268,7 +273,7 @@ sequenceDiagram
         Gen->>Drv: tren de pulsos en STEP, rampa y crucero
     and el lazo de control sigue vivo
         loop una vez por frame
-            App->>Lib: tmc2209_poll_motion(dev, &out)
+            App->>Lib: tmc2209_get_motion_report(dev, &out)
             Lib->>Gen: state()
             Gen-->>Lib: emitidos, tasa, corriendo
             Lib-->>App: progreso, la cuenta sigue pendiente
@@ -276,7 +281,7 @@ sequenceDiagram
     end
 
     Gen->>Gen: sale el último pulso
-    App->>Lib: tmc2209_poll_motion(dev, &out)
+    App->>Lib: tmc2209_get_motion_report(dev, &out)
     Lib->>Gen: state()
     Gen-->>Lib: emitidos, corriendo = false
     Lib->>Lib: cuenta recogida: DIR se libera y el<br/>próximo move ya puede arrancar
@@ -285,13 +290,18 @@ sequenceDiagram
 
 Características:
 
-- **Consultar es una pregunta, no una transacción.** `tmc2209_poll_motion()` devuelve lo que el backend informa: durante la corrida, los pulsos que ya salieron; terminada, el total. Consultarla de más no cambia ningún número. Lo único que cambia es que una corrida terminada deja de estar pendiente.
-- **Recoger la cuenta y vigilar la corrida son dos cosas distintas.** El watchdog necesita saber si el motor todavía se mueve, pero si preguntara con `tmc2209_poll_motion()` estaría saldando una cuenta que su dueño nunca vio, y el próximo `move()` arrancaría sobre un reconocimiento que nadie hizo. Por eso existe `tmc2209_is_running()`, que responde lo mismo sin recoger nada.
+- **El reporte se actualiza en vivo y debe ser leído entre corridas.** `tmc2209_get_motion_report()` le pregunta al generador de pulsos: durante la corrida, los pulsos que ya salieron; una vez que termina, los pulsos totales. Lo único que cambia es que una corrida terminada debe ser leída para que la próxima termine, para obligar al código que no desestime esa información.
+
 - **`DIR` queda tomado mientras dura la corrida.** Se fija antes del primer flanco y no se puede tocar hasta que salga el último. El sentido es entonces una propiedad de la corrida entera, que es lo que hace que una sola cuenta alcance para describirla: si el nivel cambiara en el medio, los pulsos de antes y los de después caerían bajo el mismo número. `ENN` sigue disponible durante todo el movimiento, porque cortar la etapa de potencia es lo único que nunca se puede rechazar.
+
 - **La cuenta es de pulsos emitidos, no de pasos exitosos.** Coinciden mientras el motor no pierda sincronismo ni ocurra un `TMC2209_DRIVER_RESET` por ejemplo, que es el aviso de que pueden haber dejado de coincidir.
+
 - **Una tasa por encima de `max_pps` se rechaza, no se recorta.** Un movimiento que anduvo más lento de lo pedido es un problema de cadencia y puede devenir en un error de posición.
+
 - **`halt()` no es una parada de emergencia.** Incluso la forma inmediata termina el pulso en curso, y la rampeada sigue pisando hasta `pullin_pps`. Lo verdaderamente urgente es cortar la etapa de potencia con `tmc2209_enable(dev, false)`, que es sincrónico y no necesita que ningún periférico coopere.
+
 - **Una corrida sin fin es una función, no un descuido.** `pulses = 0` corre hasta que se la frene, y es lo que sirve para una bobina: la tensión depende del radio, el radio cambia mientras se enrolla, y `tmc2209_retarget()` mueve la tasa sin meter una frenada y un arranque en el medio del lazo. Por eso ahí sí se acepta una tasa por debajo del pull-in: el pull-in acota arrancar y frenar, no andar.
+
 - **`VACTUAL` y `STEP` se pelean el motor.** Es el mismo conflicto que aparece en el bus UART, visto desde este lado. Se revisa solo cuando el shadow puede contestar, porque una negativa fabricada a partir de un slot inválido es peor que la ausencia del chequeo.
 
 ### Comunicación con la PC: Librería `rpc`

@@ -474,15 +474,17 @@ tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on);
  * which is the whole reason this struct exists rather than the caller driving
  * both backends itself.
  *
- * Both @p dir and @p shaft are stated rather than derived. Which combination
- * winds film forward depends on how the motor is mounted, which is not a fact
- * this component can hold, so the mapping belongs above. What is enforced here
- * is that the pair the caller believes in is the pair in effect.
+ * Both @p dir and @p shaft are stated rather than derived. The two together
+ * decide which way the motor turns, and which of the four combinations winds
+ * film forward depends on how the motor is mounted, so that mapping belongs
+ * above. What this guarantees is that the stated pair is the pair in effect
+ * when the first edge goes out.
  */
 typedef struct {
     bool     dir;          /**< level to drive on DIR, electrical and uninterpreted */
-    bool     shaft;        /**< GCONF.shaft the caller is counting on. A run whose cached
-                                GCONF says otherwise is refused rather than reversed */
+    bool     shaft;        /**< GCONF.shaft this move was planned around. Written to the
+                                driver when it holds the other value, so the pair always
+                                takes effect together */
     uint32_t pulses;       /**< microsteps to emit. 0 runs until halted */
     uint32_t pullin_pps;   /**< rate of the first and last pulse */
     uint32_t cruise_pps;   /**< rate held between the ramps */
@@ -528,8 +530,9 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
  * @brief Whether pulses are presently going out.
  *
  * Asks the backend and reports, touching nothing else. This is what a
- * supervisor polls: unlike tmc2209_poll_motion() it does not collect the count,
- * so watching a run cannot consume the acknowledgement its owner still owes.
+ * supervisor watches with: unlike tmc2209_get_motion_report() it does not
+ * collect the count, so watching a run cannot consume the acknowledgement its
+ * owner still owes.
  *
  * @param dev      device with a stepgen
  * @param running  true while a run is in flight, untouched on failure
@@ -547,18 +550,20 @@ tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
  * Asynchronous, and the only call here that is. Sets DIR, then starts the
  * train, in that order and never the other. DIR stays the run's for as long as
  * the run lasts: tmc2209_line_write() on it is refused until the last pulse is
- * out. tmc2209_poll_motion() is how the caller learns that happened.
+ * out. tmc2209_get_motion_report() is how the caller learns that happened.
  *
  * The previous run's count must have been collected first. A backend reports
  * one run at a time, so starting a second one overwrites the first one's total,
  * and pulses that went into film would be lost with nothing to show they
- * existed. That is TMC2209_ERR_UNREAD, and one tmc2209_poll_motion() after the
+ * existed. That is TMC2209_ERR_UNREAD, and one tmc2209_get_motion_report() after the
  * run ends is what clears it.
  *
- * @p m.shaft is checked against the cached GCONF, so the cache must be valid.
- * Refusing to move rather than guessing is deliberate: with no encoder on this
- * machine, a move in the wrong direction is not detected, it is recorded as
- * progress.
+ * @p m.shaft is applied, not assumed: a driver holding the other value is
+ * written first, which costs one verified datagram and costs nothing when it
+ * already agrees. The cached GCONF has to be valid for that, since the
+ * register's other bits would otherwise have to be invented. Refusing to move
+ * rather than guessing is deliberate: with no encoder on this machine, a move
+ * in the wrong direction is not detected, it is recorded as progress.
  *
  * A non-zero VACTUAL takes the driver off its STEP pin silently, so a move
  * would emit pulses that move nothing and still be counted. That is refused
@@ -576,12 +581,12 @@ tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
  * @retval TMC2209_ERR_UNWIRED      this board does not connect DIR
  * @retval TMC2209_ERR_BUSY         a run is already in flight
  * @retval TMC2209_ERR_UNREAD       the last run's count was never collected
- * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so the shaft bit in
- *                                  effect is unknown
- * @retval TMC2209_ERR_MISMATCH     GCONF.shaft is not what @p m.shaft declares
+ * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so the shaft bit cannot
+ *                                  be set without inventing the rest of it
  * @retval TMC2209_ERR_ACCESS       VACTUAL is non-zero: the STEP pin is not
  *                                  what is driving this motor
  * @retval TMC2209_ERR_IO           the DIR write or the backend failed
+ * @return any error from the GCONF write, when the shaft bit had to change
  */
 tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m);
 
@@ -617,8 +622,8 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
  * synchronous and needs no peripheral to cooperate.
  *
  * The count is not collected here, because a ramped halt is still moving when
- * this returns and its final total is not known yet. tmc2209_poll_motion() is
- * what collects it.
+ * this returns and its final total is not known yet.
+ * tmc2209_get_motion_report() is what collects it.
  *
  * Halting an idle driver succeeds and does nothing.
  *
@@ -635,13 +640,17 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
 /**
  * @brief Collects the run's pulse count, rate, and whether it is still going.
  *
+ * Reaches the stepgen backend and nothing else. No datagram goes out, which is
+ * why this is not one of the poll_ family: those are transactions with the
+ * driver over UART, and this is a question for a peripheral on this side.
+ *
  * Also the acknowledgement tmc2209_move() waits for. A call that finds the run
  * over hands its final count to the caller and clears the way for the next
  * move; one made mid-run reports progress and clears nothing, because the total
  * it would be acknowledging does not exist yet.
  *
- * Poll as often as the control loop likes. Nothing accumulates here, so the
- * only thing an extra call can change is that a finished run stops being owed.
+ * Ask as often as the control loop likes. Nothing accumulates here, so the only
+ * thing an extra call can change is that a finished run stops being owed.
  *
  * The count is pulses emitted, which is not the same as film moved. They agree
  * while the motor stays in sync, and TMC2209_DRIVER_RESET is the report that
@@ -655,7 +664,7 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
  * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
  * @retval TMC2209_ERR_IO          the backend failed
  */
-tmc2209_err_t tmc2209_poll_motion(tmc2209_t *dev, tmc2209_motion_t *out);
+tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_t *out);
 
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 
