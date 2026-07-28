@@ -22,6 +22,12 @@ usb_serial_jtag_vfs_use_driver();
 fcntl(fileno(stdin), F_SETFL, 0);
 ```
 
+### ISR + Callback for stepgen
+
+At some point a change may be done to the stepgen module where on the event of
+finishing a run, it should interrupt and act upon a callback. [This will be
+addressed by the user, LLMs ignore]
+
 ## About Device
 
 Hardware tested:
