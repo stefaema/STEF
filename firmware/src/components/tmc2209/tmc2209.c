@@ -291,8 +291,11 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
                               const tmc2209_regval_t *config, size_t n,
                               tmc2209_gstat_t *at_bringup)
 {
-    if (!dev || !dev->bus || !config || n == 0) {
+    if (!dev || !config || n == 0) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     tmc2209_err_t err = validate_batch(config, n);
@@ -379,8 +382,11 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
                             const tmc2209_regval_t *ops, size_t n,
                             size_t *failed_at)
 {
-    if (!dev || !dev->bus || !ops || n == 0) {
+    if (!dev || !ops || n == 0) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     tmc2209_err_t err = validate_batch(ops, n);
@@ -450,8 +456,11 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
 
 tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
 {
-    if (!dev || !dev->bus || !conditions) {
+    if (!dev || !conditions) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t raw = 0;
@@ -495,8 +504,11 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
 
 tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
 {
-    if (!dev || !dev->bus) {
+    if (!dev) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     /* Only clear flags the caller knew about and that are clear-able. */
@@ -520,8 +532,11 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
 
 tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
 {
-    if (!dev || !dev->bus || !out) {
+    if (!dev || !out) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t raw = 0;
@@ -545,8 +560,11 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
 
 tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out)
 {
-    if (!dev || !dev->bus || !out) {
+    if (!dev || !out) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
     uint32_t raw = 0;
     tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IOIN, &raw);
@@ -559,8 +577,11 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out)
 
 tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version)
 {
-    if (!dev || !dev->bus || !version) {
+    if (!dev || !version) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
     uint32_t raw = 0;
     tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IOIN, &raw);
@@ -573,8 +594,11 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version)
 
 tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 {
-    if (!dev || !dev->bus || !out) {
+    if (!dev || !out) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
     uint8_t access = tmc2209_reg_access(reg);
     if (access == 0) {
@@ -596,8 +620,11 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 
 tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
 {
-    if (!dev || !dev->bus) {
+    if (!dev) {
         return TMC2209_ERR_ARG;
+    }
+    if (!dev->bus) {
+        return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t bad = 0;

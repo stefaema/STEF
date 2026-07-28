@@ -14,9 +14,13 @@ const char *tmc2209_strerror(tmc2209_err_t err)
     case TMC2209_ERR_REG:      return "reply for unexpected register";
     case TMC2209_ERR_NO_ACK:   return "IFCNT did not advance";
     case TMC2209_ERR_ACCESS:   return "access violation";
+    case TMC2209_ERR_NO_BACKEND: return "no backend attached for this call";
     case TMC2209_ERR_UNWIRED:  return "line not connected on this board";
     case TMC2209_ERR_INVALID_SLOT:    return "cache slot invalid";
     case TMC2209_ERR_MISMATCH: return "device disagrees with cache";
+    case TMC2209_ERR_BUSY:     return "a run is in flight";
+    case TMC2209_ERR_IDLE:     return "no run is in flight";
+    case TMC2209_ERR_RATE:     return "rate beyond what this stepgen can emit";
     }
     return "unknown";
 }

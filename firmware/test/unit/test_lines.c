@@ -86,9 +86,9 @@ static void test_a_device_without_lines_refuses_every_line_call(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
 
     bool level = false;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_line_read(&g_dev, TMC2209_LINE_DIAG, &level));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_line_write(&g_dev, TMC2209_LINE_ENN, true));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_enable(&g_dev, true));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_line_read(&g_dev, TMC2209_LINE_DIAG, &level));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_line_write(&g_dev, TMC2209_LINE_ENN, true));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_enable(&g_dev, true));
     TEST_ASSERT_FALSE(tmc2209_line_is_wired(&g_dev, TMC2209_LINE_ENN));
 }
 
@@ -97,8 +97,30 @@ static void test_init_leaves_lines_detached(void)
     setup_board(TMC2209_LINES_ALL);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_enable(&g_dev, true));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_enable(&g_dev, true));
     TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_ENN]);
+}
+
+/* The two refusals carry different instructions: attach a backend, or accept
+   that the pin is not on this board. One code for both would leave a bring-up
+   routine unable to tell a setup mistake from the wiring it was handed. */
+static void test_a_missing_backend_reads_apart_from_a_missing_pin(void)
+{
+    setup_board(TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIAG));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_line_write(&g_dev, TMC2209_LINE_DIAG, true));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_line_write(&g_dev, TMC2209_LINE_DIAG, true));
+}
+
+/* A line outside the enum is a bad argument whatever is attached, so the
+   argument check has to come first. */
+static void test_a_bad_line_outranks_a_missing_backend(void)
+{
+    setup_board(TMC2209_LINES_ALL);
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
+
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_line_write(&g_dev, TMC2209_LINE_COUNT, true));
 }
 
 /* Half a backend is not a backend: accepting one would defer the crash to the
@@ -265,6 +287,8 @@ void run_lines_tests(void)
     RUN_TEST(test_a_device_without_lines_refuses_every_line_call);
     RUN_TEST(test_init_leaves_lines_detached);
     RUN_TEST(test_attach_rejects_an_incomplete_backend);
+    RUN_TEST(test_a_missing_backend_reads_apart_from_a_missing_pin);
+    RUN_TEST(test_a_bad_line_outranks_a_missing_backend);
 
     RUN_TEST(test_a_written_level_reads_back);
     RUN_TEST(test_a_raw_write_applies_no_polarity);

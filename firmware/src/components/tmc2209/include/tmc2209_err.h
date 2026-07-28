@@ -33,11 +33,18 @@ typedef enum {
     TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance enough: the write didn't land right */
     TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation,
                                    or the line named is one the driver drives rather than reads */
+    TMC2209_ERR_NO_BACKEND,   /**< nothing is attached to carry out this call */
     TMC2209_ERR_UNWIRED,      /**< the line is not connected on this board */
     TMC2209_ERR_INVALID_SLOT, /**< the cache holds an invalid value for that register,
                                    because none was ever written or because the driver
                                    may have a different value than the cached one. */
     TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
+    /* A run either is or is not in flight, and both states refuse work the
+       other accepts. */
+    TMC2209_ERR_BUSY,         /**< a run is in flight and this call would disturb it */
+    TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
+    TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. A board
+                                   limit, so no retry and no wait changes it */
 } tmc2209_err_t;
 
 /* Never NULL, including for a value outside the enum. */

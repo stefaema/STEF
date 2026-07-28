@@ -139,15 +139,15 @@ static void test_a_device_without_a_bus_refuses_every_transaction(void)
     const tmc2209_regval_t op = { TMC2209_VACTUAL, 0 };
     tmc2209_ihold_irun_t   c  = { 0, 0, 0 };
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_write(&g_dev, &op, 1, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_health(&g_dev, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_raw(&g_dev, TMC2209_IOIN, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_version(&g_dev, (uint8_t *)&v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_verify_config(&g_dev, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_clear_faults(&g_dev, TMC2209_DRIVER_RESET));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_set_current(&g_dev, &c));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_write(&g_dev, &op, 1, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_health(&g_dev, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_raw(&g_dev, TMC2209_IOIN, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_version(&g_dev, (uint8_t *)&v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_verify_config(&g_dev, &v));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_clear_faults(&g_dev, TMC2209_DRIVER_RESET));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_set_current(&g_dev, &c));
 }
 
 /* Detaching is how a bus is handed over, so it has to be reachable through the
@@ -158,7 +158,7 @@ static void test_detaching_the_bus_stops_transactions(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, NULL));
 
     uint32_t conditions = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_health(&g_dev, &conditions));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_health(&g_dev, &conditions));
 }
 
 /* The cache is the device's, so it survives losing and regaining the wire. */

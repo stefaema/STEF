@@ -1,5 +1,7 @@
 # RPC
 
+> **[OUTDATED, IF CODE DIFFERS IS BECAUSE THIS IS WRONG, NOT THE CODE]**
+
 `passthrough`, `raw` and `smart` are namespaces, differing by who assembles the
 bytes: the PC, the firmware from a register you name, or the firmware from an
 outcome you name.

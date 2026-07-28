@@ -17,12 +17,13 @@ bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line)
     return (dev->lines->wired & TMC2209_LINE_BIT(line)) != 0;
 }
 
-/* Unwired and outside the enum are different failures: one is a board that
-   does not connect this line, the other is a caller with a bad argument. */
 static tmc2209_err_t check_line(const tmc2209_t *dev, tmc2209_line_t line)
 {
     if (!dev || line >= TMC2209_LINE_COUNT) {
-        return TMC2209_ERR_ARG;
+        return TMC2209_ERR_ARG; /* The line or the device doesn't exist */
+    }
+    if (!dev->lines) {
+        return TMC2209_ERR_NO_BACKEND;
     }
     if (!tmc2209_line_is_wired(dev, line)) {
         return TMC2209_ERR_UNWIRED;
@@ -69,6 +70,13 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
     /* Checked after wiring, so a board that does not connect DIAG reports that
        rather than a policy violation it was never in a position to commit. */
     if (!tmc2209_line_is_output(line)) {
+        return TMC2209_ERR_ACCESS;
+    }
+    /* A stepgen owns the pin it pulses. Letting a level write through as well
+       would give one pin two owners, and which of them the pad ends up
+       following is a detail of whichever peripheral the board happens to use.
+       Reads stay open: observing a level disturbs nothing. */
+    if (line == TMC2209_LINE_STEP && dev->stepgen) {
         return TMC2209_ERR_ACCESS;
     }
 

@@ -31,6 +31,7 @@
 #include "tmc2209_lines.h"
 #include "tmc2209_port.h"
 #include "tmc2209_reg.h"
+#include "tmc2209_stepgen.h"
 
 /** Element count of a configuration array literal. */
 #define TMC2209_NELEM(a) (sizeof(a) / sizeof((a)[0]))
@@ -52,10 +53,15 @@ typedef struct {
 typedef struct {
     const tmc2209_bus_t *bus;            /**< UART comm channel, NULL until attached */
     const tmc2209_lines_t *lines;        /**< control lines, NULL until attached */
+    const tmc2209_stepgen_t *stepgen;    /**< STEP pulse source, NULL until attached */
     uint8_t  addr;                       /**< 0..3, set by the MS1/MS2 straps */
     uint8_t  ifcnt;                      /**< last observed write counter */
     uint32_t cache[TMC2209_REG_COUNT];   /**< last known value per slot */
     uint32_t valid;                      /**< one bit per slot: device holds cache[slot] */
+    int32_t  position;                   /**< settled pulses, forward positive. Excludes
+                                              a run still in flight; see tmc2209_motion() */
+    bool     run_forward;                /**< direction of the run in flight */
+    bool     run_pending;                /**< that run's pulses are not yet in position */
 } tmc2209_t;
 
 /**
@@ -107,8 +113,10 @@ tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus);
  * @param at_bringup  GSTAT as found, before it is cleared. NULL to discard
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG      null argument, no bus attached, or @p config
- *                              does not cover every owned register
+ * @retval TMC2209_ERR_ARG         null argument, or @p config does not cover
+ *                                 every owned register, or it names a non-zero
+ *                                 velocity
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @retval TMC2209_ERR_ACCESS   @p config names a register that is not owned
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the underlying reads and writes
@@ -165,6 +173,7 @@ tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG      null argument, empty batch, or a register not
  *                              in the table
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @retval TMC2209_ERR_ACCESS   a register that is not owned
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the datagrams or their confirmation
@@ -191,6 +200,7 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @return any transport error from either read
  */
 tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
@@ -216,6 +226,7 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @retval TMC2209_ERR_NO_ACK  IFCNT did not account for the write
  * @return any transport error from the write or its confirmation
  */
@@ -236,6 +247,7 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
@@ -252,6 +264,7 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
@@ -273,6 +286,7 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
@@ -290,6 +304,7 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @retval TMC2209_ERR_ACCESS  write-only driver-side; there is nothing to read
  * @return any transport error from the read
  */
@@ -309,6 +324,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG       null device
+ * @retval TMC2209_ERR_NO_BACKEND  no bus attached
  * @retval TMC2209_ERR_MISMATCH  the device disagrees with the cache
  * @return any transport error from the reads
  */
@@ -353,7 +369,7 @@ tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c)
  * @brief Gives the device its control lines.
  *
  * Optional, and one set per driver. Every line call on a device without them
- * reports TMC2209_ERR_UNWIRED, so a configuration-only caller needs no stub
+ * reports TMC2209_ERR_NO_BACKEND, so a configuration-only caller needs no stub
  * backend.
  *
  * @param dev    initialised device
@@ -382,8 +398,9 @@ bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line);
  * @param level  the level, untouched on failure
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG      null argument, or a line outside the enum
- * @retval TMC2209_ERR_UNWIRED  no backend, or this board does not connect it
+ * @retval TMC2209_ERR_ARG         null argument, or a line outside the enum
+ * @retval TMC2209_ERR_NO_BACKEND  no lines backend attached
+ * @retval TMC2209_ERR_UNWIRED     this board does not connect the line
  * @retval TMC2209_ERR_IO       the backend failed for its own reasons
  */
 tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool *level);
@@ -401,9 +418,12 @@ tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool 
  * @param level  level to drive
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG      null device, or a line outside the enum
- * @retval TMC2209_ERR_UNWIRED  no backend, or this board does not connect it
- * @retval TMC2209_ERR_ACCESS   the line is an input, in practice DIAG
+ * @retval TMC2209_ERR_ARG         null device, or a line outside the enum
+ * @retval TMC2209_ERR_NO_BACKEND  no lines backend attached
+ * @retval TMC2209_ERR_UNWIRED     this board does not connect the line
+ * @retval TMC2209_ERR_ACCESS   the line is an input, in practice DIAG, or it is
+ *                              STEP on a device that has a stepgen attached and
+ *                              therefore no longer owns the pin
  * @retval TMC2209_ERR_IO       the backend failed for its own reasons
  */
 tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level);
@@ -441,6 +461,172 @@ tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on);
  * @return as tmc2209_line_read() for ENN
  */
 tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on);
+
+/* ── Motion ─────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief What one move is asked to do.
+ *
+ * @ref tmc2209_run_t plus the one thing a pulse source cannot know: which way.
+ * DIR is a line, STEP is a rate, and the two must agree before the first edge
+ * goes out, which is the whole reason this struct exists rather than the
+ * caller driving both backends itself.
+ */
+typedef struct {
+    bool     forward;      /**< true winds film forward. GCONF.shaft is applied here,
+                                so this is the mechanism's direction and not a level */
+    uint32_t pulses;       /**< microsteps to emit. 0 runs until halted */
+    uint32_t pullin_pps;   /**< rate of the first and last pulse */
+    uint32_t cruise_pps;   /**< rate held between the ramps */
+    uint32_t accel_pps_s;  /**< slope of both ramps. 0 only when cruise == pullin */
+} tmc2209_move_t;
+
+/** @brief Where the driver is and what it is doing. */
+typedef struct {
+    int32_t  position;   /**< signed microstep odometer, forward positive, including
+                              whatever a run in flight has emitted so far */
+    uint32_t emitted;    /**< pulses of the current run, or of the last one */
+    uint32_t rate_pps;   /**< rate presently being emitted */
+    bool     running;    /**< a run is in flight */
+} tmc2209_motion_t;
+
+/**
+ * @brief Gives the device its source of STEP pulses.
+ *
+ * One per driver, like the lines and unlike the shared bus. Attaching one hands
+ * STEP over: `tmc2209_line_write()` on STEP is refused from then on, because a
+ * peripheral bound to a pin and a GPIO write to the same pin are two owners and
+ * not two views.
+ *
+ * @param dev      initialised device, with no run in flight
+ * @param stepgen  borrowed, must outlive @p dev. NULL detaches
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG   null device, a backend missing any of its four
+ *                           calls, or one declaring max_pps of 0
+ * @retval TMC2209_ERR_RATE  the backend cannot guarantee
+ *                           @ref TMC2209_STEP_MIN_PULSE_NS
+ * @retval TMC2209_ERR_BUSY  a run is in flight on the backend being replaced
+ */
+tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *stepgen);
+
+/**
+ * @brief Starts a move. Returns as soon as the pulses are on their way.
+ *
+ * Asynchronous, and the only call here that is. Sets DIR, then starts the
+ * train, in that order and never the other. tmc2209_motion() is how the caller
+ * learns it finished.
+ *
+ * Which DIR level means forward is GCONF.shaft's answer, so the cached GCONF
+ * must be valid. Refusing to move rather than guessing is deliberate: with no
+ * encoder on this machine, a move in the wrong direction is not detected, it is
+ * recorded as progress.
+ *
+ * A non-zero VACTUAL takes the driver off its STEP pin silently, so a move
+ * would emit pulses that move nothing and still be counted. That is refused
+ * when the cache knows the velocity, and not when it does not, because
+ * inventing a refusal out of an invalid slot is worse than the check's absence.
+ *
+ * @param dev  device with a stepgen and DIR
+ * @param m    what to move
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG          null argument, or a profile that does not
+ *                                  describe a reachable ramp
+ * @retval TMC2209_ERR_RATE         a rate above the backend's max_pps
+ * @retval TMC2209_ERR_NO_BACKEND   no stepgen, or no lines for DIR
+ * @retval TMC2209_ERR_UNWIRED      this board does not connect DIR
+ * @retval TMC2209_ERR_BUSY         a run is already in flight
+ * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so forward is unknown
+ * @retval TMC2209_ERR_ACCESS       VACTUAL is non-zero: the STEP pin is not
+ *                                  what is driving this motor
+ * @retval TMC2209_ERR_IO           the DIR write or the backend failed
+ */
+tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m);
+
+/**
+ * @brief Changes the cruise rate of a run in flight.
+ *
+ * What an unbounded run is for. Reel tension tracks radius, and radius changes
+ * as film winds, so the rate has to move with it. Restarting the run to change
+ * speed would put a stop and a start into a tension loop.
+ *
+ * Unlike tmc2209_move(), a rate below pullin_pps is accepted. Pull-in bounds
+ * starting and stopping, not running: a motor already turning can be ramped
+ * anywhere below it.
+ *
+ * @param dev         device with a run in flight
+ * @param cruise_pps  new rate to ramp to, at the run's original accel
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG         null device
+ * @retval TMC2209_ERR_RATE        zero, or above the backend's max_pps
+ * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
+ * @retval TMC2209_ERR_IDLE        nothing is running
+ * @retval TMC2209_ERR_IO          the backend failed
+ */
+tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
+
+/**
+ * @brief Ends the run.
+ *
+ * Not an emergency stop. @p immediate still finishes the pulse in progress, and
+ * the ramped form keeps stepping all the way down to pullin_pps. Anything
+ * genuinely urgent drops the power stage with tmc2209_enable(), which is
+ * synchronous and needs no peripheral to cooperate.
+ *
+ * The odometer is not settled here, because a ramped halt is still moving when
+ * this returns and its final count is not known yet. tmc2209_motion() is what
+ * settles it.
+ *
+ * Halting an idle driver succeeds and does nothing.
+ *
+ * @param dev        device
+ * @param immediate  true cuts the train at the next pulse boundary
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG         null device
+ * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
+ * @retval TMC2209_ERR_IO          the backend failed
+ */
+tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
+
+/**
+ * @brief Reports the odometer and whether a run is still going.
+ *
+ * Also where a finished run is folded into @ref tmc2209_t::position, so this is
+ * the call that must be made before the odometer can be trusted at rest. Making
+ * it repeatedly during a run is free of side effects; the fold happens once.
+ *
+ * The odometer counts pulses emitted, which is not the same as film moved. They
+ * agree while the motor stays in sync, and TMC2209_DRIVER_RESET is the report
+ * that they may no longer.
+ *
+ * @param dev  device
+ * @param out  odometer and run state
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG         null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
+ * @retval TMC2209_ERR_IO          the backend failed
+ */
+tmc2209_err_t tmc2209_motion(tmc2209_t *dev, tmc2209_motion_t *out);
+
+/**
+ * @brief Makes here zero.
+ *
+ * Refused while a run is in flight, where "here" is a moving target and the
+ * origin would land wherever the call happened to be scheduled.
+ *
+ * @param dev  device at rest
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG         null device
+ * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
+ * @retval TMC2209_ERR_BUSY        a run is in flight
+ * @retval TMC2209_ERR_IO          the backend failed
+ */
+tmc2209_err_t tmc2209_zero_position(tmc2209_t *dev);
 
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 

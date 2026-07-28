@@ -39,7 +39,8 @@ add_library(tmc2209 STATIC
     ${TMC2209_DIR}/tmc2209_err.c
     ${TMC2209_DIR}/tmc2209_frame.c
     ${TMC2209_DIR}/tmc2209_lines.c
-    ${TMC2209_DIR}/tmc2209_reg.c)
+    ${TMC2209_DIR}/tmc2209_reg.c
+    ${TMC2209_DIR}/tmc2209_stepgen.c)
 target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
 
 add_executable(unit_tests
@@ -48,7 +49,8 @@ add_executable(unit_tests
     test_frame.c
     test_reg.c
     test_device.c
-    test_lines.c)
+    test_lines.c
+    test_stepgen.c)
 target_link_libraries(unit_tests PRIVATE tmc2209 unity)
 
 enable_testing()
