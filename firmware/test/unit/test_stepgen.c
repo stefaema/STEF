@@ -7,11 +7,11 @@
  * test is whether a real ramp keeps a real motor in sync; that is per backend
  * and needs hardware.
  *
- * Two themes. Direction is a fact about the configuration and not about the
- * wiring, so GCONF.shaft has to reach the DIR pin and an unknown GCONF has to
- * stop the move outright. And the odometer must count each run exactly once:
- * polling it during a run must not accumulate, and polling it after must not
- * accumulate either.
+ * Two themes. A move states both halves of its direction, the DIR level and the
+ * shaft bit it is counting on, and a driver holding the other shaft bit refuses
+ * the run rather than winding film the wrong way. And a run's count must
+ * survive long enough to be collected: the backend holds one, so a second move
+ * before anyone read the first is refused.
  */
 
 #include "unity.h"
@@ -59,6 +59,10 @@ typedef struct {
     bool     level[TMC2209_LINE_COUNT];
     unsigned writes[TMC2209_LINE_COUNT];
 } fake_board_t;
+
+/* The shaft bit setup_ready() configured, so a_move() declares what is actually
+   in effect and the mismatch tests are the ones that state otherwise. */
+static bool              g_shaft;
 
 static mock_dev_t        g_mock;
 static tmc2209_port_t    g_port;
@@ -169,6 +173,7 @@ static void setup_ready(uint32_t gconf)
     g_stepgen.min_pulse_ns = TMC2209_STEP_MIN_PULSE_NS;
 
     g_config[0].value = gconf;
+    g_shaft           = tmc2209_gconf_decode(gconf).shaft;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, &g_bus));
@@ -178,10 +183,11 @@ static void setup_ready(uint32_t gconf)
         tmc2209_bringup(&g_dev, g_config, TMC2209_NELEM(g_config), NULL));
 }
 
-static tmc2209_move_t a_move(bool forward, uint32_t pulses)
+static tmc2209_move_t a_move(bool dir, uint32_t pulses)
 {
     const tmc2209_move_t m = {
-        .forward     = forward,
+        .dir         = dir,
+        .shaft       = g_shaft,
         .pulses      = pulses,
         .pullin_pps  = 400,
         .cruise_pps  = 20000,
@@ -193,8 +199,15 @@ static tmc2209_move_t a_move(bool forward, uint32_t pulses)
 static tmc2209_motion_t motion_now(void)
 {
     tmc2209_motion_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_motion(&g_dev, &motion));
     return motion;
+}
+
+/* What a caller does between runs: collect the count so the next move is
+   allowed to overwrite it. */
+static uint32_t collect_count(void)
+{
+    return motion_now().emitted;
 }
 
 /* ── Attachment ─────────────────────────────────────────────────────────── */
@@ -206,12 +219,13 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
 
     const tmc2209_move_t m = a_move(true, 100);
     tmc2209_motion_t motion;
+    bool running = false;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_halt(&g_dev, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_retarget(&g_dev, 1000));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion(&g_dev, &motion));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_zero_position(&g_dev));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_running(&g_dev, &running));
     TEST_ASSERT_EQUAL(0u, g_gen.runs);
 }
 
@@ -278,13 +292,40 @@ static void test_dir_is_set_before_the_first_pulse(void)
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
 }
 
-/* shaft flips which phase order winds film forward, so the same request has to
-   reach the pin as the opposite level. Asserting the level rather than the
-   round trip is what catches an implementation that is consistently wrong. */
-static void test_gconf_shaft_inverts_the_dir_level(void)
+/* The level asked for is the level driven, whatever shaft happens to be. What
+   the pair means for the film is the layer above's to decide, and an
+   implementation that quietly reinterpreted it would take that away. */
+static void test_the_dir_level_reaches_the_pin_uninterpreted(void)
 {
     setup_ready(CFG_GCONF_SHAFT);
     const tmc2209_move_t m = a_move(true, 1000);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_TRUE(g_gen.dir_at_run);
+}
+
+/* A move declares the shaft bit it is counting on. If the driver holds the
+   other one, the same DIR level winds film the opposite way, so the run is
+   refused rather than started on a belief that is already wrong. */
+static void test_a_move_that_misreads_the_shaft_bit_is_refused(void)
+{
+    setup_ready(CFG_GCONF);
+
+    tmc2209_move_t m = a_move(true, 1000);
+    m.shaft = !g_shaft;
+
+    TEST_ASSERT_EQUAL(TMC2209_ERR_MISMATCH, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
+}
+
+/* And the same board with shaft set accepts the declaration that matches it. */
+static void test_a_move_that_declares_the_shaft_bit_correctly_runs(void)
+{
+    setup_ready(CFG_GCONF_SHAFT);
+
+    tmc2209_move_t m = a_move(false, 1000);
+    m.shaft = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_FALSE(g_gen.dir_at_run);
@@ -303,22 +344,9 @@ static void test_an_unknown_gconf_stops_the_move(void)
     TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
 }
 
-/* The odometer is in forward pulses whichever level that took, so a reversed
-   board or a rewritten shaft bit cannot make the position drift. */
-static void test_the_odometer_is_signed_by_intent_not_by_level(void)
-{
-    setup_ready(CFG_GCONF_SHAFT);
-    const tmc2209_move_t back = a_move(false, 500);
+/* ── The count ──────────────────────────────────────────────────────────── */
 
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &back));
-    TEST_ASSERT_TRUE(g_gen.dir_at_run);          /* shaft inverted the level */
-    gen_finish(500);
-    TEST_ASSERT_EQUAL_INT32(-500, motion_now().position);  /* not the sign */
-}
-
-/* ── The odometer ───────────────────────────────────────────────────────── */
-
-static void test_a_finished_run_lands_in_the_position(void)
+static void test_a_finished_run_reports_its_count(void)
 {
     setup_ready(CFG_GCONF);
     const tmc2209_move_t m = a_move(true, 4000);
@@ -329,12 +357,12 @@ static void test_a_finished_run_lands_in_the_position(void)
     const tmc2209_motion_t motion = motion_now();
     TEST_ASSERT_FALSE(motion.running);
     TEST_ASSERT_EQUAL_UINT32(4000, motion.emitted);
-    TEST_ASSERT_EQUAL_INT32(4000, motion.position);
 }
 
-/* Every run polls this repeatedly while it waits. A fold that ran per poll
-   would give a position that climbs while the motor stands still. */
-static void test_polling_a_finished_run_folds_it_once(void)
+/* Every run polls this repeatedly while it waits, so polling has to be a
+   question and not a transaction: the same count, however often it is asked
+   for. */
+static void test_polling_a_finished_run_reports_the_same_count(void)
 {
     setup_ready(CFG_GCONF);
     const tmc2209_move_t m = a_move(true, 4000);
@@ -342,12 +370,12 @@ static void test_polling_a_finished_run_folds_it_once(void)
     gen_finish(4000);
 
     for (int i = 0; i < 5; i++) {
-        TEST_ASSERT_EQUAL_INT32(4000, motion_now().position);
+        TEST_ASSERT_EQUAL_UINT32(4000, motion_now().emitted);
     }
 }
 
-/* The convergence loop reads position while the move is still going, so the
-   pulses so far have to be visible without being committed twice. */
+/* The control loop reads the count while the move is still going, so the pulses
+   so far have to be visible before the run is over. */
 static void test_a_run_in_flight_shows_its_progress(void)
 {
     setup_ready(CFG_GCONF);
@@ -357,33 +385,58 @@ static void test_a_run_in_flight_shows_its_progress(void)
     g_gen.emitted = 1500;
     tmc2209_motion_t motion = motion_now();
     TEST_ASSERT_TRUE(motion.running);
-    TEST_ASSERT_EQUAL_INT32(1500, motion.position);
+    TEST_ASSERT_EQUAL_UINT32(1500, motion.emitted);
 
     gen_finish(4000);
-    TEST_ASSERT_EQUAL_INT32(4000, motion_now().position);
+    TEST_ASSERT_EQUAL_UINT32(4000, motion_now().emitted);
 }
 
-static void test_successive_runs_accumulate_with_sign(void)
+/* A backend holds one run's count, so a second move would overwrite a total
+   nobody has seen, and those pulses went into film. */
+static void test_a_move_needs_the_last_count_collected(void)
 {
     setup_ready(CFG_GCONF);
+    const tmc2209_move_t m = a_move(true, 1000);
 
-    const tmc2209_move_t fwd = a_move(true, 1000);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &fwd));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     gen_finish(1000);
-    TEST_ASSERT_EQUAL_INT32(1000, motion_now().position);
 
-    const tmc2209_move_t back = a_move(false, 400);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &back));
-    gen_finish(400);
-    TEST_ASSERT_EQUAL_INT32(600, motion_now().position);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(1u, g_gen.runs);
 
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &fwd));
+    TEST_ASSERT_EQUAL_UINT32(1000, collect_count());
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(2u, g_gen.runs);
+}
+
+/* Polling mid-run settles nothing, because the total being acknowledged does
+   not exist yet. A loop that watched a run go by and then started another one
+   would otherwise lose the count it never actually saw. */
+static void test_polling_mid_run_does_not_pay_the_debt(void)
+{
+    setup_ready(CFG_GCONF);
+    const tmc2209_move_t m = a_move(true, 1000);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    g_gen.emitted = 500;
+    TEST_ASSERT_TRUE(motion_now().running);
+
     gen_finish(1000);
-    TEST_ASSERT_EQUAL_INT32(1600, motion_now().position);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
+}
+
+/* The first move owes nothing, and a refused one owes nothing either. */
+static void test_a_first_move_owes_no_count(void)
+{
+    setup_ready(CFG_GCONF);
+    const tmc2209_move_t m = a_move(true, 1000);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(1u, g_gen.runs);
 }
 
 /* An aborted run moved as far as it moved. The count is the only record of it,
-   so a halt that discarded the partial travel would lose the film's position
+   so a halt that discarded the partial travel would lose how far the film went
    at exactly the moment something already went wrong. */
 static void test_an_aborted_run_keeps_the_pulses_it_did_emit(void)
 {
@@ -393,12 +446,12 @@ static void test_an_aborted_run_keeps_the_pulses_it_did_emit(void)
 
     g_gen.emitted = 1234;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_halt(&g_dev, true));
-    TEST_ASSERT_EQUAL_INT32(1234, motion_now().position);
+    TEST_ASSERT_EQUAL_UINT32(1234, motion_now().emitted);
 }
 
-/* A ramped halt is still emitting when halt() returns. Folding there would
-   commit a count the motor has not finished producing. */
-static void test_a_ramped_halt_settles_only_once_the_pulses_stop(void)
+/* A ramped halt is still emitting when halt() returns, so the run is not over
+   and its count is not final. */
+static void test_a_ramped_halt_is_not_over_until_the_pulses_stop(void)
 {
     setup_ready(CFG_GCONF);
     const tmc2209_move_t m = a_move(true, 0);   /* unbounded */
@@ -409,21 +462,26 @@ static void test_a_ramped_halt_settles_only_once_the_pulses_stop(void)
     TEST_ASSERT_TRUE(motion_now().running);
 
     gen_finish(1100);                           /* it kept stepping while ramping down */
-    TEST_ASSERT_EQUAL_INT32(1100, motion_now().position);
+    TEST_ASSERT_EQUAL_UINT32(1100, motion_now().emitted);
 }
 
-static void test_zeroing_is_refused_while_moving(void)
+/* is_running() answers the same question without collecting anything, which is
+   what lets a supervisor watch a run it does not own. */
+static void test_asking_whether_it_runs_collects_nothing(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_move_t m = a_move(true, 1000);
+    bool running = true;
+
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_running(&g_dev, &running));
+    TEST_ASSERT_TRUE(running);
 
-    g_gen.emitted = 100;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY, tmc2209_zero_position(&g_dev));
+    gen_finish(1000);
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_running(&g_dev, &running));
+    TEST_ASSERT_FALSE(running);
 
-    gen_finish(4000);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_zero_position(&g_dev));
-    TEST_ASSERT_EQUAL_INT32(0, motion_now().position);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
 }
 
 /* ── The profile ────────────────────────────────────────────────────────── */
@@ -589,7 +647,7 @@ static void test_halting_an_idle_driver_does_nothing_and_succeeds(void)
     setup_ready(CFG_GCONF);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_halt(&g_dev, true));
-    TEST_ASSERT_EQUAL_INT32(0, motion_now().position);
+    TEST_ASSERT_FALSE(motion_now().running);
 }
 
 static void test_halt_passes_on_which_kind_was_asked_for(void)
@@ -656,14 +714,14 @@ static void test_dir_is_held_for_the_duration_of_a_run(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, false));
 
     gen_finish(4000);
-    TEST_ASSERT_EQUAL(4000, motion_now().position);
+    TEST_ASSERT_EQUAL_UINT32(4000, collect_count());
     TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
     TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);
 }
 
-/* The hold ends with the run and not with a call to tmc2209_motion(): the pin
-   is free as soon as the last pulse is out, whether anyone asked or not. */
+/* The hold ends with the run and not with a call to tmc2209_poll_motion(): the
+   pin is free as soon as the last pulse is out, whether anyone asked or not. */
 static void test_dir_is_free_once_the_pulses_stop(void)
 {
     setup_ready(CFG_GCONF);
@@ -674,9 +732,8 @@ static void test_dir_is_free_once_the_pulses_stop(void)
 
     TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
-    /* And the run it just finished is still accounted for, once. */
-    TEST_ASSERT_EQUAL(4000, motion_now().position);
-    TEST_ASSERT_EQUAL(4000, motion_now().position);
+    /* And the count it produced is still there to be collected. */
+    TEST_ASSERT_EQUAL_UINT32(4000, collect_count());
 }
 
 /* Without a stepgen the pin is nobody's, so no run can be in flight to hold it. */
@@ -706,13 +763,13 @@ static void test_a_refused_run_leaves_nothing_in_flight(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 }
 
-static void test_a_backend_failure_yields_no_position(void)
+static void test_a_backend_failure_yields_no_count(void)
 {
     setup_ready(CFG_GCONF);
     tmc2209_motion_t motion;
 
     g_gen.fail_state = 1;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_motion(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_poll_motion(&g_dev, &motion));
 
     g_gen.fail_state = 0;
     g_gen.fail_halt  = 1;
@@ -726,23 +783,23 @@ static void test_null_arguments_are_bad_arguments(void)
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(NULL, &m));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_motion(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_poll_motion(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_halt(NULL, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_retarget(NULL, 1000));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_zero_position(NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_is_running(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(NULL, &g_stepgen));
 }
 
-/* Construction attaches nothing, so a device that never saw a stepgen has an
-   odometer at rest and no run to settle. */
+/* Construction attaches nothing, so a device that never saw a stepgen has no
+   run to report and owes no count. */
 static void test_init_leaves_the_stepgen_detached(void)
 {
     setup_ready(CFG_GCONF);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
     tmc2209_motion_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion(&g_dev, &motion));
-    TEST_ASSERT_EQUAL_INT32(0, g_dev.position);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_motion(&g_dev, &motion));
+    TEST_ASSERT_FALSE(g_dev.count_unread);
 }
 
 void run_stepgen_tests(void)
@@ -754,17 +811,20 @@ void run_stepgen_tests(void)
     RUN_TEST(test_init_leaves_the_stepgen_detached);
 
     RUN_TEST(test_dir_is_set_before_the_first_pulse);
-    RUN_TEST(test_gconf_shaft_inverts_the_dir_level);
+    RUN_TEST(test_the_dir_level_reaches_the_pin_uninterpreted);
+    RUN_TEST(test_a_move_that_misreads_the_shaft_bit_is_refused);
+    RUN_TEST(test_a_move_that_declares_the_shaft_bit_correctly_runs);
     RUN_TEST(test_an_unknown_gconf_stops_the_move);
-    RUN_TEST(test_the_odometer_is_signed_by_intent_not_by_level);
 
-    RUN_TEST(test_a_finished_run_lands_in_the_position);
-    RUN_TEST(test_polling_a_finished_run_folds_it_once);
+    RUN_TEST(test_a_finished_run_reports_its_count);
+    RUN_TEST(test_polling_a_finished_run_reports_the_same_count);
     RUN_TEST(test_a_run_in_flight_shows_its_progress);
-    RUN_TEST(test_successive_runs_accumulate_with_sign);
+    RUN_TEST(test_a_move_needs_the_last_count_collected);
+    RUN_TEST(test_polling_mid_run_does_not_pay_the_debt);
+    RUN_TEST(test_a_first_move_owes_no_count);
     RUN_TEST(test_an_aborted_run_keeps_the_pulses_it_did_emit);
-    RUN_TEST(test_a_ramped_halt_settles_only_once_the_pulses_stop);
-    RUN_TEST(test_zeroing_is_refused_while_moving);
+    RUN_TEST(test_a_ramped_halt_is_not_over_until_the_pulses_stop);
+    RUN_TEST(test_asking_whether_it_runs_collects_nothing);
 
     RUN_TEST(test_the_plan_reaches_the_backend_unaltered);
     RUN_TEST(test_an_incoherent_profile_is_refused);
@@ -790,6 +850,6 @@ void run_stepgen_tests(void)
     RUN_TEST(test_dir_is_free_on_a_device_without_a_stepgen);
 
     RUN_TEST(test_a_refused_run_leaves_nothing_in_flight);
-    RUN_TEST(test_a_backend_failure_yields_no_position);
+    RUN_TEST(test_a_backend_failure_yields_no_count);
     RUN_TEST(test_null_arguments_are_bad_arguments);
 }

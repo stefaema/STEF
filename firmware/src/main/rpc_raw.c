@@ -408,7 +408,8 @@ static rpc_status_t raw_move(rpc_reader_t *args, rpc_writer_t *ret)
     tmc2209_t *dev = args->ok ? devices_at(idx) : NULL;
 
     tmc2209_move_t m = {
-        .forward     = rpc_r_bool(args),
+        .dir         = rpc_r_bool(args),
+        .shaft       = rpc_r_bool(args),
         .pulses      = rpc_r_u32(args),
         .pullin_pps  = rpc_r_u32(args),
         .cruise_pps  = rpc_r_u32(args),
@@ -465,28 +466,15 @@ static rpc_status_t raw_motion(rpc_reader_t *args, rpc_writer_t *ret)
     }
 
     tmc2209_motion_t m   = { 0 };
-    tmc2209_err_t    err = tmc2209_motion(dev, &m);
+    tmc2209_err_t    err = tmc2209_poll_motion(dev, &m);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
     }
 
-    rpc_w_i32(ret, m.position);
     rpc_w_u32(ret, m.emitted);
     rpc_w_u32(ret, m.rate_pps);
     rpc_w_bool(ret, m.running);
     return RPC_OK;
-}
-
-static rpc_status_t raw_zero_position(rpc_reader_t *args, rpc_writer_t *ret)
-{
-    (void)ret;
-
-    tmc2209_t *dev = dev_arg(args);
-    if (dev == NULL) {
-        return RPC_ARG;
-    }
-
-    return rpc_status_of_err(tmc2209_zero_position(dev));
 }
 
 const rpc_handler_fn rpc_raw_methods[RPC_RAW_COUNT] = {
@@ -512,5 +500,4 @@ const rpc_handler_fn rpc_raw_methods[RPC_RAW_COUNT] = {
     [RPC_RAW_RETARGET]         = raw_retarget,
     [RPC_RAW_HALT]             = raw_halt,
     [RPC_RAW_MOTION]           = raw_motion,
-    [RPC_RAW_ZERO_POSITION]    = raw_zero_position,
 };

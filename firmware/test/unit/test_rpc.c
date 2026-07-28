@@ -355,7 +355,8 @@ static size_t move_args(uint8_t *buf, size_t cap, uint32_t deadline_ms)
     rpc_writer_t w;
     rpc_w_init(&w, buf, cap);
     rpc_w_u8(&w, 0);
-    rpc_w_bool(&w, true);
+    rpc_w_bool(&w, true);  /* dir level */
+    rpc_w_bool(&w, false); /* the shaft bit the caller counts on */
     rpc_w_u32(&w, 100);  /* pulses */
     rpc_w_u32(&w, 200);  /* pullin */
     rpc_w_u32(&w, 1000); /* cruise */

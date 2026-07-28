@@ -43,6 +43,8 @@ typedef enum {
        other accepts. */
     TMC2209_ERR_BUSY,         /**< a run is in flight and this call would disturb it */
     TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
+    TMC2209_ERR_UNREAD,       /**< the last run's pulse count was never collected, and
+                                   starting another one would discard it */
     TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. A board
                                    limit, so no retry and no wait changes it */
 } tmc2209_err_t;

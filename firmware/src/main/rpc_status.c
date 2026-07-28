@@ -21,6 +21,7 @@ rpc_status_t rpc_status_of_err(tmc2209_err_t err)
     case TMC2209_ERR_BUSY:          return RPC_BUSY;
     case TMC2209_ERR_IDLE:          return RPC_IDLE;
     case TMC2209_ERR_RATE:          return RPC_RATE;
+    case TMC2209_ERR_UNREAD:        return RPC_UNREAD;
     }
 
     /* No default above, so a new library error is a compile warning here

@@ -58,10 +58,8 @@ typedef struct {
     uint8_t  ifcnt;                      /**< last observed write counter */
     uint32_t cache[TMC2209_REG_COUNT];   /**< last known value per slot */
     uint32_t valid;                      /**< one bit per slot: device holds cache[slot] */
-    int32_t  position;                   /**< settled pulses, forward positive. Excludes
-                                              a run still in flight; see tmc2209_motion() */
-    bool     run_forward;                /**< direction of the run in flight */
-    bool     run_pending;                /**< that run's pulses are not yet in position */
+    bool     count_unread;               /**< a run was started and its final count has
+                                              not been collected yet. See tmc2209_move() */
 } tmc2209_t;
 
 /**
@@ -471,24 +469,36 @@ tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on);
 /**
  * @brief What one move is asked to do.
  *
- * @ref tmc2209_run_t plus the one thing a pulse source cannot know: which way.
- * DIR is a line, STEP is a rate, and the two must agree before the first edge
- * goes out, which is the whole reason this struct exists rather than the
- * caller driving both backends itself.
+ * @ref tmc2209_run_t plus the two bits a pulse source cannot know. DIR is a
+ * line, STEP is a rate, and the two must agree before the first edge goes out,
+ * which is the whole reason this struct exists rather than the caller driving
+ * both backends itself.
+ *
+ * Both @p dir and @p shaft are stated rather than derived. Which combination
+ * winds film forward depends on how the motor is mounted, which is not a fact
+ * this component can hold, so the mapping belongs above. What is enforced here
+ * is that the pair the caller believes in is the pair in effect.
  */
 typedef struct {
-    bool     forward;      /**< true winds film forward. GCONF.shaft is applied here,
-                                so this is the mechanism's direction and not a level */
+    bool     dir;          /**< level to drive on DIR, electrical and uninterpreted */
+    bool     shaft;        /**< GCONF.shaft the caller is counting on. A run whose cached
+                                GCONF says otherwise is refused rather than reversed */
     uint32_t pulses;       /**< microsteps to emit. 0 runs until halted */
     uint32_t pullin_pps;   /**< rate of the first and last pulse */
     uint32_t cruise_pps;   /**< rate held between the ramps */
     uint32_t accel_pps_s;  /**< slope of both ramps. 0 only when cruise == pullin */
 } tmc2209_move_t;
 
-/** @brief Where the driver is and what it is doing. */
+/**
+ * @brief What the pulse source is doing, and what it has done.
+ *
+ * One run's worth. There is no odometer here and none in @ref tmc2209_t: with
+ * no encoder on this machine, a position is a sum of run counts and nothing
+ * more, and summing them is a decision about what the pulses meant. That
+ * decision lives above, where the direction convention and the millimetres per
+ * pulse already live.
+ */
 typedef struct {
-    int32_t  position;   /**< signed microstep odometer, forward positive, including
-                              whatever a run in flight has emitted so far */
     uint32_t emitted;    /**< pulses of the current run, or of the last one */
     uint32_t rate_pps;   /**< rate presently being emitted */
     bool     running;    /**< a run is in flight */
@@ -515,16 +525,40 @@ typedef struct {
 tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *stepgen);
 
 /**
+ * @brief Whether pulses are presently going out.
+ *
+ * Asks the backend and reports, touching nothing else. This is what a
+ * supervisor polls: unlike tmc2209_poll_motion() it does not collect the count,
+ * so watching a run cannot consume the acknowledgement its owner still owes.
+ *
+ * @param dev      device with a stepgen
+ * @param running  true while a run is in flight, untouched on failure
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG         null argument
+ * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
+ * @retval TMC2209_ERR_IO          the backend failed
+ */
+tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
+
+/**
  * @brief Starts a move. Returns as soon as the pulses are on their way.
  *
  * Asynchronous, and the only call here that is. Sets DIR, then starts the
- * train, in that order and never the other. tmc2209_motion() is how the caller
- * learns it finished.
+ * train, in that order and never the other. DIR stays the run's for as long as
+ * the run lasts: tmc2209_line_write() on it is refused until the last pulse is
+ * out. tmc2209_poll_motion() is how the caller learns that happened.
  *
- * Which DIR level means forward is GCONF.shaft's answer, so the cached GCONF
- * must be valid. Refusing to move rather than guessing is deliberate: with no
- * encoder on this machine, a move in the wrong direction is not detected, it is
- * recorded as progress.
+ * The previous run's count must have been collected first. A backend reports
+ * one run at a time, so starting a second one overwrites the first one's total,
+ * and pulses that went into film would be lost with nothing to show they
+ * existed. That is TMC2209_ERR_UNREAD, and one tmc2209_poll_motion() after the
+ * run ends is what clears it.
+ *
+ * @p m.shaft is checked against the cached GCONF, so the cache must be valid.
+ * Refusing to move rather than guessing is deliberate: with no encoder on this
+ * machine, a move in the wrong direction is not detected, it is recorded as
+ * progress.
  *
  * A non-zero VACTUAL takes the driver off its STEP pin silently, so a move
  * would emit pulses that move nothing and still be counted. That is refused
@@ -541,7 +575,10 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
  * @retval TMC2209_ERR_NO_BACKEND   no stepgen, or no lines for DIR
  * @retval TMC2209_ERR_UNWIRED      this board does not connect DIR
  * @retval TMC2209_ERR_BUSY         a run is already in flight
- * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so forward is unknown
+ * @retval TMC2209_ERR_UNREAD       the last run's count was never collected
+ * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so the shaft bit in
+ *                                  effect is unknown
+ * @retval TMC2209_ERR_MISMATCH     GCONF.shaft is not what @p m.shaft declares
  * @retval TMC2209_ERR_ACCESS       VACTUAL is non-zero: the STEP pin is not
  *                                  what is driving this motor
  * @retval TMC2209_ERR_IO           the DIR write or the backend failed
@@ -579,9 +616,9 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
  * genuinely urgent drops the power stage with tmc2209_enable(), which is
  * synchronous and needs no peripheral to cooperate.
  *
- * The odometer is not settled here, because a ramped halt is still moving when
- * this returns and its final count is not known yet. tmc2209_motion() is what
- * settles it.
+ * The count is not collected here, because a ramped halt is still moving when
+ * this returns and its final total is not known yet. tmc2209_poll_motion() is
+ * what collects it.
  *
  * Halting an idle driver succeeds and does nothing.
  *
@@ -596,41 +633,29 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
 tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
 
 /**
- * @brief Reports the odometer and whether a run is still going.
+ * @brief Collects the run's pulse count, rate, and whether it is still going.
  *
- * Also where a finished run is folded into @ref tmc2209_t::position, so this is
- * the call that must be made before the odometer can be trusted at rest. Making
- * it repeatedly during a run is free of side effects; the fold happens once.
+ * Also the acknowledgement tmc2209_move() waits for. A call that finds the run
+ * over hands its final count to the caller and clears the way for the next
+ * move; one made mid-run reports progress and clears nothing, because the total
+ * it would be acknowledging does not exist yet.
  *
- * The odometer counts pulses emitted, which is not the same as film moved. They
- * agree while the motor stays in sync, and TMC2209_DRIVER_RESET is the report
- * that they may no longer.
+ * Poll as often as the control loop likes. Nothing accumulates here, so the
+ * only thing an extra call can change is that a finished run stops being owed.
+ *
+ * The count is pulses emitted, which is not the same as film moved. They agree
+ * while the motor stays in sync, and TMC2209_DRIVER_RESET is the report that
+ * they may no longer.
  *
  * @param dev  device
- * @param out  odometer and run state
+ * @param out  the run's count, rate and state
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG         null argument
  * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
  * @retval TMC2209_ERR_IO          the backend failed
  */
-tmc2209_err_t tmc2209_motion(tmc2209_t *dev, tmc2209_motion_t *out);
-
-/**
- * @brief Makes here zero.
- *
- * Refused while a run is in flight, where "here" is a moving target and the
- * origin would land wherever the call happened to be scheduled.
- *
- * @param dev  device at rest
- *
- * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG         null device
- * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
- * @retval TMC2209_ERR_BUSY        a run is in flight
- * @retval TMC2209_ERR_IO          the backend failed
- */
-tmc2209_err_t tmc2209_zero_position(tmc2209_t *dev);
+tmc2209_err_t tmc2209_poll_motion(tmc2209_t *dev, tmc2209_motion_t *out);
 
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 

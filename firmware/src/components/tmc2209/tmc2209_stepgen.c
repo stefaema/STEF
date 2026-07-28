@@ -1,23 +1,22 @@
 /*
  * tmc2209_stepgen.c: the driver facts a pulse source does not have.
  *
- * The backend emits edges and counts them. Everything that makes those edges
- * mean something lives here: which DIR level winds film forward once
- * GCONF.shaft has had its say, that a non-zero VACTUAL has quietly taken the
- * driver off its STEP pin, and that a count of pulses only becomes a position
- * once it carries a sign.
+ * The backend emits edges and counts them. What it cannot know is what has to
+ * be true for those edges to move the motor: that DIR is settled and stays
+ * settled, that GCONF.shaft is what the caller thinks it is, and that a
+ * non-zero VACTUAL has not quietly taken the driver off its STEP pin.
  *
  * Same division as tmc2209_enable(), which exists so that no caller has to
  * remember ENN is active low. A backend that knew any of this would have to be
  * rewritten for every board.
+ *
+ * What is deliberately absent is an odometer. A count of pulses becomes a
+ * position only once someone decides which direction was positive and what a
+ * pulse is worth in millimetres, and neither is knowable here. So a run's count
+ * is reported and the accumulating is somebody else's.
  */
 
 #include "tmc2209.h"
-
-/* A run's pulses fold into position when the run ends, and a run that ends is
-   one that state() reported as no longer running. Every entry point that could
-   observe or disturb the odometer goes through here first. */
-static tmc2209_err_t settle(tmc2209_t *dev, tmc2209_motion_t *out);
 
 static tmc2209_err_t check_stepgen(const tmc2209_t *dev)
 {
@@ -30,29 +29,38 @@ static tmc2209_err_t check_stepgen(const tmc2209_t *dev)
     return TMC2209_OK;
 }
 
-/* Direction is a sign on the odometer, not a property of the count. Keeping the
-   odometer in forward pulses rather than in DIR levels is what makes it survive
-   a board that wires DIR inverted or a GCONF.shaft written mid-scan. */
-static int32_t signed_pulses(bool forward, uint32_t emitted)
+/* Every question about a run goes through the backend, never through a
+   remembered answer: the pulses stop on their own schedule and nothing here
+   is told when. */
+static tmc2209_err_t run_state(const tmc2209_t *dev, tmc2209_run_state_t *st)
 {
-    /* A single run of over 2^31 pulses overflows. At any rate this machine can
-       use that is days of continuous motion in one direction without a stop. */
-    int32_t n = (int32_t)emitted;
-    return forward ? n : -n;
+    tmc2209_err_t err = check_stepgen(dev);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+    st->emitted  = 0;
+    st->rate_pps = 0;
+    st->running  = false;
+    return (dev->stepgen->state(dev->stepgen->ctx, st) < 0)
+        ? TMC2209_ERR_IO
+        : TMC2209_OK;
 }
 
-/* GCONF.shaft inverts the phase order, so the level that winds film forward is
-   a configuration question and not a wiring one. An invalid slot is a real
-   answer here: nothing knows which way this driver would turn. */
-static tmc2209_err_t forward_level(tmc2209_t *dev, bool forward, bool *level)
+/* GCONF.shaft inverts the phase order, so the same DIR level winds film one way
+   or the other depending on a register. The caller states which one it is
+   counting on and this refuses to move if the driver holds the other. An
+   invalid slot is a real answer here: nothing knows which way this driver would
+   turn. */
+static tmc2209_err_t shaft_is_as_declared(tmc2209_t *dev, bool shaft)
 {
     uint32_t raw = 0;
     tmc2209_err_t err = tmc2209_read(dev, TMC2209_GCONF, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
-    *level = (forward != tmc2209_gconf_decode(raw).shaft);
-    return TMC2209_OK;
+    return (tmc2209_gconf_decode(raw).shaft == shaft)
+        ? TMC2209_OK
+        : TMC2209_ERR_MISMATCH;
 }
 
 /* The internal velocity generator wins over the STEP pin, silently and with no
@@ -114,18 +122,31 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
     /* Swapping the pulse source out from under a run in flight would strand the
        count in a backend nothing points at any more. */
     if (dev->stepgen) {
-        tmc2209_motion_t motion;
-        tmc2209_err_t err = settle(dev, &motion);
+        tmc2209_run_state_t st;
+        tmc2209_err_t err = run_state(dev, &st);
         if (err != TMC2209_OK) {
             return err;
         }
-        if (motion.running) {
+        if (st.running) {
             return TMC2209_ERR_BUSY;
         }
     }
 
     dev->stepgen = stepgen;
     return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running)
+{
+    if (!running) {
+        return TMC2209_ERR_ARG;
+    }
+    tmc2209_run_state_t st;
+    tmc2209_err_t err = run_state(dev, &st);
+    if (err == TMC2209_OK) {
+        *running = st.running;
+    }
+    return err;
 }
 
 tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m)
@@ -145,17 +166,21 @@ tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m)
         return err;
     }
 
-    tmc2209_motion_t motion;
-    err = settle(dev, &motion);
+    tmc2209_run_state_t st;
+    err = run_state(dev, &st);
     if (err != TMC2209_OK) {
         return err;
     }
-    if (motion.running) {
+    if (st.running) {
         return TMC2209_ERR_BUSY;
     }
+    /* The backend holds one run's count. Starting another would overwrite a
+       total nobody has seen, and those pulses went into film. */
+    if (dev->count_unread) {
+        return TMC2209_ERR_UNREAD;
+    }
 
-    bool level = false;
-    err = forward_level(dev, m->forward, &level);
+    err = shaft_is_as_declared(dev, m->shaft);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -167,8 +192,9 @@ tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m)
 
     /* DIR first, always. The part wants it settled before the first STEP edge,
        and a backend that starts a pulse faster than that setup time is the one
-       place a delay belongs. */
-    err = tmc2209_line_write(dev, TMC2209_LINE_DIR, level);
+       place a delay belongs. From here until the run ends, tmc2209_line_write()
+       will not let it move again. */
+    err = tmc2209_line_write(dev, TMC2209_LINE_DIR, m->dir);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -183,8 +209,7 @@ tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_move_t *m)
         return TMC2209_ERR_IO;
     }
 
-    dev->run_forward = m->forward;
-    dev->run_pending = true;
+    dev->count_unread = true;
     return TMC2209_OK;
 }
 
@@ -198,12 +223,12 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps)
         return TMC2209_ERR_RATE;
     }
 
-    tmc2209_motion_t motion;
-    err = settle(dev, &motion);
+    tmc2209_run_state_t st;
+    err = run_state(dev, &st);
     if (err != TMC2209_OK) {
         return err;
     }
-    if (!motion.running) {
+    if (!st.running) {
         return TMC2209_ERR_IDLE;
     }
 
@@ -218,72 +243,35 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate)
     if (err != TMC2209_OK) {
         return err;
     }
-    /* No settling: a ramped halt is still emitting when this returns, so the
-       final count is not known yet and folding it now would fold it short. */
+    /* The count is left owed: a ramped halt is still emitting when this
+       returns, so its total is not known yet and collecting it now would
+       collect it short. */
     return (dev->stepgen->halt(dev->stepgen->ctx, immediate) < 0)
         ? TMC2209_ERR_IO
         : TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_motion(tmc2209_t *dev, tmc2209_motion_t *out)
+tmc2209_err_t tmc2209_poll_motion(tmc2209_t *dev, tmc2209_motion_t *out)
 {
     if (!out) {
         return TMC2209_ERR_ARG;
     }
-    return settle(dev, out);
-}
 
-tmc2209_err_t tmc2209_zero_position(tmc2209_t *dev)
-{
-    tmc2209_motion_t motion;
-    tmc2209_err_t err = check_stepgen(dev);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    err = settle(dev, &motion);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    if (motion.running) {
-        return TMC2209_ERR_BUSY;
-    }
-
-    dev->position = 0;
-    return TMC2209_OK;
-}
-
-/* ── Settling ───────────────────────────────────────────────────────────── */
-
-static tmc2209_err_t settle(tmc2209_t *dev, tmc2209_motion_t *out)
-{
-    tmc2209_err_t err = check_stepgen(dev);
+    tmc2209_run_state_t st;
+    tmc2209_err_t err = run_state(dev, &st);
     if (err != TMC2209_OK) {
         return err;
     }
 
-    tmc2209_run_state_t st = { 0, 0, false };
-    if (dev->stepgen->state(dev->stepgen->ctx, &st) < 0) {
-        return TMC2209_ERR_IO;
-    }
-
-    /* In flight, the pulses so far are real but not final, so they are reported
-       without being committed. Once the run ends they are committed exactly
-       once, which is what run_pending tracks: state() keeps reporting the last
-       run's count forever, and adding it on every poll would be a position that
-       grows while the motor stands still. */
-    int32_t travelled = 0;
-    if (dev->run_pending) {
-        travelled = signed_pulses(dev->run_forward, st.emitted);
-        if (!st.running) {
-            dev->position += travelled;
-            dev->run_pending = false;
-            travelled = 0;
-        }
-    }
-
-    out->position = dev->position + travelled;
     out->emitted  = st.emitted;
     out->rate_pps = st.rate_pps;
     out->running  = st.running;
+
+    /* A total the caller now holds is a total that will not be lost when the
+       next run overwrites it. Mid-run there is no total yet, so the debt
+       stands. */
+    if (!st.running) {
+        dev->count_unread = false;
+    }
     return TMC2209_OK;
 }

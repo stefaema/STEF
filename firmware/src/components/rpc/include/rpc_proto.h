@@ -99,8 +99,7 @@ typedef enum {
     RPC_RAW_RETARGET         = 19,
     RPC_RAW_HALT             = 20,
     RPC_RAW_MOTION           = 21,
-    RPC_RAW_ZERO_POSITION    = 22,
-    RPC_RAW_COUNT            = 23,
+    RPC_RAW_COUNT            = 22,
 } rpc_raw_method_t;
 
 /**
@@ -150,6 +149,7 @@ typedef enum {
     RPC_BUSY         = 15, /**< a run is in flight and this would disturb it */
     RPC_IDLE         = 16, /**< no run is in flight and this needs one */
     RPC_RATE         = 17, /**< a rate beyond what this stepgen can emit */
+    RPC_UNREAD       = 18, /**< the last run's pulse count was never collected */
 
     /* The RPC layer's own, for things that never reach the library. */
     RPC_NO_METHOD    = 32, /**< no such namespace or method here */

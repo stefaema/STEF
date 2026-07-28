@@ -326,11 +326,10 @@ one device, one move.
 
 | Method | Does | Parameters | Returns | Errors |
 |---|---|---|---|---|
-| `raw.move` | Starts a move and returns as soon as the pulses are on their way. The only asynchronous method in raw. Sets `DIR`, then starts the train, in that order. | `forward`, `pulses` (0 runs until halted), `pullin_pps`, `cruise_pps`, `accel_pps_s` | `{status}` | `ARG`, `RATE`, `NO_BACKEND`, `UNWIRED`, `BUSY`, `INVALID_SLOT` (`GCONF` uncached, so forward is unknown), `ACCESS` (`VACTUAL` non-zero), `IO`, `REFUSED` |
+| `raw.move` | Starts a move and returns as soon as the pulses are on their way. The only asynchronous method in raw. Sets `DIR`, then starts the train, in that order, and holds `DIR` until the last pulse is out. | `dir` (the level), `shaft` (the `GCONF.shaft` the caller is counting on), `pulses` (0 runs until halted), `pullin_pps`, `cruise_pps`, `accel_pps_s` | `{status}` | `ARG`, `RATE`, `NO_BACKEND`, `UNWIRED`, `BUSY`, `UNREAD` (the last run's count was never collected), `INVALID_SLOT` (`GCONF` uncached), `MISMATCH` (`GCONF.shaft` is not what was declared), `ACCESS` (`VACTUAL` non-zero), `IO`, `REFUSED` |
 | `raw.retarget` | Changes the cruise rate of a run in flight, at the run's original accel. What an unbounded run is for. | `cruise_pps` | `{status}` | `ARG`, `RATE`, `NO_BACKEND`, `IDLE`, `IO` |
 | `raw.halt` | Ends the run. Not an emergency stop: `immediate` still finishes the pulse in progress. Halting an idle driver succeeds and does nothing. | `immediate` | `{status}` | `ARG`, `NO_BACKEND`, `IO` |
-| `raw.motion` | Odometer and run state, and the call that folds a finished run into the odometer. Free of side effects during a run. | none | `{status, position, emitted, rate_pps, running}` | `ARG`, `NO_BACKEND`, `IO` |
-| `raw.zero_position` | Makes here zero. Refused in flight, where "here" would land wherever the call was scheduled. | none | `{status}` | `ARG`, `NO_BACKEND`, `BUSY`, `IO` |
+| `raw.motion` | The run's pulse count, rate and state. Collecting it once the run is over is what clears the way for the next `raw.move`; calling it mid-run reports progress and clears nothing. There is no odometer: a position is a sum of run counts, and what those pulses meant is the PC's to decide. | none | `{status, emitted, rate_pps, running}` | `ARG`, `NO_BACKEND`, `IO` |
 
 Notes:
 

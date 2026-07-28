@@ -77,10 +77,10 @@ static void stop_everything(const char *why)
 }
 
 /*
- * A device that finished its run stops being watched. tmc2209_motion() is also
- * what folds a completed run into the odometer, so asking is not merely free,
- * it is the call that has to happen anyway for the position to be trustworthy
- * at rest.
+ * A device that finished its run stops being watched. The question is asked
+ * with tmc2209_is_running() and not with tmc2209_poll_motion(), because the
+ * latter also collects the run's count, and a supervisor that collected it
+ * would let the next move go ahead on an acknowledgement its owner never made.
  */
 static bool disarm_the_stopped(void)
 {
@@ -97,8 +97,8 @@ static bool disarm_the_stopped(void)
             continue;
         }
 
-        tmc2209_motion_t m = { 0 };
-        if (tmc2209_motion(dev, &m) == TMC2209_OK && !m.running) {
+        bool running = false;
+        if (tmc2209_is_running(dev, &running) == TMC2209_OK && !running) {
             s_deadline_ms[i] = 0;
             continue;
         }

@@ -20,6 +20,7 @@ const char *tmc2209_strerror(tmc2209_err_t err)
     case TMC2209_ERR_MISMATCH: return "device disagrees with cache";
     case TMC2209_ERR_BUSY:     return "a run is in flight";
     case TMC2209_ERR_IDLE:     return "no run is in flight";
+    case TMC2209_ERR_UNREAD:   return "the last run's pulse count was never collected";
     case TMC2209_ERR_RATE:     return "rate beyond what this stepgen can emit";
     }
     return "unknown";
