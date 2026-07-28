@@ -424,6 +424,10 @@ tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool 
  * @retval TMC2209_ERR_ACCESS   the line is an input, in practice DIAG, or it is
  *                              STEP on a device that has a stepgen attached and
  *                              therefore no longer owns the pin
+ * @retval TMC2209_ERR_BUSY     DIR while a run is in flight. The odometer
+ *                              records one direction per run, so a level
+ *                              flipped mid-train would be counted as travel in
+ *                              whichever direction the run started
  * @retval TMC2209_ERR_IO       the backend failed for its own reasons
  */
 tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level);

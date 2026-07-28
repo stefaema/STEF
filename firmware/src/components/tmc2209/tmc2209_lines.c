@@ -79,6 +79,21 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
     if (line == TMC2209_LINE_STEP && dev->stepgen) {
         return TMC2209_ERR_ACCESS;
     }
+    /* DIR belongs to the run for as long as the run lasts. The odometer records
+       one direction per run, so a level flipped between two pulses would leave
+       the pulses before it and the pulses after it counted the same way, and
+       with no encoder that error is not detected, it is believed. Held until
+       the run ends rather than until the caller stops asking. */
+    if (line == TMC2209_LINE_DIR && dev->stepgen) {
+        tmc2209_motion_t motion;
+        tmc2209_err_t merr = tmc2209_motion(dev, &motion);
+        if (merr != TMC2209_OK) {
+            return merr;
+        }
+        if (motion.running) {
+            return TMC2209_ERR_BUSY;
+        }
+    }
 
     return (dev->lines->write(dev->lines->ctx, line, level) < 0)
         ? TMC2209_ERR_IO

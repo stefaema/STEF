@@ -637,6 +637,58 @@ static void test_a_stepgen_leaves_the_other_lines_alone(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, true));
 }
 
+/* DIR belongs to the run while the run lasts. Flipping it between two pulses
+   would have both halves counted in the direction the run started, and with no
+   encoder that is not detected. ENN stays available throughout, because cutting
+   the power stage is the one thing that must never be refused. */
+static void test_dir_is_held_for_the_duration_of_a_run(void)
+{
+    setup_ready(CFG_GCONF);
+
+    const tmc2209_move_t m = a_move(true, 4000);
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);
+
+    g_gen.emitted = 1000;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY,
+                      tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
+    TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);   /* refused, not applied */
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, false));
+
+    gen_finish(4000);
+    TEST_ASSERT_EQUAL(4000, motion_now().position);
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+                      tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
+    TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);
+}
+
+/* The hold ends with the run and not with a call to tmc2209_motion(): the pin
+   is free as soon as the last pulse is out, whether anyone asked or not. */
+static void test_dir_is_free_once_the_pulses_stop(void)
+{
+    setup_ready(CFG_GCONF);
+
+    const tmc2209_move_t m = a_move(true, 4000);
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    gen_finish(4000);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK,
+                      tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
+    /* And the run it just finished is still accounted for, once. */
+    TEST_ASSERT_EQUAL(4000, motion_now().position);
+    TEST_ASSERT_EQUAL(4000, motion_now().position);
+}
+
+/* Without a stepgen the pin is nobody's, so no run can be in flight to hold it. */
+static void test_dir_is_free_on_a_device_without_a_stepgen(void)
+{
+    setup_ready(CFG_GCONF);
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_stepgen(&g_dev, NULL));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, true));
+    TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);
+}
+
 /* ── Backend failure ────────────────────────────────────────────────────── */
 
 /* A backend that refuses the run has not moved anything, so the library must
@@ -733,6 +785,9 @@ void run_stepgen_tests(void)
 
     RUN_TEST(test_a_stepgen_takes_the_step_pin);
     RUN_TEST(test_a_stepgen_leaves_the_other_lines_alone);
+    RUN_TEST(test_dir_is_held_for_the_duration_of_a_run);
+    RUN_TEST(test_dir_is_free_once_the_pulses_stop);
+    RUN_TEST(test_dir_is_free_on_a_device_without_a_stepgen);
 
     RUN_TEST(test_a_refused_run_leaves_nothing_in_flight);
     RUN_TEST(test_a_backend_failure_yields_no_position);
