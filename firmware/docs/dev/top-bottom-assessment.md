@@ -96,7 +96,7 @@ methods.
 
 By the same rule these are raw too, and are tabled alongside the above:
 `poll_health`, `poll_load`, `poll_pins`, `poll_version`, `clear_faults`,
-`verify_config`, `set_velocity`, `set_current`, `adopt`, `invalidate_owned`,
+`verify_config`, `set_velocity`, `set_current`, `bringup`, `invalidate_owned`,
 `all_owned_valid`.
 
 `set_velocity` belongs here rather than in smart because it is a register write

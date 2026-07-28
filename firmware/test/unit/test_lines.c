@@ -26,11 +26,9 @@ typedef struct {
     int      fail_write;
 } fake_board_t;
 
-static fake_board_t   g_board;
+static fake_board_t    g_board;
 static tmc2209_lines_t g_lines;
-static tmc2209_bus_t  g_bus;
-static tmc2209_port_t g_port;
-static tmc2209_t      g_dev;
+static tmc2209_t       g_dev;
 
 static int board_read(void *ctx, tmc2209_line_t line)
 {
@@ -53,39 +51,21 @@ static int board_write(void *ctx, tmc2209_line_t line, bool level)
     return 0;
 }
 
-/* The port is never exercised here; it exists because tmc2209_init() requires
-   one. Lines and bytes are independent, which is itself worth stating. */
-static int port_stub_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t ms)
-{
-    (void)ctx; (void)buf; (void)ms;
-    return (int)len;
-}
+/* No bus is attached anywhere in this file. Lines and bytes are independent
+   backends, and the whole suite runs without a port to prove it.
 
-static int port_stub_rx(void *ctx, uint8_t *buf, size_t len, uint32_t ms)
-{
-    (void)ctx; (void)buf; (void)len; (void)ms;
-    return 0;
-}
-
-/* @p wired is what this board connects, so a test can build a board missing a
+   @p wired is what this board connects, so a test can build a board missing a
    line and assert the refusal. */
 static void setup_board(uint8_t wired)
 {
     memset(&g_board, 0, sizeof g_board);
-    memset(&g_port, 0, sizeof g_port);
-    g_port.tx = port_stub_tx;
-    g_port.rx = port_stub_rx;
-
-    g_bus.port       = &g_port;
-    g_bus.timeout_ms = 10;
-    g_bus.retries    = 0;
 
     g_lines.read  = board_read;
     g_lines.write = board_write;
     g_lines.ctx   = &g_board;
     g_lines.wired = wired;
 
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, &g_bus, 0));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, &g_lines));
 }
 
@@ -115,7 +95,7 @@ static void test_a_device_without_lines_refuses_every_line_call(void)
 static void test_init_leaves_lines_detached(void)
 {
     setup_board(TMC2209_LINES_ALL);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, &g_bus, 0));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_enable(&g_dev, true));
     TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_ENN]);

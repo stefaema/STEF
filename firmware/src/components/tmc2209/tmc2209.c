@@ -264,25 +264,32 @@ static void invalidate_batch(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t
 
 /* ── Public API ─────────────────────────────────────────────────────────── */
 
-tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t addr)
+tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr)
 {
-    if (!dev || !bus || !bus->port || !bus->port->tx || !bus->port->rx) {
-        return TMC2209_ERR_ARG;
-    }
-    if (addr > 3) {
+    if (!dev || addr > 3) {
         return TMC2209_ERR_ARG;
     }
     memset(dev, 0, sizeof *dev);
-    dev->bus  = bus;
     dev->addr = addr;
-
-    dev->valid = 0;
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
-                            const tmc2209_regval_t *config, size_t n,
-                            tmc2209_gstat_t *at_bringup)
+tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus)
+{
+    if (!dev) {
+        return TMC2209_ERR_ARG;
+    }
+    /* Half a backend is not a backend */
+    if (bus && (!bus->port || !bus->port->tx || !bus->port->rx)) {
+        return TMC2209_ERR_ARG;
+    }
+    dev->bus = bus;
+    return TMC2209_OK;
+}
+
+tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
+                              const tmc2209_regval_t *config, size_t n,
+                              tmc2209_gstat_t *at_bringup)
 {
     if (!dev || !dev->bus || !config || n == 0) {
         return TMC2209_ERR_ARG;
@@ -293,9 +300,12 @@ tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
         return err;
     }
 
-    /* Every OWNED register must be configured at adoption. */
+    /* Every OWNED register must be configured at bring-up. */
     uint32_t covered = 0;
     for (size_t i = 0; i < n; i++) {
+        if (config[i].reg == TMC2209_VACTUAL && config[i].value != 0) {
+            return TMC2209_ERR_ARG; /* A non-zero value on VACTUAL is dangerous */
+        }
         covered |= (1U << tmc2209_reg_slot(config[i].reg));
     }
     if (covered != owned_mask()) {
@@ -323,13 +333,13 @@ tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
         *at_bringup = tmc2209_gstat_decode(raw);
     }
 
-    /* Adoption starts from clean flags; raw is already the mask of what was seen. */
+    /* Bring-up starts from clean flags; raw is already the mask of what was seen. */
     err = clear_gstat(dev, raw);
     if (err != TMC2209_OK) {
         return err;
     }
 
-    /* Constant registers are only read at adoption as they don't practically change. */
+    /* Constant registers are only read at bring-up as they don't practically change. */
     for (int slot = 0; slot < TMC2209_REG_COUNT; slot++) {
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_CONSTANT) {
             continue;
@@ -341,7 +351,7 @@ tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
         mark_valid(dev, slot, raw);
     }
 
-    /* Adoption is housekeeping/setup + group write of initial config. */
+    /* Bring-up is after-init setup = group write of initial config. */
     return tmc2209_write(dev, config, n, NULL);
 }
 

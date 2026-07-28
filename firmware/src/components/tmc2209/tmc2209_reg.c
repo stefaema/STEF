@@ -26,7 +26,7 @@ typedef struct {
  *
  * There is no reset-value column on purpose: GCONF's reset depends on OTP bits
  * and CHOPCONF's on the address straps, so neither is a property of the part
- * number, and a seeded default is a value adopt() would eventually write.
+ * number, and a seeded default is a value bringup() would eventually write.
  * See design.md §1 and §7 item 7. */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W, OWN, "GCONF"        },

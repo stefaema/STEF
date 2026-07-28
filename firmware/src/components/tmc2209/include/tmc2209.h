@@ -50,7 +50,7 @@ typedef struct {
 
 /** @brief One driver, and everything known about what it currently holds. */
 typedef struct {
-    const tmc2209_bus_t *bus;            /**< UART comm channel */
+    const tmc2209_bus_t *bus;            /**< UART comm channel, NULL until attached */
     const tmc2209_lines_t *lines;        /**< control lines, NULL until attached */
     uint8_t  addr;                       /**< 0..3, set by the MS1/MS2 straps */
     uint8_t  ifcnt;                      /**< last observed write counter */
@@ -61,17 +61,29 @@ typedef struct {
 /**
  * @brief Construction only.
  *
- * Every slot starts invalid. Nothing can be read or written until `tmc2209_adopt()` supplies a
- * configuration.
+ * Every register slot starts invalid and no backend is attached.
  *
  * @param dev   device to initialise; overwritten entirely
- * @param bus   borrowed, must outlive @p dev
  * @param addr  0..3, matching the MS1/MS2 straps
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG  null argument, port without tx/rx, or addr > 3
+ * @retval TMC2209_ERR_ARG  null device, or addr > 3
  */
-tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t addr);
+tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr);
+
+/**
+ * @brief Gives the device the UART channel it speaks on.
+ *
+ * One bus carries up to four drivers, told apart by the address handed to
+ * tmc2209_init(), so several devices share one @p bus.
+ *
+ * @param dev  initialised device
+ * @param bus  borrowed, must outlive @p dev. NULL detaches
+ *
+ * @retval TMC2209_OK
+ * @retval TMC2209_ERR_ARG  null device, or a port missing tx or rx
+ */
+tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus);
 
 /**
  * @brief Claims a reachable driver and writes @p config to it.
@@ -82,26 +94,28 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, const tmc2209_bus_t *bus, uint8_t add
  * @p config must cover all @ref TMC2209_OWNED_COUNT owned registers. A partial
  * configuration is rejected.
  *
+ * Returns with the driver holding @p config and standing still.
+ *
  * GSTAT as found is handed back through @p at_bringup before it is cleared,
  * which is the only chance to see what the driver went through before this
  * firmware owned it. It says nothing about why the *controller* restarted;
  * that is esp_reset_reason()'s answer.
  *
- * @param dev         initialised device
+ * @param dev         device with a bus attached
  * @param config      one entry per owned register, in any order
  * @param n           length of @p config
  * @param at_bringup  GSTAT as found, before it is cleared. NULL to discard
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG      null argument, or @p config does not cover
- *                              every owned register
+ * @retval TMC2209_ERR_ARG      null argument, no bus attached, or @p config
+ *                              does not cover every owned register
  * @retval TMC2209_ERR_ACCESS   @p config names a register that is not owned
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the underlying reads and writes
  */
-tmc2209_err_t tmc2209_adopt(tmc2209_t *dev,
-                            const tmc2209_regval_t *config, size_t n,
-                            tmc2209_gstat_t *at_bringup);
+tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
+                              const tmc2209_regval_t *config, size_t n,
+                              tmc2209_gstat_t *at_bringup);
 
 /* ── Values ─────────────────────────────────────────────────────────────── */
 
@@ -195,7 +209,7 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
  *
  * This validates nothing. Clearing `TMC2209_DRIVER_RESET` says the reset was
  * noticed, not that the configuration was rewritten; only a successful
- * `tmc2209_write()` covering the owned registers does that (see `tmc2209_adopt()`).
+ * `tmc2209_write()` covering the owned registers does that (see `tmc2209_bringup()`).
  *
  * @param dev         device
  * @param conditions  conditions to acknowledge; 0 does nothing and touches no bus
@@ -338,9 +352,9 @@ tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c)
 /**
  * @brief Gives the device its control lines.
  *
- * Separate from tmc2209_init() because it is optional. A configuration-only
- * caller, and the unit suite, never attach any, and every line call then
- * reports TMC2209_ERR_UNWIRED rather than needing a stub backend.
+ * Optional, and one set per driver. Every line call on a device without them
+ * reports TMC2209_ERR_UNWIRED, so a configuration-only caller needs no stub
+ * backend.
  *
  * @param dev    initialised device
  * @param lines  borrowed, must outlive @p dev. NULL detaches

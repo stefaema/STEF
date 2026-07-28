@@ -49,7 +49,7 @@ typedef enum {
 
 /** Total slots. Kept under 32 so the validity bitmap is a single uint32_t. */
 #define TMC2209_REG_COUNT   23
-/** Registers a configuration must cover. See tmc2209_adopt(). */
+/** Registers a configuration must cover. See tmc2209_bringup(). */
 #define TMC2209_OWNED_COUNT 10
 
 /** What the driver permits. */
@@ -66,7 +66,7 @@ typedef enum {
     TMC2209_CLASS_VOLATILE,
     /** Only the firmware writes to this register. Cacheable while the slot stays valid. */
     TMC2209_CLASS_OWNED,
-    /** Nothing writes to this register in this design. Read once at adopt, cached after. */
+    /** Nothing writes to this register in this design. Read once at bring-up, cached after. */
     TMC2209_CLASS_CONSTANT,
 } tmc2209_class_t;
 
