@@ -506,8 +506,9 @@ typedef enum {
  * That correspondence is also why these live here and not with the transport:
  * they follow the library, and the transport must not.
  *
- * Values are fixed by the wire and are not the library's enum values. They stay
- * clear of the transport's own, which start at 32. Never renumber; append.
+ * Values are fixed by the wire and are not the library's enum values. They live
+ * below @ref RPC_STATUS_TRANSPORT_BASE, and @ref RPC_STATUS_LAST is what holds
+ * them there. Never renumber; append.
  */
 enum {
     RPC_ARG          = 1,  /**< caller passed something impossible */
@@ -529,7 +530,18 @@ enum {
     RPC_RATE         = 17, /**< a rate beyond what this stepgen can emit */
 
     /* This image's own, for a call the library never got to see. */
-    RPC_REFUSED      = 34, /**< policy: unsafe in the present state */
+    RPC_REFUSED      = 18, /**< policy: unsafe in the present state */
+
+    /**
+     * One past the last status this image serves. A marker for the assertion
+     * below, never a value on the wire: appending above it is what would push
+     * this vocabulary into the transport's, and that has to fail loudly rather
+     * than produce a reply the other end reads as a framing error.
+     */
+    RPC_STATUS_LAST
 };
+
+static_assert(RPC_STATUS_LAST <= RPC_STATUS_TRANSPORT_BASE,
+              "handler statuses have grown into the transport's band");
 
 #endif /* RPC_API_H */

@@ -5,11 +5,10 @@
  * The link layer knows how to get a frame off the wire and how to put one
  * back; it must not also know what any method means. This is the seam.
  *
- * Namespaces are **registered**, not compiled in. A handler that reaches a
- * TMC2209 has to know what a TMC2209 is, and this component deliberately does
- * not: it moves frames. So the composition root registers what exists, and a
- * test registers only what it is testing, without either of them having to be
- * named here.
+ * Namespaces are **registered**, not compiled in. A handler knows a device, a
+ * peripheral or a subsystem, and this component knows none of those: it moves
+ * frames. So the caller registers what it serves, and a test registers only
+ * what it is testing, without either of them having to be named here.
  *
  * ## Why the table carries sizes
  *
@@ -18,8 +17,8 @@
  * length lives in the table beside the function and dispatch checks it there,
  * once, for every method at once.
  *
- * `sizeof` is evaluated where the table is defined, which is in `main` where
- * the payload structs are visible. What arrives here is an integer, so this
+ * `sizeof` is evaluated where the table is defined, which is wherever the
+ * payload structs are visible. What arrives here is an integer, so this
  * component still names no type belonging to any handler.
  *
  * ## The two shapes
@@ -109,7 +108,7 @@ typedef struct {
 /**
  * @brief Installs the methods of one namespace.
  *
- * @param ns       which namespace, from @ref rpc_ns_t
+ * @param ns       which namespace, below @ref RPC_NS_MAX
  * @param methods  array indexed by method number. A zeroed entry is a method
  *                 the protocol names and this build does not implement
  * @param count    length of @p methods, which is the namespace's `*_COUNT`

@@ -20,7 +20,7 @@ flowchart LR
 
 ## Comunicación con el Driver: Librería `tmc2209`
 
-La librería TMC2209 tiene tres vías de control para manejar al driver, y cada una resuelve un problema distinto:
+La librería TMC2209 fue diseñada e implementada para el presente proyecto con tres vías de control para manejar al driver, y cada una resuelve un problema distinto:
 
 | Vía | Qué resuelve | Naturaleza |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ Las consecuencias de esa diferencia son tres, lo cual influye en el diseño resu
 
 1. **Hace falta un periférico.** Cuatro mil microsteps a diez mil pulsos por segundo son cuatrocientos milisegundos de flancos que tienen que salir parejos, y sacarlos desde código sería ocupar el procesador entero para hacer algo que un RMT, un MCPWM o un timer hacen solos. Por eso el generador de pasos es su propio backend, con su propio contrato, y no una función más del backend de líneas: este backend entocnes deberá interactuar con el tiempo de manera cotidiana. Es el único de los tres que lo hace (sin contar los timeouts de UART).
 
-2. **La API tiene que ser asíncrona**. Una llamada que volviera cuando el movimiento terminó dejaría al lazo de control congelado esos cuatrocientos milisegundos, justo mientras el motor se mueve, que es cuando hay algo para vigilar. Entonces `tmc2209_move()` vuelve apenas los pulsos están en camino, y queda el movimiento ocurriendo de fondo con un estado. Consultarlo es a través de `tmc2209_motion()`.
+2. **La API tiene que ser no-bloqueante**. Una llamada que volviera cuando el movimiento terminó dejaría al lazo de control congelado esos cuatrocientos milisegundos, justo mientras el motor se mueve, que es cuando hay algo para vigilar. Entonces `tmc2209_move()` vuelve apenas los pulsos están en camino, y queda el movimiento ocurriendo de fondo con un estado. Consultarlo es a través de `tmc2209_motion()`.
 
 3. **El movimiento no puede empezar ni terminar de golpe**. Un motor paso a paso al que se le pide más aceleración de la que puede dar se queda atrás, patina, y se mueve una distancia desconocida. Por eso una corrida no se describe con una velocidad sino con un perfil:
 
@@ -315,9 +315,9 @@ Lo que entonces engloba a la librería en sí son cuatro componentes:
 
 | Componente | Qué resuelve |
 | --- | --- |
-| `cobs` | Una trama debe ser identificada como tal. La codificación `cobs` garantiza que no quede ningún cero adentro de la trama, entonces podemos utilizar ese cero para darle fin a la misma, nunca significando otra cosa. De esta forma, un receptor perdido se resincroniza a lo sumo una trama después. No se perdería el canal de comunicación indefinidamente, como sí pasaría si se usara un campo de longitud, por ejemplo.|
+| `cobs` | Una trama debe ser identificada como tal. La codificación `cobs` garantiza que no quede ningún cero adentro de la trama, entonces se puede utilizar ese cero para darle fin a la misma, nunca significando otra cosa. De esta forma, un receptor perdido se resincroniza a lo sumo una trama después. No se perdería el canal de comunicación indefinidamente, como sí pasaría si se usara un campo de longitud, por ejemplo.|
 | `crc16` | Una trama bien delimitada todavía puede venir corrupta. El CRC hace que se rechace en vez de decodificarse. |
-| `rpc_frame` | Pone un encabezado y un CRC alrededor de un payload, y se los saca. Nunca mira lo que hay adentro: para él es un tramo de bytes, y para quien pidió la llamada es un struct. |
+| `rpc_frame` | Pone un encabezado y un CRC alrededor de un payload, o se los saca. |
 | `rpc_dispatch` | Convierte un namespace y un número de método en una llamada, contra tablas que alguien de afuera registra. |
 | `rpc_proto` | Lo mínimo que las dos puntas tienen que acordar para intercambiar una trama: qué tipos de trama hay, cuán grande puede ser, que un estado es un byte, y las tres reglas de layout que hacen que un struct se pueda leer en el lugar. |
 

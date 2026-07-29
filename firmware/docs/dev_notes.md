@@ -42,6 +42,10 @@ I want to refactor main II readme.md entry
 ## CRC16
 RPC uses crc16, overhead? driver uses crc8. May be because he's dumber than an ESP32 and everything is ok.
 
+## Status band
+
+`rpc_dispatch` could reject a handler status at or above `RPC_STATUS_TRANSPORT_BASE`; the static_assert only covers the declared vocabulary, not a literal `return 241;`.
+
 ## About Device
 
 Hardware tested:
