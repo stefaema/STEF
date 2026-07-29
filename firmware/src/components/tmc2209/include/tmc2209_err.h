@@ -10,7 +10,7 @@
  * answering and retrying will not help.
  *
  * So the codes are one flat enum spanning every layer, and it lives here
- * rather than in any one layer's header. tmc2209_port.h would be the wrong
+ * rather than in any one layer's header. tmc2209_uart.h would be the wrong
  * home: it names only the transport, while these codes also describe framing
  * and cache state.
  */

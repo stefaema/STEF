@@ -3,7 +3,7 @@
  *
  * The other two backends are synchronous and stateless. You call tx, bytes
  * move or they do not, and nothing is remembered between calls. That is what
- * lets tmc2209_port.h and tmc2209_lines.h each say "note what is absent: there
+ * lets tmc2209_uart.h and tmc2209_lines.h each say "note what is absent: there
  * is no clock".
  *
  * A pulse train cannot be that. Four thousand microsteps take a fifth of a

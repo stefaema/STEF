@@ -28,8 +28,8 @@ bool devices_init(void)
         return false;
     }
 
-    const tmc2209_bus_t *bus = backends_bus();
-    size_t               n   = board->n_drivers;
+    const tmc2209_uart_t *uart = backends_uart();
+    size_t                n    = board->n_drivers;
     if (n > DEVICES_MAX) {
         ESP_LOGE(TAG, "board declares %u drivers, %d fit on one wire",
                  (unsigned)n, DEVICES_MAX);
@@ -41,7 +41,7 @@ bool devices_init(void)
 
         tmc2209_err_t terr = tmc2209_init(&s_devs[i], d->addr);
         if (terr == TMC2209_OK) {
-            terr = tmc2209_attach_bus(&s_devs[i], bus);
+            terr = tmc2209_attach_uart(&s_devs[i], uart);
         }
         if (terr == TMC2209_OK) {
             terr = tmc2209_attach_lines(&s_devs[i], backends_lines(i));

@@ -12,10 +12,9 @@
 
 static const char *TAG = "backends";
 
-static bool          s_ready;
-static int           s_uart;
-static tmc2209_port_t s_port;
-static tmc2209_bus_t  s_bus;
+static bool           s_ready;
+static int            s_uart_num;
+static tmc2209_uart_t s_uart_backend;
 
 /* One lines backend per driver, each pointing at its own row of the table. */
 static tmc2209_lines_t      s_lines[BACKENDS_MAX_DRIVERS];
@@ -24,15 +23,15 @@ static const board_driver_t *s_wiring[BACKENDS_MAX_DRIVERS];
 /* ── The wire ───────────────────────────────────────────────────────────── */
 
 /*
- * The port reports bytes moved, never meaning. A short count is a timeout and
- * the library decides what that means; here it is just a number.
+ * The backend reports bytes moved, never meaning. A short count is a timeout
+ * and the library decides what that means; here it is just a number.
  */
 
-static int port_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_ms)
+static int uart_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_ms)
 {
     (void)ctx;
 
-    int sent = uart_write_bytes(s_uart, buf, len);
+    int sent = uart_write_bytes(s_uart_num, buf, len);
     if (sent < 0) {
         return sent;
     }
@@ -42,23 +41,23 @@ static int port_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
      * while bytes are still in the FIFO would have the caller listening for a
      * reply during its own transmission.
      */
-    if (uart_wait_tx_done(s_uart, pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
+    if (uart_wait_tx_done(s_uart_num, pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
         return -1;
     }
 
     return sent;
 }
 
-static int port_rx(void *ctx, uint8_t *buf, size_t len, uint32_t timeout_ms)
+static int uart_rx(void *ctx, uint8_t *buf, size_t len, uint32_t timeout_ms)
 {
     (void)ctx;
-    return uart_read_bytes(s_uart, buf, (uint32_t)len, pdMS_TO_TICKS(timeout_ms));
+    return uart_read_bytes(s_uart_num, buf, (uint32_t)len, pdMS_TO_TICKS(timeout_ms));
 }
 
-static void port_purge_rx(void *ctx)
+static void uart_purge_rx(void *ctx)
 {
     (void)ctx;
-    uart_flush_input(s_uart);
+    uart_flush_input(s_uart_num);
 }
 
 /* ── The pins ───────────────────────────────────────────────────────────── */
@@ -231,19 +230,19 @@ esp_err_t backends_init(const board_t *board)
         return err;
     }
 
-    s_uart = board->uart_num;
+    s_uart_num = board->uart_num;
 
-    s_port = (tmc2209_port_t){
-        .tx       = port_tx,
-        .rx       = port_rx,
-        .purge_rx = port_purge_rx,
+    s_uart_backend = (tmc2209_uart_t){
+        .tx       = uart_tx,
+        .rx       = uart_rx,
+        .purge_rx = uart_purge_rx,
         .ctx      = NULL,
         /* TX and RX meet at PDN_UART, so every byte we send comes back. */
         .echoes   = true,
-    };
 
-    s_bus = (tmc2209_bus_t){
-        .port       = &s_port,
+        /* Library policy rather than peripheral fact, and the board table's to
+           choose: how long a driver gets to answer, and how many times a
+           mangled datagram is worth sending again. */
         .timeout_ms = board->timeout_ms,
         .retries    = board->retries,
     };
@@ -270,9 +269,9 @@ esp_err_t backends_init(const board_t *board)
     return ESP_OK;
 }
 
-const tmc2209_bus_t *backends_bus(void)
+const tmc2209_uart_t *backends_uart(void)
 {
-    return s_ready ? &s_bus : NULL;
+    return s_ready ? &s_uart_backend : NULL;
 }
 
 const tmc2209_lines_t *backends_lines(size_t i)

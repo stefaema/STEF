@@ -28,8 +28,7 @@ unsigned fake_watchdog_arms(void);
 #include "unity.h"
 
 static mock_dev_t     g_mock;
-static tmc2209_port_t g_port;
-static tmc2209_bus_t  g_bus;
+static tmc2209_uart_t g_uart;
 static tmc2209_t      g_dev;
 
 /* A board with four pins, as test_lines.c uses. Levels persist, so a write is
@@ -71,13 +70,12 @@ static void rpc_setup(bool with_lines)
 {
     memset(&g_board, 0, sizeof(g_board));
 
-    mock_init(&g_mock, &g_port, 0, true);
-    g_bus.port       = &g_port;
-    g_bus.timeout_ms = 10;
-    g_bus.retries    = 0; /* one attempt, so an injected fault is the answer */
+    mock_init(&g_mock, &g_uart, 0, true);
+    g_uart.timeout_ms = 10;
+    g_uart.retries    = 0; /* one attempt, so an injected fault is the answer */
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, &g_bus));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, &g_uart));
 
     if (with_lines) {
         g_lines.read  = board_read;

@@ -65,8 +65,7 @@ typedef struct {
 static bool              g_shaft;
 
 static mock_dev_t        g_mock;
-static tmc2209_port_t    g_port;
-static tmc2209_bus_t     g_bus;
+static tmc2209_uart_t    g_uart;
 static fake_board_t      g_board;
 static tmc2209_lines_t   g_lines;
 static fake_gen_t        g_gen;
@@ -154,10 +153,9 @@ static void setup_ready(uint32_t gconf)
     memset(&g_board, 0, sizeof g_board);
     memset(&g_gen, 0, sizeof g_gen);
 
-    mock_init(&g_mock, &g_port, 0, true);
-    g_bus.port       = &g_port;
-    g_bus.timeout_ms = 10;
-    g_bus.retries    = 1;
+    mock_init(&g_mock, &g_uart, 0, true);
+    g_uart.timeout_ms = 10;
+    g_uart.retries    = 1;
 
     g_lines.read  = board_read;
     g_lines.write = board_write;
@@ -176,7 +174,7 @@ static void setup_ready(uint32_t gconf)
     g_shaft           = tmc2209_gconf_decode(gconf).shaft;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, &g_bus));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, &g_uart));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, &g_lines));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_stepgen(&g_dev, &g_stepgen));
     TEST_ASSERT_EQUAL(TMC2209_OK,

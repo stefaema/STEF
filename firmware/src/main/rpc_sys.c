@@ -84,7 +84,7 @@ static rpc_status_t sys_devices(rpc_reader_t *args, rpc_writer_t *ret)
         rpc_w_str(ret, devices_name(i));
         rpc_w_u8(ret, dev ? dev->addr : 0u);
         rpc_w_u8(ret, wired);
-        rpc_w_bool(ret, dev != NULL && dev->bus != NULL);
+        rpc_w_bool(ret, dev != NULL && dev->uart != NULL);
         rpc_w_bool(ret, dev != NULL && dev->stepgen != NULL);
     }
 

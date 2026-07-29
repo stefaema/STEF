@@ -1,5 +1,5 @@
 /*
- * mock_tmc2209.h: a fake TMC2209 behind the port interface.
+ * mock_tmc2209.h: a fake TMC2209 behind the uart interface.
  *
  * A scripted byte queue would test the framing but make the transaction tests
  * unreadable, because every expectation would be a hand-assembled datagram.
@@ -69,8 +69,9 @@ typedef struct {
 } mock_dev_t;
 
 /* Zeroes the mock, seeds the power-on register values a real part would show,
-   and wires the returned port to it. */
-void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes);
+   and wires the returned backend to it. Leaves timeout_ms and retries at zero:
+   they are the caller's policy, not the device model's. */
+void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes);
 
 uint32_t mock_reg(const mock_dev_t *m, tmc2209_reg_t reg);
 void     mock_set_reg(mock_dev_t *m, tmc2209_reg_t reg, uint32_t value);

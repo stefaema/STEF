@@ -72,15 +72,15 @@ static rpc_status_t pt_send(rpc_reader_t *args, rpc_writer_t *ret)
     if (dev == NULL) {
         return RPC_ARG;
     }
-    if (dev->bus == NULL) {
+    if (dev->uart == NULL) {
         return RPC_NO_BACKEND;
     }
 
     uint8_t rx[PT_MAX_BYTES];
     size_t  rx_got = 0;
 
-    tmc2209_err_t err = tmc2209_bus_send(dev->bus, tx, tx_len,
-                                         reply_len ? rx : NULL, reply_len, &rx_got);
+    tmc2209_err_t err = tmc2209_uart_send(dev->uart, tx, tx_len,
+                                          reply_len ? rx : NULL, reply_len, &rx_got);
 
     if (!changes_nothing(tx, tx_len)) {
         tmc2209_invalidate_owned(dev);

@@ -1,5 +1,5 @@
 # Host-native unit tests. No ESP-IDF, no toolchain, no hardware: this builds
-# the same tmc2209 and rpc sources the firmware uses, against a mock port.
+# the same tmc2209 and rpc sources the firmware uses, against a mock uart.
 #
 #   cmake -S firmware/test/unit -B build-unit && cmake --build build-unit
 #   ctest --test-dir build-unit --output-on-failure
@@ -42,7 +42,8 @@ add_library(tmc2209 STATIC
     ${TMC2209_DIR}/tmc2209_frame.c
     ${TMC2209_DIR}/tmc2209_lines.c
     ${TMC2209_DIR}/tmc2209_reg.c
-    ${TMC2209_DIR}/tmc2209_stepgen.c)
+    ${TMC2209_DIR}/tmc2209_stepgen.c
+    ${TMC2209_DIR}/tmc2209_uart.c)
 target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
 
 # The framing and the wire format, built here for the same reason: they are the

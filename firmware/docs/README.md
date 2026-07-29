@@ -30,7 +30,7 @@ La librería TMC2209 tiene tres vías de control para manejar al driver, y cada 
 
 La librería cubre las tres, y las mantiene lo más separadas posible: la única cosa que las une es la estructura del dispositivo. Además, no solo están separadas entre sí si no que funcionan aisladas del sistema en el que operan, ya que cada vía declara un *backend*, es decir un contrato de punteros a función que alguien de afuera debe cumplir:
 
-- `tmc2209_port_t`: mover bytes, corresponde a UART.
+- `tmc2209_uart_t`: mover bytes, corresponde a UART.
 - `tmc2209_lines_t`: leer y escribir un nivel en un pin, corresponde a Líneas de Control.
 - `tmc2209_stepgen_t`: emitir un tren de pulsos, corresponde a Pulsos en STEP.
 
@@ -67,7 +67,7 @@ Sobre el shadow y las clases se apoya la API pública, que se ordena en familias
 | Familia | Función | Qué hace |
 | --- | --- | --- |
 | Construcción | `tmc2209_init(dev, addr)` | Arma el dispositivo con su dirección. Todos los slots arrancan inválidos, y no existe backend de BUS UART aún para mandar ni recibir datagramas. |
-| | `tmc2209_attach_bus(dev, bus)` | Acopla el canal UART con el que se podrá comunicar la librería. Un mismo bus lo pueden compartir hasta cuatro dispositivos, ya que hay dos bits de direccionamiento. |
+| | `tmc2209_attach_uart(dev, uart)` | Acopla el canal UART con el que se podrá comunicar la librería. Un mismo canal lo pueden compartir hasta cuatro dispositivos, ya que hay dos bits de direccionamiento. |
 | | `tmc2209_bringup(dev, config[], n, *at_bringup)` | Inicializa un driver a nivel físico: lee el contador de escritura para usar como base, se fija y devuelve las banderas de estado del driver antes de ser reseteadas, lee registros constantes y configura los registros propios. |
 | Valores | `tmc2209_read(dev, reg, *out)` | Lee un registro shadow y no toca el bus nunca. Sirve propios y constantes; rechaza volátiles, porque de esos no hay copia que valga. |
 | | `tmc2209_write(dev, ops[], n, *failed_at)` | El lote es la unidad de trabajo: `n` datagramas y una sola verificación al final, así diez registros cuestan once transacciones y no veinte. |
@@ -79,7 +79,7 @@ Sobre el shadow y las clases se apoya la API pública, que se ordena en familias
 | Veredictos | `tmc2209_verify_config(dev, *mismatched)` | Contrasta el shadow contra el driver. Solo `GCONF` y `CHOPCONF` se pueden verificar, que son los propios de lectura-escritura. |
 | Runtime | `tmc2209_set_velocity(dev, v)` | Escribe `VACTUAL`, inmediato y verificado. |
 | | `tmc2209_set_current(dev, *c)` | Escribe `IHOLD_IRUN`. Es runtime porque es deseable varias las corrientes ya que se relacionan directamente con el torque que el motor es capaz de hacer.|
-| Passthrough | `tmc2209_bus_send(bus, tx[], tx_len, rx[], rx_len, *rx_got)` | Permite mandar y recibir bytes crudos, sin codificar ni decodificar. Saltea la construcción de framing, utilizado para poder enviar datagramas directamente en caso de que se requiera hacer un bypass de la librería sin utilizar el backend.|
+| Passthrough | `tmc2209_uart_send(uart, tx[], tx_len, rx[], rx_len, *rx_got)` | Permite mandar y recibir bytes crudos, sin codificar ni decodificar. Saltea la construcción de framing, utilizado para poder enviar datagramas directamente en caso de que se requiera hacer un bypass de la librería sin utilizar el backend.|
 
 Por debajo, todo eso son datagramas armados en [tmc2209_frame.c](../src/components/tmc2209/tmc2209_frame.c), que es código stateless y sin I/O, puramente sobre arrays de bytes.
 
@@ -141,7 +141,7 @@ Características:
 
 - **Reintentos acotados.** Un CRC malo o un timeout se reintentan tantas veces como declare el bus, con la salvedad de que un reintento puede inflar al contador de escrituras `IFCNT` por demás. Por eso la verificación compara contra una cota y no contra una igualdad exacta.
 
-- **El passthrough.** `tmc2209_bus_send()` es la vía para diagnosticar al driver: nada de la respuesta se juzga, ni siquiera un CRC malo, porque quien llama por acá sospecha del driver. Una respuesta corta se informa con cuántos bytes llegaron, en vez de descartarse.
+- **El passthrough.** `tmc2209_uart_send()` es la vía para diagnosticar al driver: nada de la respuesta se juzga, ni siquiera un CRC malo, porque quien llama por acá sospecha del driver. Una respuesta corta se informa con cuántos bytes llegaron, en vez de descartarse.
 
 ### Líneas de Control
 
@@ -414,7 +414,7 @@ Esto nos permite generar cuatro namespaces de procedimientos remotos, y la pregu
 
 La primera necesidad es probar el driver, y ahí el ESP32 tiene que desaparecer lo más posible. Si el datagrama que sale del cable lo armó el firmware, entonces cuando algo no anda hay dos sospechosos y no uno.
 
-Por eso este namespace nació pegado a `tmc2209_bus_send()`, que es la función de la librería que existe para esto mismo: bytes crudos adentro, bytes crudos afuera. La PC arma el datagrama completo, con su dirección y su CRC, usando los mismos codecs que usa el firmware, y recibe de vuelta lo que el driver haya contestado sin interpretar. Un CRC malo no es un error acá, es el dato: puede ser exactamente lo que el experimento quería provocar. Una respuesta corta se informa con cuántos bytes llegaron.
+Por eso este namespace nació pegado a `tmc2209_uart_send()`, que es la función de la librería que existe para esto mismo: bytes crudos adentro, bytes crudos afuera. La PC arma el datagrama completo, con su dirección y su CRC, usando los mismos codecs que usa el firmware, y recibe de vuelta lo que el driver haya contestado sin interpretar. Un CRC malo no es un error acá, es el dato: puede ser exactamente lo que el experimento quería provocar. Una respuesta corta se informa con cuántos bytes llegaron.
 
 Tiene un solo método, `passthrough.send`, y va a seguir teniendo uno solo.
 

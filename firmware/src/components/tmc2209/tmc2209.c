@@ -1,168 +1,17 @@
+/*
+ * tmc2209.c: the device itself, meaning lifecycle, registers and the cache.
+ *
+ * Everything here is a question about what the driver holds rather than about
+ * how bytes reach it. A transaction is one call away, in tmc2209_uart_priv.h,
+ * and what this file adds on top is the part a datagram cannot answer alone:
+ * whether a write landed, whether a remembered value is still true, and which
+ * registers a caller is allowed to ask about at all.
+ */
+
 #include "tmc2209.h"
-#include "tmc2209_frame.h"
+#include "tmc2209_uart_priv.h"
 
 #include <string.h>
-
-#define MAX_XFER 32U   /* bounds the stack buffer used to verify passthrough echo */
-
-/* ── Port plumbing ──────────────────────────────────────────────────────── */
-
-static void trace(const tmc2209_bus_t *bus, bool out, const uint8_t *b, size_t n)
-{
-    if (bus->port->trace) {
-        bus->port->trace(bus->port->ctx, out, b, n);
-    }
-}
-
-static void bus_lock(const tmc2209_bus_t *bus)
-{
-    if (bus->port->lock) {
-        bus->port->lock(bus->port->ctx);
-    }
-}
-
-static void bus_unlock(const tmc2209_bus_t *bus)
-{
-    if (bus->port->unlock) {
-        bus->port->unlock(bus->port->ctx);
-    }
-}
-
-static void bus_purge(const tmc2209_bus_t *bus)
-{
-    if (bus->port->purge_rx) {
-        bus->port->purge_rx(bus->port->ctx);
-    }
-}
-
-static tmc2209_err_t port_tx(const tmc2209_bus_t *bus, const uint8_t *buf, size_t len)
-{
-    int n = bus->port->tx(bus->port->ctx, buf, len, bus->timeout_ms);
-    trace(bus, true, buf, len);
-    if (n < 0) {
-        return TMC2209_ERR_IO;
-    }
-    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TX_TIMEOUT;
-}
-
-/* @p got reports how many bytes actually arrived, which is the difference
-   between a driver that stayed silent and one that answered and was cut off.
-   NULL when the caller only needs the verdict. */
-static tmc2209_err_t port_rx(const tmc2209_bus_t *bus, uint8_t *buf, size_t len,
-                             size_t *got)
-{
-    if (got) {
-        *got = 0;
-    }
-    int n = bus->port->rx(bus->port->ctx, buf, len, bus->timeout_ms);
-    if (n < 0) {
-        return TMC2209_ERR_IO;
-    }
-    if (got) {
-        *got = (size_t)n;
-    }
-    trace(bus, false, buf, (size_t)n);
-    return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_RX_TIMEOUT;
-}
-
-/* Echo is evidence, not litter. Short and altered are both "not what we sent". */
-static tmc2209_err_t verify_echo(const tmc2209_bus_t *bus, const uint8_t *sent, size_t len)
-{
-    if (!bus->port->echoes) {
-        return TMC2209_OK;
-    }
-    if (len > MAX_XFER) {
-        return TMC2209_ERR_ARG;
-    }
-    uint8_t echo[MAX_XFER];
-    tmc2209_err_t err = port_rx(bus, echo, len, NULL);
-    if (err == TMC2209_ERR_RX_TIMEOUT) {
-        return TMC2209_ERR_ECHO;
-    }
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    return (memcmp(echo, sent, len) == 0) ? TMC2209_OK : TMC2209_ERR_ECHO;
-}
-
-/* ── Single transactions, one attempt each ──────────────────────────────── */
-
-static tmc2209_err_t read_once(const tmc2209_bus_t *bus, uint8_t addr,
-                               tmc2209_reg_t reg, uint32_t *out)
-{
-    uint8_t req[TMC2209_READ_REQ_LEN];
-    tmc2209_frame_read_request(req, addr, (uint8_t)reg);
-
-    bus_purge(bus);
-
-    tmc2209_err_t err = port_tx(bus, req, sizeof req);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    err = verify_echo(bus, req, sizeof req);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-
-    uint8_t reply[TMC2209_REPLY_LEN];
-    err = port_rx(bus, reply, sizeof reply, NULL);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    return tmc2209_frame_parse_reply(reply, (uint8_t)reg, out);
-}
-
-static tmc2209_err_t write_once(const tmc2209_bus_t *bus, uint8_t addr,
-                                tmc2209_reg_t reg, uint32_t value)
-{
-    uint8_t dg[TMC2209_WRITE_LEN];
-    tmc2209_frame_write(dg, addr, (uint8_t)reg, value);
-
-    bus_purge(bus);
-
-    tmc2209_err_t err = port_tx(bus, dg, sizeof dg);
-    if (err != TMC2209_OK) {
-        return err;
-    }
-    return verify_echo(bus, dg, sizeof dg);
-}
-
-/* ── Single transactions, multiple attempts ──────────────────────────────── */
-
-/* Reads have no side effect, so retrying is free.
-   Writes are idempotent, so retrying is safe but may double-count IFCNT. */
-static tmc2209_err_t read_retrying(const tmc2209_bus_t *bus, uint8_t addr,
-                                   tmc2209_reg_t reg, uint32_t *out)
-{
-    tmc2209_err_t err = TMC2209_ERR_IO;
-    for (unsigned attempt = 0; attempt <= bus->retries; attempt++) {
-        err = read_once(bus, addr, reg, out);
-        if (err == TMC2209_OK) {
-            return TMC2209_OK;
-        }
-        /* Draining what is already buffered needs purge_rx, which the port need
-           not supply, so a retry can read the same bytes back. */
-        if (err == TMC2209_ERR_REG || err == TMC2209_ERR_ARG) {
-            return err;
-        }
-    }
-    return err;
-}
-
-static tmc2209_err_t write_retrying(const tmc2209_bus_t *bus, uint8_t addr,
-                                    tmc2209_reg_t reg, uint32_t value,
-                                    unsigned *issued)
-{
-    tmc2209_err_t err = TMC2209_ERR_IO;
-    for (unsigned attempt = 0; attempt <= bus->retries; attempt++) {
-        (*issued)++;
-        err = write_once(bus, addr, reg, value);
-        if (err == TMC2209_OK) {
-            return TMC2209_OK;
-        }
-    }
-    return err;
-}
 
 /* ── Cache bookkeeping ──────────────────────────────────────────────────── */
 
@@ -194,7 +43,8 @@ static tmc2209_err_t confirm_writes(tmc2209_t *dev,
                                     unsigned datagrams_sent)
 {
     uint32_t raw = 0;
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr,
+                                              TMC2209_IFCNT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -216,8 +66,9 @@ static tmc2209_err_t clear_gstat(tmc2209_t *dev, uint32_t mask)
         return TMC2209_OK;
     }
     unsigned datagrams_sent = 0;
-    tmc2209_err_t err = write_retrying(dev->bus, dev->addr, TMC2209_GSTAT, mask,
-                                       &datagrams_sent);
+    tmc2209_err_t err = tmc2209_uart_write_reg(dev->uart, dev->addr,
+                                               TMC2209_GSTAT, mask,
+                                               &datagrams_sent);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -274,19 +125,6 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr)
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus)
-{
-    if (!dev) {
-        return TMC2209_ERR_ARG;
-    }
-    /* Half a backend is not a backend */
-    if (bus && (!bus->port || !bus->port->tx || !bus->port->rx)) {
-        return TMC2209_ERR_ARG;
-    }
-    dev->bus = bus;
-    return TMC2209_OK;
-}
-
 tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
                               const tmc2209_regval_t *config, size_t n,
                               tmc2209_gstat_t *at_bringup)
@@ -294,7 +132,7 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
     if (!dev || !config || n == 0) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
@@ -318,7 +156,7 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
     uint32_t raw = 0;
 
     /* Fail fast if driver isn't reachable: OK means framing, addressing and wiring work. */
-    err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
+    err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -326,7 +164,7 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
     /* Baseline for every later write check. Mandatory. */
     dev->ifcnt = tmc2209_ifcnt_decode(raw);
 
-    err = read_retrying(dev->bus, dev->addr, TMC2209_GSTAT, &raw);
+    err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_GSTAT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -347,7 +185,7 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_CONSTANT) {
             continue;
         }
-        err = read_retrying(dev->bus, dev->addr, tmc2209_reg_at(slot), &raw);
+        err = tmc2209_uart_read_reg(dev->uart, dev->addr, tmc2209_reg_at(slot), &raw);
         if (err != TMC2209_OK) {
             return err;
         }
@@ -385,7 +223,7 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
     if (!dev || !ops || n == 0) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
@@ -394,12 +232,12 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
         return err;
     }
 
-    bus_lock(dev->bus);
+    tmc2209_uart_lock(dev->uart);
 
     /* An invalid cache means a stale IFCNT baseline too (passthrough bumps it). Re-seed. */
     if (!tmc2209_all_owned_valid(dev)) {
         uint32_t raw = 0;
-        err = read_retrying(dev->bus, dev->addr, TMC2209_IFCNT, &raw);
+        err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);
         if (err == TMC2209_OK) {
             dev->ifcnt = tmc2209_ifcnt_decode(raw);
         }
@@ -421,8 +259,9 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
             continue;
         }
 
-        err = write_retrying(dev->bus, dev->addr, ops[i].reg, ops[i].value,
-                             &datagrams_sent);
+        err = tmc2209_uart_write_reg(dev->uart, dev->addr,
+                                     ops[i].reg, ops[i].value,
+                                     &datagrams_sent);
         if (err != TMC2209_OK) {
             stopped = i;
             break;
@@ -430,12 +269,12 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
         registers_written++;
     }
 
-    /* One write check per batch. Keeps bus quiet, but now all batch is invalid on failure */
+    /* One write check per batch. Keeps the wire quiet, but now all batch is invalid on failure */
     if (err == TMC2209_OK && registers_written > 0) {
         err = confirm_writes(dev, registers_written, datagrams_sent);
     }
 
-    bus_unlock(dev->bus);
+    tmc2209_uart_unlock(dev->uart);
 
     if (failed_at) {
         *failed_at = stopped;
@@ -459,13 +298,13 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
     if (!dev || !conditions) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t raw = 0;
     /* Two registers tell driver health: GSTAT and DRV. */
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_GSTAT, &raw);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_GSTAT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -476,7 +315,7 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
     if (g.drv_err) { found |= (uint32_t)TMC2209_DRIVER_FAULT; }
     if (g.uv_cp)   { found |= (uint32_t)TMC2209_UNDERVOLTAGE; }
 
-    err = read_retrying(dev->bus, dev->addr, TMC2209_DRV_STATUS, &raw);
+    err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_DRV_STATUS, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -507,7 +346,7 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
     if (!dev) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
@@ -522,9 +361,9 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
     if (ack & (uint32_t)TMC2209_DRIVER_FAULT)  { mask |= 1U << 1; }
     if (ack & (uint32_t)TMC2209_UNDERVOLTAGE)  { mask |= 1U << 2; }
 
-    bus_lock(dev->bus);
+    tmc2209_uart_lock(dev->uart);
     tmc2209_err_t err = clear_gstat(dev, mask);
-    bus_unlock(dev->bus);
+    tmc2209_uart_unlock(dev->uart);
 
     /* Cache stays invalid until owned config is written again, this just clears fault flags */
     return err;
@@ -535,12 +374,13 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
     if (!dev || !out) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t raw = 0;
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_SG_RESULT, &raw);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr,
+                                              TMC2209_SG_RESULT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -563,11 +403,11 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out)
     if (!dev || !out) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
     uint32_t raw = 0;
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IOIN, &raw);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IOIN, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -580,11 +420,11 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version)
     if (!dev || !version) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
     uint32_t raw = 0;
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, TMC2209_IOIN, &raw);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IOIN, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -597,7 +437,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
     if (!dev || !out) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
     uint8_t access = tmc2209_reg_access(reg);
@@ -608,9 +448,9 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
         return TMC2209_ERR_ACCESS;   /* write-only driver-side; nothing to read */
     }
 
-    bus_lock(dev->bus);
-    tmc2209_err_t err = read_retrying(dev->bus, dev->addr, reg, out);
-    bus_unlock(dev->bus);
+    tmc2209_uart_lock(dev->uart);
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, reg, out);
+    tmc2209_uart_unlock(dev->uart);
 
     /* Cache untouched, this is a read. */
     return err;
@@ -623,14 +463,14 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
     if (!dev) {
         return TMC2209_ERR_ARG;
     }
-    if (!dev->bus) {
+    if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
 
     uint32_t bad = 0;
     tmc2209_err_t err = TMC2209_OK;
 
-    bus_lock(dev->bus);
+    tmc2209_uart_lock(dev->uart);
     for (int slot = 0; slot < TMC2209_REG_COUNT && err == TMC2209_OK; slot++) {
         /* Only owned registers the driver answers for; the other eight are W-O. */
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_OWNED ||
@@ -639,12 +479,12 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
             continue;
         }
         uint32_t raw = 0;
-        err = read_retrying(dev->bus, dev->addr, tmc2209_reg_at(slot), &raw);
+        err = tmc2209_uart_read_reg(dev->uart, dev->addr, tmc2209_reg_at(slot), &raw);
         if (err == TMC2209_OK && raw != dev->cache[slot]) {
             bad |= (1U << slot);
         }
     }
-    bus_unlock(dev->bus);
+    tmc2209_uart_unlock(dev->uart);
 
     if (mismatched) {
         *mismatched = bad;
@@ -690,45 +530,3 @@ void tmc2209_invalidate_owned(tmc2209_t *dev)
     }
 }
 
-/* ── Passthrough ────────────────────────────────────────────────────────── */
-
-tmc2209_err_t tmc2209_bus_send(const tmc2209_bus_t *bus,
-                               const uint8_t *tx, size_t tx_len,
-                               uint8_t *rx, size_t rx_len, size_t *rx_got)
-{
-    if (rx_got) {
-        *rx_got = 0;
-    }
-    if (!bus || !bus->port || !tx || tx_len == 0 || tx_len > MAX_XFER) {
-        return TMC2209_ERR_ARG;
-    }
-    if (rx_len > 0 && !rx) {
-        return TMC2209_ERR_ARG;
-    }
-
-    bus_lock(bus);
-    bus_purge(bus);
-
-    tmc2209_err_t err = port_tx(bus, tx, tx_len);
-    if (err == TMC2209_OK) {
-        err = verify_echo(bus, tx, tx_len);
-    }
-
-    /* A collision does not stop the driver from answering, and whether it did
-       is exactly what a diagnostic is asking. So the reply is collected even
-       after a bad echo, and the echo verdict survives as the return value
-       because it names the earlier and more specific fault. */
-    if ((err == TMC2209_OK || err == TMC2209_ERR_ECHO) && rx_len > 0) {
-        size_t got = 0;
-        tmc2209_err_t reply_err = port_rx(bus, rx, rx_len, &got);
-        if (rx_got) {
-            *rx_got = got;
-        }
-        if (err == TMC2209_OK) {
-            err = reply_err;
-        }
-    }
-
-    bus_unlock(bus);
-    return err;
-}

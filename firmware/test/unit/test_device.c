@@ -14,8 +14,7 @@
 #include <string.h>
 
 static mock_dev_t     g_mock;
-static tmc2209_port_t g_port;
-static tmc2209_bus_t  g_bus;
+static tmc2209_uart_t g_uart;
 static tmc2209_t      g_dev;
 
 /* A complete configuration. GCONF carries pdn_disable and mstep_reg_select,
@@ -36,19 +35,18 @@ static const tmc2209_regval_t k_config[] = {
     { TMC2209_CHOPCONF,   0x14010053u  },
 };
 
-static void setup_bus(uint8_t addr, bool echoes, uint8_t retries)
+static void setup_uart(uint8_t addr, bool echoes, uint8_t retries)
 {
-    mock_init(&g_mock, &g_port, addr, echoes);
-    g_bus.port       = &g_port;
-    g_bus.timeout_ms = 10;
-    g_bus.retries    = retries;
+    mock_init(&g_mock, &g_uart, addr, echoes);
+    g_uart.timeout_ms = 10;
+    g_uart.retries    = retries;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, addr));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, &g_bus));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, &g_uart));
 }
 
 static void setup_ready(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
@@ -65,7 +63,7 @@ static tmc2209_err_t write_one(tmc2209_reg_t reg, uint32_t value)
    bringup() could write that the caller did not supply. */
 static void test_init_leaves_every_slot_invalid(void)
 {
-    setup_bus(0, true, 0);
+    setup_uart(0, true, 0);
     TEST_ASSERT_EQUAL_UINT32(0, g_dev.valid);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
@@ -74,11 +72,11 @@ static void test_init_leaves_every_slot_invalid(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 }
 
-/* Covers attach_bus too, since setup_bus() calls both. Attaching a backend is
+/* Covers attach_uart too, since setup_uart() calls both. Attaching a backend is
    bookkeeping, and bookkeeping that talks to a driver cannot be undone. */
 static void test_construction_does_no_io(void)
 {
-    setup_bus(0, true, 0);
+    setup_uart(0, true, 0);
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
@@ -87,51 +85,43 @@ static void test_init_rejects_out_of_range_address(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_init(&g_dev, 4));
 }
 
-/* ── Bus attachment ─────────────────────────────────────────────────────── */
+/* ── Uart attachment ────────────────────────────────────────────────────── */
 
 /* Half a backend is not a backend: accepting one defers the crash to the first
    transaction rather than rejecting it at the seam. */
-static void test_attach_bus_rejects_an_incomplete_port(void)
+static void test_attach_uart_rejects_an_incomplete_backend(void)
 {
-    mock_init(&g_mock, &g_port, 0, true);
-    g_bus.port       = &g_port;
-    g_bus.timeout_ms = 10;
+    mock_init(&g_mock, &g_uart, 0, true);
+    g_uart.timeout_ms = 10;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
-    tmc2209_port_t half = g_port;
-    tmc2209_bus_t  bus  = g_bus;
-    bus.port = &half;
+    tmc2209_uart_t half = g_uart;
 
     half.tx = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_bus(&g_dev, &bus));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 
-    half = g_port;
+    half = g_uart;
     half.rx = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_bus(&g_dev, &bus));
-
-    bus.port = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_bus(&g_dev, &bus));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 }
 
 /* A rejected backend leaves the previous one in place, so a device that was
    working keeps working rather than losing its wire to a bad argument. */
-static void test_a_rejected_bus_does_not_displace_the_attached_one(void)
+static void test_a_rejected_uart_does_not_displace_the_attached_one(void)
 {
     setup_ready();
 
-    tmc2209_port_t half = g_port;
+    tmc2209_uart_t half = g_uart;
     half.tx = NULL;
-    tmc2209_bus_t bad = g_bus;
-    bad.port = &half;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_bus(&g_dev, &bad));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, write_one(TMC2209_VACTUAL, 0x1234u));
     TEST_ASSERT_EQUAL_HEX32(0x1234u, mock_reg(&g_mock, TMC2209_VACTUAL));
 }
 
 /* Every call that would put a byte on the wire has to answer, not fault, on a
-   device whose bus was never attached or was detached. */
-static void test_a_device_without_a_bus_refuses_every_transaction(void)
+   device whose uart was never attached or was detached. */
+static void test_a_device_without_a_uart_refuses_every_transaction(void)
 {
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
@@ -150,23 +140,23 @@ static void test_a_device_without_a_bus_refuses_every_transaction(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_set_current(&g_dev, &c));
 }
 
-/* Detaching is how a bus is handed over, so it has to be reachable through the
+/* Detaching is how a wire is handed over, so it has to be reachable through the
    same call that attached it. */
-static void test_detaching_the_bus_stops_transactions(void)
+static void test_detaching_the_uart_stops_transactions(void)
 {
     setup_ready();
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, NULL));
 
     uint32_t conditions = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_health(&g_dev, &conditions));
 }
 
 /* The cache is the device's, so it survives losing and regaining the wire. */
-static void test_reattaching_a_bus_keeps_the_cache(void)
+static void test_reattaching_a_uart_keeps_the_cache(void)
 {
     setup_ready();
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&g_dev, &g_bus));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&g_dev, &g_uart));
 
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
@@ -175,16 +165,16 @@ static void test_reattaching_a_bus_keeps_the_cache(void)
     TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, gconf);
 }
 
-/* One bus, up to four drivers. Each keeps its own cache and its own address. */
-static void test_two_devices_share_one_bus(void)
+/* One wire, up to four drivers. Each keeps its own cache and its own address. */
+static void test_two_devices_share_one_uart(void)
 {
-    setup_bus(0, true, 0);
+    setup_uart(0, true, 0);
 
     tmc2209_t second;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&second, 1));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_bus(&second, &g_bus));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_uart(&second, &g_uart));
 
-    TEST_ASSERT_EQUAL_PTR(g_dev.bus, second.bus);
+    TEST_ASSERT_EQUAL_PTR(g_dev.uart, second.uart);
     TEST_ASSERT_EQUAL_UINT8(0, g_dev.addr);
     TEST_ASSERT_EQUAL_UINT8(1, second.addr);
 
@@ -209,7 +199,7 @@ static void test_bringup_writes_the_whole_configuration(void)
 /* design.md §7 item 7. The old table seeded GCONF with its datasheet reset
    value and bringup() imposed the cache, so bringing up a fresh driver cleared
    mstep_reg_select and handed microstep resolution back to the address straps.
-   The straps are the bus address, so all three motors would have run at
+   The straps are the address on the wire, so all three motors would have run at
    different resolutions. */
 static void test_bringup_never_writes_a_value_the_caller_did_not_supply(void)
 {
@@ -226,7 +216,7 @@ static void test_bringup_never_writes_a_value_the_caller_did_not_supply(void)
    refused rather than filled. */
 static void test_bringup_rejects_a_configuration_with_a_gap(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config) - 1, NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
@@ -238,7 +228,7 @@ static void test_bringup_rejects_a_register_it_does_not_own(void)
         { TMC2209_GCONF,        CFG_GCONF },
         { TMC2209_FACTORY_CONF, 0         },   /* would detune the oscillator */
     };
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS,
         tmc2209_bringup(&g_dev, sneaky, TMC2209_NELEM(sneaky), NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
@@ -257,7 +247,7 @@ static void test_bringup_refuses_a_configuration_that_asks_for_motion(void)
         }
     }
 
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
         tmc2209_bringup(&g_dev, moving, TMC2209_NELEM(moving), NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
@@ -289,7 +279,7 @@ static void test_bringup_reads_constant_registers_off_the_part(void)
 
 static void test_bringup_clears_latched_gstat(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x5u);   /* reset | uv_cp */
 
     TEST_ASSERT_EQUAL(TMC2209_OK,
@@ -299,7 +289,7 @@ static void test_bringup_clears_latched_gstat(void)
 
 static void test_bringup_reports_the_flags_it_clears(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x5u);
 
     tmc2209_gstat_t at_bringup = { 0 };
@@ -313,7 +303,7 @@ static void test_bringup_reports_the_flags_it_clears(void)
 
 static void test_bringup_fails_when_the_addressed_driver_is_absent(void)
 {
-    setup_bus(1, true, 0);            /* library talks to address 1 */
+    setup_uart(1, true, 0);            /* library talks to address 1 */
     g_mock.addr = 2;                  /* only address 2 answers */
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
@@ -323,7 +313,7 @@ static void test_bringup_fails_when_the_addressed_driver_is_absent(void)
 
 static void test_addressing_reaches_the_right_driver(void)
 {
-    setup_bus(2, true, 1);
+    setup_uart(2, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
@@ -342,7 +332,7 @@ static void test_read_answers_owned_registers_from_the_cache(void)
     TEST_ASSERT_EQUAL_HEX32(0x00081810u, v);
 
     /* Write-only driver-side, so the cache is the only possible source, and no
-       bus traffic may have happened. */
+       wire traffic may have happened. */
     TEST_ASSERT_EQUAL_size_t(before, g_mock.tx_len);
 }
 
@@ -673,7 +663,7 @@ static void test_clear_faults_only_clears_what_it_was_told(void)
     TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_UNDERVOLTAGE, conditions);
 }
 
-/* Live conditions have nothing to acknowledge, so passing them costs no bus. */
+/* Live conditions have nothing to acknowledge, so passing them costs no wire. */
 static void test_clear_faults_ignores_live_conditions(void)
 {
     setup_ready();
@@ -874,7 +864,7 @@ static void test_set_current_writes_ihold_irun(void)
 
 static void test_crc_failure_recovers_on_retry(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
@@ -888,7 +878,7 @@ static void test_crc_failure_recovers_on_retry(void)
 
 static void test_crc_failure_beyond_retries_is_reported(void)
 {
-    setup_bus(0, true, 1);
+    setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
@@ -898,10 +888,10 @@ static void test_crc_failure_beyond_retries_is_reported(void)
 }
 
 /* A mismatch between what went out and what came back means something else
-   drove the line, which is the cheapest bus-collision detector available. */
+   drove the line, which is the cheapest collision detector available. */
 static void test_echo_mismatch_is_detected(void)
 {
-    setup_bus(0, true, 0);
+    setup_uart(0, true, 0);
     g_mock.corrupt_echo = 1;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
@@ -910,7 +900,7 @@ static void test_echo_mismatch_is_detected(void)
 
 static void test_silence_from_the_driver_times_out(void)
 {
-    setup_bus(0, true, 0);
+    setup_uart(0, true, 0);
     g_mock.drop_reply = 1;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
@@ -921,7 +911,7 @@ static void test_silence_from_the_driver_times_out(void)
    slipped a transaction. Not retried, so the read count stays at one. */
 static void test_wrong_register_reply_fails_without_retrying(void)
 {
-    setup_bus(0, true, 3);
+    setup_uart(0, true, 3);
     g_mock.wrong_reg = 1;
     unsigned reads_before = g_mock.reads_seen;
 
@@ -931,9 +921,9 @@ static void test_wrong_register_reply_fails_without_retrying(void)
 }
 
 /* The SIL backend is full duplex, so nothing comes back on rx but the reply. */
-static void test_non_echoing_port_works(void)
+static void test_non_echoing_backend_works(void)
 {
-    setup_bus(0, false, 1);
+    setup_uart(0, false, 1);
     TEST_ASSERT_EQUAL(TMC2209_OK,
         tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
@@ -952,7 +942,7 @@ static void test_passthrough_moves_bytes_verbatim(void)
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     size_t got = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
 
     uint32_t v = 0;
@@ -974,7 +964,7 @@ static void test_passthrough_reports_silence_as_zero_bytes(void)
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     size_t got = 99;
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(0, got);
 }
 
@@ -990,7 +980,7 @@ static void test_passthrough_reports_a_partial_reply(void)
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     size_t got = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(5, got);
 
     /* The bytes that did arrive are the real ones, which is what makes them
@@ -1012,7 +1002,7 @@ static void test_passthrough_short_echo_is_not_a_driver_timeout(void)
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, NULL));
+        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, NULL));
 }
 
 /* A collision does not gag the driver, so the answer is still collected. */
@@ -1028,7 +1018,7 @@ static void test_passthrough_echo_mismatch_still_collects_the_reply(void)
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     size_t got = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_bus_send(&g_bus, req, sizeof req, reply, sizeof reply, &got));
+        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
 
     uint32_t v = 0;
@@ -1046,7 +1036,7 @@ static void test_passthrough_write_desyncs_until_invalidated(void)
     uint8_t dg[TMC2209_WRITE_LEN];
     tmc2209_frame_write(dg, 0, (uint8_t)TMC2209_SGTHRS, 0x99u);
     TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bus_send(&g_bus, dg, sizeof dg, NULL, 0, NULL));
+        tmc2209_uart_send(&g_uart, dg, sizeof dg, NULL, 0, NULL));
 
     tmc2209_invalidate_owned(&g_dev);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
@@ -1064,9 +1054,9 @@ static void test_passthrough_rejects_oversized_frames(void)
     setup_ready();
     uint8_t big[64] = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_bus_send(&g_bus, big, sizeof big, NULL, 0, NULL));
+        tmc2209_uart_send(&g_uart, big, sizeof big, NULL, 0, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_bus_send(&g_bus, big, 0, NULL, 0, NULL));
+        tmc2209_uart_send(&g_uart, big, 0, NULL, 0, NULL));
 }
 
 void run_device_tests(void)
@@ -1075,12 +1065,12 @@ void run_device_tests(void)
     RUN_TEST(test_construction_does_no_io);
     RUN_TEST(test_init_rejects_out_of_range_address);
 
-    RUN_TEST(test_attach_bus_rejects_an_incomplete_port);
-    RUN_TEST(test_a_rejected_bus_does_not_displace_the_attached_one);
-    RUN_TEST(test_a_device_without_a_bus_refuses_every_transaction);
-    RUN_TEST(test_detaching_the_bus_stops_transactions);
-    RUN_TEST(test_reattaching_a_bus_keeps_the_cache);
-    RUN_TEST(test_two_devices_share_one_bus);
+    RUN_TEST(test_attach_uart_rejects_an_incomplete_backend);
+    RUN_TEST(test_a_rejected_uart_does_not_displace_the_attached_one);
+    RUN_TEST(test_a_device_without_a_uart_refuses_every_transaction);
+    RUN_TEST(test_detaching_the_uart_stops_transactions);
+    RUN_TEST(test_reattaching_a_uart_keeps_the_cache);
+    RUN_TEST(test_two_devices_share_one_uart);
 
     RUN_TEST(test_bringup_writes_the_whole_configuration);
     RUN_TEST(test_bringup_never_writes_a_value_the_caller_did_not_supply);
@@ -1141,7 +1131,7 @@ void run_device_tests(void)
     RUN_TEST(test_echo_mismatch_is_detected);
     RUN_TEST(test_silence_from_the_driver_times_out);
     RUN_TEST(test_wrong_register_reply_fails_without_retrying);
-    RUN_TEST(test_non_echoing_port_works);
+    RUN_TEST(test_non_echoing_backend_works);
 
     RUN_TEST(test_passthrough_moves_bytes_verbatim);
     RUN_TEST(test_passthrough_reports_silence_as_zero_bytes);

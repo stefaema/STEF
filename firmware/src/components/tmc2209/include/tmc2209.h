@@ -1,25 +1,30 @@
 /**
  * @file tmc2209.h
- * @brief One driver on a shared single-wire UART bus.
+ * @brief The device object, and the component's public face.
  *
- * Three families of call, distinguished by what they do rather than by which
- * register they touch. See design.md §3.
+ * A TMC2209 is reached through three unrelated channels: a UART link carrying
+ * register datagrams, four control lines, and a source of STEP pulses. Each has
+ * its own backend header, and none of the three knows the other two exist. A
+ * caller has one driver and wants one thing to call.
  *
- *   - Values are @b read and @b written. Reads come from the cache and never
- *     touch the bus; writes go out as a batch and are verified once.
- *   - Conditions are @b polled. Every poll_ call performs a transaction and
- *     returns meaning rather than register contents.
- *   - Verdicts come from tmc2209_verify_config(), which returns pass or fail
- *     rather than a number.
+ * That thing is @ref tmc2209_t. It carries the three backends, the driver's
+ * address on the wire, and the register cache, so every call in the component
+ * takes a device and no caller ever assembles an operation out of three parts.
+ * Which is also what lets a call cross the subsystems that a backend cannot: a
+ * move sets DIR on the lines, writes GCONF.shaft over UART, and only then
+ * starts the pulse train.
  *
- * Alongside those, the driver's four control lines. They are levels rather
- * than registers, so they do not fit the three families above, but what each
- * one means is the datasheet's answer and not the board's. See
- * tmc2209_lines.h.
+ * So the whole API is declared here, and implemented in one file per subsystem:
+ * tmc2209_uart.c for transactions, tmc2209_lines.c for the lines,
+ * tmc2209_stepgen.c for motion, and tmc2209.c for the device itself, meaning
+ * lifecycle, registers and the cache. What the backend headers never mention is
+ * @ref tmc2209_t, which is what keeps a backend implementable without ever
+ * opening this header.
  *
- * The library reports conditions and never decides responses. What
- * GSTAT.reset means is a fact about the driver; whether it should fault the reel
- * is control policy and lives above.
+ * Lifecycle: tmc2209_init(), then attach whichever backends the board has, then
+ * tmc2209_bringup() to claim the driver and put a known configuration in it.
+ * Attaching is optional per backend, and a configuration-only caller attaches
+ * the uart alone.
  *
  * Not thread-safe: one device, one owner.
  */
@@ -33,19 +38,12 @@
 
 #include "tmc2209_err.h"
 #include "tmc2209_lines.h"
-#include "tmc2209_port.h"
 #include "tmc2209_reg.h"
 #include "tmc2209_stepgen.h"
+#include "tmc2209_uart.h"
 
 /** Element count of a configuration array literal. */
 #define TMC2209_NELEM(a) (sizeof(a) / sizeof((a)[0]))
-
-/** @brief The shared wire. One bus, up to four drivers addressed on it. */
-typedef struct {
-    const tmc2209_port_t *port;
-    uint32_t timeout_ms;   /**< per port call */
-    uint8_t  retries;      /**< additional attempts after a CRC or timeout failure */
-} tmc2209_bus_t;
 
 /** @brief One register and the value intended for it. The unit of tmc2209_write(). */
 typedef struct {
@@ -55,7 +53,7 @@ typedef struct {
 
 /** @brief One driver, and everything known about what it currently holds. */
 typedef struct {
-    const tmc2209_bus_t *bus;            /**< UART comm channel, NULL until attached */
+    const tmc2209_uart_t *uart;          /**< register datagram channel, NULL until attached */
     const tmc2209_lines_t *lines;        /**< control lines, NULL until attached */
     const tmc2209_stepgen_t *stepgen;    /**< STEP pulse source, NULL until attached */
     uint8_t  addr;                       /**< 0..3, set by the MS1/MS2 straps */
@@ -80,18 +78,19 @@ typedef struct {
 tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr);
 
 /**
- * @brief Gives the device the UART channel it speaks on.
+ * @brief Gives the device the channel it speaks on.
  *
- * One bus carries up to four drivers, told apart by the address handed to
- * tmc2209_init(), so several devices share one @p bus.
+ * The wire is shared: one link carries up to four drivers, told apart by the
+ * address handed to tmc2209_init(), so several devices attach the same @p uart
+ * and inherit its timeout and retry policy along with it.
  *
- * @param dev  initialised device
- * @param bus  borrowed, must outlive @p dev. NULL detaches
+ * @param dev   initialised device
+ * @param uart  borrowed, must outlive @p dev. NULL detaches
  *
  * @retval TMC2209_OK
- * @retval TMC2209_ERR_ARG  null device, or a port missing tx or rx
+ * @retval TMC2209_ERR_ARG  null device, or a backend missing tx or rx
  */
-tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus);
+tmc2209_err_t tmc2209_attach_uart(tmc2209_t *dev, const tmc2209_uart_t *uart);
 
 /**
  * @brief Claims a reachable driver and writes @p config to it.
@@ -109,7 +108,7 @@ tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus);
  * firmware owned it. It says nothing about why the *controller* restarted;
  * that is esp_reset_reason()'s answer.
  *
- * @param dev         device with a bus attached
+ * @param dev         device with a uart attached
  * @param config      one entry per owned register, in any order
  * @param n           length of @p config
  * @param at_bringup  GSTAT as found, before it is cleared. NULL to discard
@@ -118,7 +117,7 @@ tmc2209_err_t tmc2209_attach_bus(tmc2209_t *dev, const tmc2209_bus_t *bus);
  * @retval TMC2209_ERR_ARG         null argument, or @p config does not cover
  *                                 every owned register, or it names a non-zero
  *                                 velocity
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @retval TMC2209_ERR_ACCESS   @p config names a register that is not owned
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the underlying reads and writes
@@ -175,7 +174,7 @@ tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG      null argument, empty batch, or a register not
  *                              in the table
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @retval TMC2209_ERR_ACCESS   a register that is not owned
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the datagrams or their confirmation
@@ -202,7 +201,7 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @return any transport error from either read
  */
 tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
@@ -224,11 +223,11 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
  * `tmc2209_write()` covering the owned registers does that (see `tmc2209_bringup()`).
  *
  * @param dev         device
- * @param conditions  conditions to acknowledge; 0 does nothing and touches no bus
+ * @param conditions  conditions to acknowledge; 0 does nothing and touches no wire
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @retval TMC2209_ERR_NO_ACK  IFCNT did not account for the write
  * @return any transport error from the write or its confirmation
  */
@@ -249,7 +248,7 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
@@ -266,7 +265,7 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
@@ -288,7 +287,7 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG  null argument
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
@@ -306,7 +305,7 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @retval TMC2209_ERR_ACCESS  write-only driver-side; there is nothing to read
  * @return any transport error from the read
  */
@@ -326,7 +325,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG       null device
- * @retval TMC2209_ERR_NO_BACKEND  no bus attached
+ * @retval TMC2209_ERR_NO_BACKEND  no uart attached
  * @retval TMC2209_ERR_MISMATCH  the device disagrees with the cache
  * @return any transport error from the reads
  */
@@ -513,7 +512,7 @@ typedef struct {
 /**
  * @brief Gives the device its source of STEP pulses.
  *
- * One per driver, like the lines and unlike the shared bus. Attaching one hands
+ * One per driver, like the lines and unlike the shared wire. Attaching one hands
  * STEP over: `tmc2209_line_write()` on STEP is refused from then on, because a
  * peripheral bound to a pin and a GPIO write to the same pin are two owners and
  * not two views.
@@ -679,7 +678,7 @@ bool tmc2209_all_owned_valid(const tmc2209_t *dev);
  * @brief Invalidates every owned slot.
  *
  * Constant slots survive, since a brownout does not change the factory trim.
- * Callers that write through tmc2209_bus_send() must call this: a datagram the
+ * Callers that write through tmc2209_uart_send() must call this: a datagram the
  * library did not build is one it cannot account for.
  */
 void tmc2209_invalidate_owned(tmc2209_t *dev);
@@ -702,7 +701,7 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
  * bytes arrived, which separates nothing at all from something incomplete and
  * is what makes the bytes that did arrive safe to look at.
  *
- * @param bus     bus to drive; no device state is consulted or updated
+ * @param uart    channel to drive; no device state is consulted or updated
  * @param tx      bytes to send, 1..32
  * @param tx_len  length of @p tx
  * @param rx      reply buffer, or NULL when @p rx_len is 0
@@ -711,19 +710,19 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
  *                including the failures that carry bytes. NULL to discard
  *
  * @retval TMC2209_OK              exactly @p rx_len bytes arrived
- * @retval TMC2209_ERR_ARG         null bus or tx, empty or oversized tx, rx_len
+ * @retval TMC2209_ERR_ARG         null uart or tx, empty or oversized tx, rx_len
  *                                 without rx
- * @retval TMC2209_ERR_TX_TIMEOUT  the port took fewer bytes than it was given,
+ * @retval TMC2209_ERR_TX_TIMEOUT  the backend took fewer bytes than it was given,
  *                                 so no reply was waited for
  * @retval TMC2209_ERR_RX_TIMEOUT  fewer than @p rx_len bytes came back.
  *                                 @p rx_got says how many did
- * @retval TMC2209_ERR_IO          the port failed for its own reasons
+ * @retval TMC2209_ERR_IO          the backend failed for its own reasons
  * @retval TMC2209_ERR_ECHO        what came back is not what was sent, altered
  *                                 or short. The reply is still collected, so
  *                                 @p rx_got and @p rx remain worth reading
  */
-tmc2209_err_t tmc2209_bus_send(const tmc2209_bus_t *bus,
-                               const uint8_t *tx, size_t tx_len,
-                               uint8_t *rx, size_t rx_len, size_t *rx_got);
+tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart,
+                                const uint8_t *tx, size_t tx_len,
+                                uint8_t *rx, size_t rx_len, size_t *rx_got);
 
 #endif /* TMC2209_H */

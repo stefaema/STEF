@@ -119,7 +119,7 @@ static void mock_purge(void *ctx)
     m->out_pos = 0;
 }
 
-void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes)
+void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes)
 {
     memset(m, 0, sizeof *m);
     m->addr   = addr;
@@ -139,12 +139,12 @@ void mock_init(mock_dev_t *m, tmc2209_port_t *port, uint8_t addr, bool echoes)
     m->regs[TMC2209_PWMCONF]      = MOCK_RESET_PWMCONF;
     m->regs[TMC2209_FACTORY_CONF] = MOCK_RESET_FACTORY_CONF;
 
-    memset(port, 0, sizeof *port);
-    port->tx       = mock_tx;
-    port->rx       = mock_rx;
-    port->purge_rx = mock_purge;
-    port->ctx      = m;
-    port->echoes   = echoes;
+    memset(uart, 0, sizeof *uart);
+    uart->tx       = mock_tx;
+    uart->rx       = mock_rx;
+    uart->purge_rx = mock_purge;
+    uart->ctx      = m;
+    uart->echoes   = echoes;
 }
 
 uint32_t mock_reg(const mock_dev_t *m, tmc2209_reg_t reg)
