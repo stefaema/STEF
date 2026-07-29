@@ -83,12 +83,10 @@ rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method,
     }
 
     /*
-     * Cleared before the handler rather than by it. Every payload has padding
-     * members, and a reply buffer is reused, so a field a handler does not
-     * write would otherwise carry whatever the previous reply left there: a
-     * changing CRC for an unchanged answer, and a look at memory the caller was
-     * never offered. Doing it here is what makes that a property of the
-     * transport instead of a thing each handler has to remember.
+     * Payloads have padding members and the reply buffer is reused, so a field
+     * the handler leaves alone still travels. Clearing here settles what it
+     * carries for every method at once: an answer that has not changed keeps
+     * the same CRC, and nothing reaches the caller that was not written for it.
      */
     if (ret != NULL && m->ret_len > 0U) {
         memset(ret, 0, m->ret_len);

@@ -195,9 +195,9 @@ static void serve(const rpc_buf_t *frame, size_t len)
 
     /*
      * The handler writes its return values straight into the reply frame, so
-     * what comes back is only how much of it to send. No length can exceed what
-     * a frame holds: rpc_register refused the table otherwise, which is why
-     * there is no "it did not fit" path left to write.
+     * what comes back is only how much of it to send. Any length it reports
+     * fits, because rpc_register refuses at start-up a table whose declared
+     * payloads do not.
      */
     size_t       ret_len = 0;
     rpc_status_t status  = rpc_dispatch(req->ns, req->method,

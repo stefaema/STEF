@@ -14,10 +14,9 @@
  * ## Why the table carries sizes
  *
  * A handler receives its arguments as a struct, so something has to establish
- * that the payload really is that long before the first field is touched. Doing
- * it per handler would be the same line written twenty-odd times, and a line
- * written twenty-odd times is a line that is eventually forgotten once. So the
- * length lives in the table beside the function, and dispatch checks it.
+ * that the payload really is that long before the first field is touched. The
+ * length lives in the table beside the function and dispatch checks it there,
+ * once, for every method at once.
  *
  * `sizeof` is evaluated where the table is defined, which is in `main` where
  * the payload structs are visible. What arrives here is an integer, so this
@@ -26,13 +25,12 @@
  * ## The two shapes
  *
  * Most methods take and return a fixed struct, and those are the short form:
- * one exact length in, one exact length out, nothing to think about.
+ * one exact length in, one exact length out.
  *
  * The handful that carry a batch, a byte string or a list end in a flexible
- * array member, and no table can know their length in advance. Those get the
- * long form, where @c args_len is a minimum, @c ret_len is a maximum, and the
- * handler is handed the real lengths because only it knows the count field that
- * settles them.
+ * array member, and their length is settled by a count inside the payload that
+ * no table can see. Those get the long form, where @c args_len is a minimum,
+ * @c ret_len is a maximum, and the handler is handed the real lengths.
  */
 
 #ifndef RPC_DISPATCH_H

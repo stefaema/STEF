@@ -22,15 +22,14 @@
  * plain structs read in place rather than fields decoded one at a time. Three
  * rules make that safe, and all three are load-bearing:
  *
- * 1. Nothing is packed. Every field sits at an offset that is a multiple of its
- *    own width, reached by explicit `_pad` members. A packed struct would put
- *    `uint32_t` at odd offsets, and an unaligned 32-bit load on xtensa is an
- *    exception rather than a slow read. Padding is declared so that no compiler
- *    is deciding it.
+ * 1. Every field sits at an offset that is a multiple of its own width, reached
+ *    by explicit `_pad` members. An unaligned 32-bit load on xtensa is an
+ *    exception rather than a slow read, so where a field lands is a matter of
+ *    correctness. Padding is declared, so no compiler is deciding it.
  * 2. Every header is exactly @ref RPC_HDR_LEN bytes, so the payload always
  *    begins at an offset divisible by 4 and its own fields stay aligned.
  * 3. Every struct on the wire carries a `_Static_assert` on its size, so a
- *    layout that drifts on either end fails to compile on the end that drifted.
+ *    layout that drifts fails to compile on the end that drifted.
  *
  * Little-endian throughout, matching both the xtensa and the x86 the code runs
  * on, so the common case costs nothing.

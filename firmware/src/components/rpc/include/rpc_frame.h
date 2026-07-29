@@ -6,14 +6,8 @@
  * `[header][payload][crc]` and it knows nothing whatever about the payload,
  * which is a span of bytes to it and a struct to whoever asked for the call.
  *
- * ## Why there is no serialiser here
- *
- * A field-at-a-time writer exists to serve two needs: track where the next
- * field goes, and remember that something did not fit. Both needs come from
- * writing fields one at a time. When a payload is a struct, the struct is the
- * layout and one length check replaces the running error flag, so neither need
- * survives. See `rpc_proto.h` for the three rules that make a struct safe to
- * read in place.
+ * The struct is the layout, and `rpc_proto.h` states the three rules that make
+ * one safe to read in place.
  *
  * ## Building one
  *
@@ -39,10 +33,8 @@
 /**
  * @brief Storage for one frame, aligned so its structs may be read in place.
  *
- * A union rather than a byte array, because a byte array is not guaranteed to
- * be aligned for anything and every header here is read through its own type.
- * Declaring the alternatives is what makes the alignment the compiler's problem
- * instead of the caller's.
+ * Every header is read through its own type, and naming the three alternatives
+ * here is what makes their alignment the compiler's problem.
  */
 typedef union {
     rpc_req_hdr_t req;

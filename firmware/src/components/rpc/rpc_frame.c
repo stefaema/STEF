@@ -23,9 +23,8 @@ static size_t seal(rpc_buf_t *b, size_t payload_len)
 }
 
 /*
- * Assigning a whole compound literal rather than field by field, so the padding
- * members are zeroed rather than left holding whatever the last frame put
- * there. Two identical calls have to produce two identical CRCs.
+ * The header goes on as a whole compound literal, which zeroes its padding
+ * members along with the rest. Two identical calls produce two identical CRCs.
  */
 size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
                           size_t payload_len)
