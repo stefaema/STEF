@@ -13,17 +13,14 @@ El módulo presenta tres componentes:
 ```mermaid
 flowchart LR
     PC[PC Host] <-->|USB| RPC[rpc<br/>trama, CRC, despacho]
-    RPC --> MAIN[main<br/>tabla de placa, backends,<br/>métodos RPC]
-    MAIN --> TMC[tmc2209<br/>registros, líneas, pasos]
-    TMC -->|punteros a función| MAIN
+    RPC <--> MAIN[main<br/>tabla de placa, backends,<br/>métodos RPC]
+    MAIN <--> TMC[tmc2209<br/>registros, líneas, pasos]
     MAIN -->|UART / GPIO / RMT| HW[TMC2209 físico]
 ```
 
-`tmc2209` y `rpc` no conocen ESP-IDF: ambos declaran qué necesitan y `main` lo provee. Esa es la razón de que la flecha vuelva hacia arriba, y de que las dos librerías se compilen y testeen en la PC.
-
 ## Comunicación con el Driver: Librería `tmc2209`
 
-La librería TMC2209 se decidió que tenga tres vías de control para manejar al driver, y cada una resuelve un problema distinto:
+La librería TMC2209 tiene tres vías de control para manejar al driver, y cada una resuelve un problema distinto:
 
 | Vía | Qué resuelve | Naturaleza |
 | --- | --- | --- |
@@ -31,19 +28,19 @@ La librería TMC2209 se decidió que tenga tres vías de control para manejar al
 | Líneas de control | Habilitado o no, en qué sentido, qué falla reporta | Niveles instantáneos |
 | Pulsos en STEP | Movimiento y velocidad | Temporal, asíncrona |
 
-La librería cubre las tres, y las mantiene lo más separadas posible: la única cosa que las une es la estructura del dispositivo. Nada de lo que hay adentro sabe de un ESP32. Cada vía declara un *backend*, es decir un contrato de punteros a función que alguien de afuera debe cumplir:
+La librería cubre las tres, y las mantiene lo más separadas posible: la única cosa que las une es la estructura del dispositivo. Además, no solo están separadas entre sí si no que funcionan aisladas del sistema en el que operan, ya que cada vía declara un *backend*, es decir un contrato de punteros a función que alguien de afuera debe cumplir:
 
-- `tmc2209_port_t`: mover bytes. Sin reloj propio, el timeout baja como milisegundos y el port decide cómo esperar.
-- `tmc2209_lines_t`: leer y escribir un nivel en un pin.
-- `tmc2209_stepgen_t`: emitir un tren de pulsos.
+- `tmc2209_port_t`: mover bytes, corresponde a UART.
+- `tmc2209_lines_t`: leer y escribir un nivel en un pin, corresponde a Líneas de Control.
+- `tmc2209_stepgen_t`: emitir un tren de pulsos, corresponde a Pulsos en STEP.
 
-Quien los implementa contra periféricos reales es [backends.c](../src/main/backends.c), con los números que declara [board.h](../src/main/board.h). Los tests unitarios implementan los mismos contratos contra arrays en memoria, y por eso corren sin hardware.
+Entonces, quien los implementa contra periféricos reales es otro componente, `main`. Debido a esta abstracción del backend, podemos correr los tests unitarios en una PC host o incluso portear el Firmware a otro dispositivo (por ejemplo, una Raspberry Pi) simplemente adaptando las necesidades del backend.
 
-Una consecuencia de diseño que atraviesa todo lo que sigue: la librería informa condiciones y nunca decide respuestas. Qué significa `GSTAT.reset` es un hecho del driver; si eso debe frenar la bobina es política de control y vive más arriba.
+Una consecuencia de diseño que atraviesa todo lo que sigue: la librería informa, nunca decide.
 
 ### Bus UART
 
-El driver expone 23 registros por un único cable half duplex que se maneja mediante el envío y recepción de datagramas UART.
+El driver expone 23 registros mediante el envío y recepción de datagramas UART, con un único cable half duplex como canal
 
 Luego de un análisis de los mismos, se encontró que cada registro entra en una clasificación, según quién suele cambiar su valor y qué se suele hacer con él:
 
@@ -52,7 +49,7 @@ Luego de un análisis de los mismos, se encontró que cada registro entra en una
 | **A. Solo escritura del lado del driver, útiles para saber del lado de la librería** | `SLAVECONF`, `IHOLD_IRUN`, `TPOWERDOWN`, `TPWMTHRS`, `TCOOLTHRS`, `VACTUAL`, `SGTHRS`, `COOLCONF` | El driver no contesta una lectura hacia estos registros. El valor lo puso el firmware, así que el firmware es el único que lo sabe. Recordar la copia como variable es la única forma de que el dato exista en la librería. |
 | **B. Escritura y lectura del lado del driver, pero el firmware los modifica** | `GCONF`, `CHOPCONF` | A estos registros podríamos leerlos preguntándole al driver, pero una copia local serviría para ahorrar el datagrama de consulta y de respuesta, y como el firmware mismo es el que los modifica, no nos tenemos que preocupar demasiado porque el valor local se haya invalidado con el tiempo. |
 | **C. De fábrica, difícilmente modificados** | `FACTORY_CONF`, `OTP_READ`, `PWMCONF` | Nadie los escribe. Los dos primeros traen el trim y los fusibles de esa pieza en particular; `PWMCONF` el driver lo deja escribir, pero este diseño no lo toca porque con autoscale el ajuste fino aparece en `PWM_SCALE` y `PWM_AUTO`. Si nadie escribe, el valor no cambia nunca: alcanza con leerlos una vez. |
-| **D. Modificación fuera del firmware** | `GSTAT`, `IFCNT`, `IOIN`, `TSTEP`, `SG_RESULT`, `MSCNT`, `DRV_STATUS`, `MSCURACT`, `PWM_SCALE`, `PWM_AUTO` | Los escribe el driver solamejnte: `GSTAT` late fallas por hardware, `IFCNT` se incrementa solo, `IOIN` refleja pines, `TSTEP` es una medición, `MSCNT` avanza con cada paso. Una copia sería falsa apenas se guarde por lo que el acceso al driver deberá ser permanente. |
+| **D. Modificación fuera del firmware** | `GSTAT`, `IFCNT`, `IOIN`, `TSTEP`, `SG_RESULT`, `MSCNT`, `DRV_STATUS`, `MSCURACT`, `PWM_SCALE`, `PWM_AUTO` | Los escribe el driver solamente: `GSTAT` late fallas por hardware, `IFCNT` se incrementa solo, `IOIN` refleja pines, `TSTEP` es una medición, `MSCNT` avanza con cada paso. Una copia sería falsa apenas se guarde, por lo que el acceso al registro deberá pasar por el driver cada vez. |
 
 Las dos primeras clasificaciones llegan a la misma implicación, guardar el valor y servir las lecturas desde ahí, así que se agrupan como si fuesen registros propios de la librería. De ahí salen las tres **clases** que maneja:
 
@@ -82,11 +79,11 @@ Sobre el shadow y las clases se apoya la API pública, que se ordena en familias
 | Veredictos | `tmc2209_verify_config(dev, *mismatched)` | Contrasta el shadow contra el driver. Solo `GCONF` y `CHOPCONF` se pueden verificar, que son los propios de lectura-escritura. |
 | Runtime | `tmc2209_set_velocity(dev, v)` | Escribe `VACTUAL`, inmediato y verificado. |
 | | `tmc2209_set_current(dev, *c)` | Escribe `IHOLD_IRUN`. Es runtime porque es deseable varias las corrientes ya que se relacionan directamente con el torque que el motor es capaz de hacer.|
-| Passthrough | `tmc2209_bus_send(bus, tx[], tx_len, rx[], rx_len, *rx_got)` | Permite mandar y recibir bytes crudos, sin codificar ni decodificar. Saltea la construcción de framing, utilizado para poder enviar datagramas directamente en caso de que se requiera hacer un bypass de la librería.|
+| Passthrough | `tmc2209_bus_send(bus, tx[], tx_len, rx[], rx_len, *rx_got)` | Permite mandar y recibir bytes crudos, sin codificar ni decodificar. Saltea la construcción de framing, utilizado para poder enviar datagramas directamente en caso de que se requiera hacer un bypass de la librería sin utilizar el backend.|
 
 Por debajo, todo eso son datagramas armados en [tmc2209_frame.c](../src/components/tmc2209/tmc2209_frame.c), que es código stateless y sin I/O, puramente sobre arrays de bytes.
 
-De esta forma, se puede apreciar la siguiente operación de escirtura y lectura:
+De esta forma, se puede apreciar la siguiente operación de escritura y lectura:
 ```mermaid
 sequenceDiagram
     autonumber
@@ -128,25 +125,31 @@ sequenceDiagram
     Lib-->>App: TMC2209_OK
 ```
 
-Si algo falla, todos los slots del lote quedan inválidos, incluidos los de las ops que ya habían salido: nada de un lote está confirmado hasta el `IFCNT` final. La recuperación es reenviar el lote, que es seguro porque escribir dos veces el mismo valor deja al driver igual.
+Si algo falla, todos los slots del lote quedan inválidos, incluidos los de las operaciones de escritura que ya habían salido: nada de un lote está confirmado hasta el `IFCNT` final. La recuperación es reenviar el lote, que es seguro porque escribir dos veces el mismo valor deja al driver igual.
 
 Características:
 
 - **`IFCNT` como acuse de recibo.** Una escritura no tiene respuesta, así que la única evidencia de que un datagrama llegó es que el contador de escrituras del driver haya avanzado. Es un registro volátil, pero el valor que la librería guarda no es caché y nunca se lee de ahí: es la línea base contra la cual comparar la próxima lectura real. El passthrough también lo incrementa, así que un shadow inválido implica una línea base sospechosa y se debe volver a tomar el valor inicial del contador.
+
 - **El eco como primera validación.** El half duplex obliga a leer de vuelta lo que uno mismo transmitió, y eso se puede tirar o se puede usar. Se usa: un eco alterado o corto es evidencia de un problema eléctrico que ninguna otra lectura da, y aparece antes de que el driver haya tenido oportunidad de contestar.
+
 - **El bus es compartido porque el datagrama lleva dirección.** El segundo byte de un datagrama es la dirección del driver al que va dirijida, que a su vez se fija por los svalores de los pines MS1/MS2 del driver, así que hasta cuatro drivers pueden usar el mismo canal UART y cada uno ignora lo que no es para él. Por eso el bus es una estructura aparte del dispositivo.
+
 - **El backend puede ser cualquier cosa.** El contrato son cuatro punteros a función sobre bytes. Detrás puede haber un periférico UART del ESP32, un puerto serie de la PC, un socket UDP contra un simulador, un descriptor de archivo o un array en memoria en un test. La única cosa que sí necesita saber es si ese canal hace eco, porque un backend full duplex no devuelve lo transmitido, y eso lo declara el propio port.
+
 - **`VACTUAL` se debe tratar con cuidado.** Un `VACTUAL` distinto dejasin efecto al pin STEP, en silencio y sin levantar ninguna falla. Los pulsos siguen saliendo y siguen contándose, pero no mueven nada.
+
 - **Reintentos acotados.** Un CRC malo o un timeout se reintentan tantas veces como declare el bus, con la salvedad de que un reintento puede inflar al contador de escrituras `IFCNT` por demás. Por eso la verificación compara contra una cota y no contra una igualdad exacta.
+
 - **El passthrough.** `tmc2209_bus_send()` es la vía para diagnosticar al driver: nada de la respuesta se juzga, ni siquiera un CRC malo, porque quien llama por acá sospecha del driver. Una respuesta corta se informa con cuántos bytes llegaron, en vez de descartarse.
 
 ### Líneas de Control
 
-UART configura al driver, pero no es suficiente. Existen cuatro pines que modifican el estado del driver, pero que dependen de un módulo GPIO y niveles lógicos en vez de una transmisión serie por UART: `ENN`, `DIR`, `STEP` y `DIAG`.
+UART configura al driver, pero no es suficiente. Existen cuatro pines que modifican el estado y la acción del driver, pero que dependen de un módulo GPIO y niveles lógicos en vez de una transmisión serie por UART: `ENN`, `DIR`, `STEP` y `DIAG`.
 
-Igual que en el port, este componente también es agnóstico. El backend escribe y lee niveles, nada más. Sostener un nivel un tiempo mínimo, y emitir trenes a una tasa, es temporización, y eso es problema del generador de pasos.
+Igual que en el `port`, este componente también es agnóstico. El backend escribe y lee niveles, nada más. Sostener un nivel un tiempo mínimo, y emitir trenes a una tasa, es temporización, y eso es problema del generador de pasos.
 
-El backend trae además una máscara `wired`, un bit por línea. Una línea que la placa no conecta no se simula ni se ignora en silencio: toda llamada que la nombre responde `TMC2209_ERR_UNWIRED`. Esto es lo que permite que el mismo binario sirva a una placa con un driver que maneja el pin enable por otro lado.
+El backend trae además una máscara `wired`, un bit por línea. Una línea que la placa no conecta no se simula ni se ignora en silencio: toda llamada que la nombre responde `TMC2209_ERR_UNWIRED`. Esto es lo que permite que el mismo binario sirva a una placa con un driver que maneja el pin enable mediante un sistema ajeno al controlador, por ejemplo.
 
 Sobre esa base, cada línea tiene su particularidad:
 
@@ -196,13 +199,13 @@ sequenceDiagram
 
 `STEP` es la cuarta línea del driver y no se parece a las otras tres. `ENN` y `DIR` se sostienen en un nivel, `DIAG` es también un nivel que se lee, pero a `STEP` lo que le importa no es en qué nivel está sino cuántas veces cambió y cuán separados en el tiempo estuvieron esos cambios (pulsos), ya que cada flanco avanza un microstep. Un nivel es un estado, y un tren de pulsos es una función del tiempo, así que las dos cosas deberían tener backends distintos.
 
-Las consecuencias de esa diferencia son tres, y cada una empuja el diseño en una dirección distinta.
+Las consecuencias de esa diferencia son tres, lo cual influye en el diseño resultante:
 
-La primera es que **hace falta un periférico.** Cuatro mil microsteps a diez mil pulsos por segundo son cuatrocientos milisegundos de flancos que tienen que salir parejos, y sacarlos desde código sería ocupar el procesador entero para hacer algo que un RMT, un MCPWM o un timer hacen solos. Por eso el generador de pasos es su propio backend, con su propio contrato, y no una función más del backend de líneas: este backend entocnes deberá interactuar con el tiempo de manera cotidiana. Es el único de los tres que lo hace (sin contar los timeouts de UART).
+1. **Hace falta un periférico.** Cuatro mil microsteps a diez mil pulsos por segundo son cuatrocientos milisegundos de flancos que tienen que salir parejos, y sacarlos desde código sería ocupar el procesador entero para hacer algo que un RMT, un MCPWM o un timer hacen solos. Por eso el generador de pasos es su propio backend, con su propio contrato, y no una función más del backend de líneas: este backend entocnes deberá interactuar con el tiempo de manera cotidiana. Es el único de los tres que lo hace (sin contar los timeouts de UART).
 
-La segunda es que **la API tiene que ser asíncrona**. Una llamada que volviera cuando el movimiento terminó dejaría al lazo de control congelado esos cuatrocientos milisegundos, justo mientras el motor se mueve, que es cuando hay algo para vigilar. Entonces `tmc2209_move()` vuelve apenas los pulsos están en camino, y queda el movimiento ocurriendo de fondo con un estado. Consultarlo es a través de `tmc2209_motion()`.
+2. **La API tiene que ser asíncrona**. Una llamada que volviera cuando el movimiento terminó dejaría al lazo de control congelado esos cuatrocientos milisegundos, justo mientras el motor se mueve, que es cuando hay algo para vigilar. Entonces `tmc2209_move()` vuelve apenas los pulsos están en camino, y queda el movimiento ocurriendo de fondo con un estado. Consultarlo es a través de `tmc2209_motion()`.
 
-La tercera es que **el movimiento no puede empezar ni terminar de golpe**. Un motor paso a paso al que se le pide más aceleración de la que puede dar se queda atrás, patina, y se mueve una distancia desconocida. Por eso una corrida no se describe con una velocidad sino con un perfil:
+3. **El movimiento no puede empezar ni terminar de golpe**. Un motor paso a paso al que se le pide más aceleración de la que puede dar se queda atrás, patina, y se mueve una distancia desconocida. Por eso una corrida no se describe con una velocidad sino con un perfil:
 
 ![Perfil de una corrida: rampa de aceleración desde pullin_pps hasta cruise_pps, tramo de crucero, y rampa de frenado simétrica](media/stepgen_plot.png)
 
@@ -217,26 +220,25 @@ Lo que el backend debe garantizar es entonces:
 | Corridas cortas | Dos pulsos con una rampa larga son un triángulo que nunca llega a crucero, y aterrizan igual en exactamente dos. |
 | Ancho mínimo | Todo pulso dura al menos `min_pulse_ns`, a cualquier tasa. El backend declara ese número y la librería lo contrasta contra los 100 ns que pide la hoja de datos al momento de acoplarlo. |
 
-El backend cuenta flancos y nada más: no se fija ni en el sentido de movimiento ni en la resolución de microstep. Y por otro lado, todo lo que le da sentido a esa cuenta de flancos vive del lado de la librería, y es la misma división que hace que `tmc2209_enable()` exista para que nadie tenga que recordar que `ENN` está invertido.
+El backend cuenta flancos y nada más: no se fija ni en el sentido de movimiento ni en la resolución de microstep. Y por otro lado, todo lo que le da sentido a esa cuenta de flancos vive del lado de la librería.
 
 Sobre esa base, la API pública:
 
 | Función | Qué hace |
 | --- | --- |
 | `tmc2209_attach_stepgen(dev, stepgen)` | Acopla la fuente de pulsos, una por driver. Rechaza un backend al que le falte cualquiera de sus cuatro llamadas, uno que declare `max_pps` cero, o uno que no garantice el ancho mínimo. A partir de acá el pin `STEP` es suyo y `tmc2209_line_write()` sobre `STEP` se rechaza. |
-| `tmc2209_is_running(dev, *running)` | Pregunta si están saliendo pulsos, y nada más. |
+| `tmc2209_is_running(dev, *running)` | Pregunta si el backend está emitiendo pulsos. |
 | `tmc2209_move(dev, *m)` | Arranca una corrida según un plan de acción que marca sentido, velocidades, aceleración y cotas. La única llamada asíncrona de toda la librería y vuelve enseguida. |
 | `tmc2209_retarget(dev, cruise_pps)` | Cambia la tasa de crucero de una corrida en vuelo, manteniendo la rampa con la aceleración del plan de acción original. |
 | `tmc2209_halt(dev, immediate)` | Termina la corrida, cortando en el próximo pulso o desacelerando hasta `pullin_pps`. |
 | `tmc2209_get_motion_report(dev, *out)` | Recoge los pulsos de la corrida, la tasa actual y si todavía está andando. Recogerlo una vez terminada la corrida es lo que habilita la siguiente. |
 
-La librería no lleva posición. Sin encoder, una posición es una suma de cuentas de corridas y nada más, y sumarlas ya es decidir qué significaron esos pulsos: hacia dónde es positivo, cuántos milímetros vale un pulso, si la película patinó. Nada de eso se puede saber acá, así que se informa la cuenta de cada corrida y quien acumula es `main`, o la capa que venga después.
 
-Lo que sí garantiza la librería es que ninguna cuenta se pierda en el camino. El backend guarda una sola, la de la corrida en curso o la última, así que arrancar una segunda corrida pisa un total que quizás nadie miró, y esos pulsos ya movieron película. Por eso un `tmc2209_move()` con una cuenta pendiente responde `TMC2209_ERR_UNREAD`, y un `tmc2209_get_motion_report()` después de que la corrida terminó es lo que la salda. Consultar en el medio no salda nada, porque el total que estaría reconociendo todavía no existe.
+La librería por sí sola no garantiza un encoder para el motor o un lazo cerrado, pero sí ofrece un reporte de movimiento dinámico en cada corrida. El backend guarda uno reporte "singleton", y su contenido será de la corrida en curso o de la última (no habiendo ninguna en curso). Además, desde la librería se promueve su lectura ampliamente, al punto que olvidar leer el reporte al terminar una corrida no permite empezar una segunda.
 
-`tmc2209_move()` es donde se junta todo, porque `DIR` es una línea, `STEP` es una tasa, y las dos tienen que estar de acuerdo antes del primer flanco. Y hay un tercer dato en juego: `GCONF.shaft` invierte el orden de fases, así que un nivel en `DIR` no significa nada por sí solo, solo el par `DIR` más `shaft` decide hacia dónde gira el motor. Son cuatro combinaciones que colapsan en dos sentidos.
+`tmc2209_move()` es donde se junta todo, porque `DIR` es una línea, `STEP` es una tasa, y las dos tienen que estar de acuerdo antes del primer flanco. Y hay un tercer dato en juego: `GCONF.shaft` invierte el orden de fases como `DIR`, así que solo el par `DIR` más `shaft` decide hacia dónde gira el motor. Son cuatro combinaciones que colapsan en dos sentidos.
 
-Por eso la corrida declara los dos valores y la librería los deja en efecto: pone el nivel en `DIR` y, si el driver tiene el otro `shaft`, lo escribe antes del primer pulso. Cuando ya coincide no cuesta nada, porque el shadow descarta la escritura antes de que llegue al cable. Cuál de las combinaciones es "adelante" depende de cómo esté montado el motor y del cableado, y esa elección es de `main`: fijar `shaft` en 0 y usar `dir` para elegir el sentido es una convención perfectamente válida, y es una decisión que no pertenece acá.
+Por eso la corrida declara los dos valores y la librería los deja en efecto: pone el nivel en `DIR` y si es necesario, reescribe `shaft` con el valor correcto, todo antes del primer pulso. Cuál de las combinaciones es "adelante" depende de cómo esté montado el motor y del cableado, y esa elección es de `main`: fijar `shaft` en 0 y usar `dir` para elegir el sentido es una convención perfectamente válida, pero es una decisión que no pertenece acá.
 
 ```mermaid
 sequenceDiagram
@@ -290,7 +292,7 @@ sequenceDiagram
 
 Características:
 
-- **El reporte se actualiza en vivo y debe ser leído entre corridas.** `tmc2209_get_motion_report()` le pregunta al generador de pulsos: durante la corrida, los pulsos que ya salieron; una vez que termina, los pulsos totales. Lo único que cambia es que una corrida terminada debe ser leída para que la próxima termine, para obligar al código que no desestime esa información.
+- **El reporte se actualiza en vivo y debe ser leído entre corridas.** `tmc2209_get_motion_report()` le pregunta al generador de pulsos: durante la corrida, los pulsos que ya salieron; una vez que termina, los pulsos totales. Lo único que cambia es que una corrida terminada debe ser leída para que la próxima empiece, para obligar al código que no desestime esa información.
 
 - **`DIR` queda tomado mientras dura la corrida.** Se fija antes del primer flanco y no se puede tocar hasta que salga el último. El sentido es entonces una propiedad de la corrida entera, que es lo que hace que una sola cuenta alcance para describirla: si el nivel cambiara en el medio, los pulsos de antes y los de después caerían bajo el mismo número. `ENN` sigue disponible durante todo el movimiento, porque cortar la etapa de potencia es lo único que nunca se puede rechazar.
 
@@ -332,13 +334,74 @@ Por eso el estado es un `uint8_t` y no un enum: el componente se queda con los s
 
 Sobre esa base, tres tipos de trama comparten el enlace y el primer byte dice cuál es: pedido, respuesta y log. La respuesta repite el identificador del pedido que contesta, lo que evita que una respuesta demorada se lea como la de otra pregunta. El log es la única trama que sale sin que nadie la haya pedido: no espera acuse, no obliga a nada, y un cliente al que no le interesa la descarta mirando un solo byte. Que exista como tipo de trama es del transporte; quién la produce y por qué es de `main`.
 
+Con todo eso junto, vale la pena seguir una trama entera. El ejemplo es inventado a propósito: un método `sum` que suma dos enteros, que no existe en ninguno de los cuatro namespaces, justamente para que lo único que se vea sea el camino. El lado de la PC no se modela, porque este documento explora el firmware: alcanza con saber que manda una trama pidiendo 2 más 3 y espera una con el 5.
+
+Los actores son archivos, y están los que aparecen más de una vez en el camino. El primero es de `main` y no del componente, pero es quien lo usa, así que sin él la trama no llega a ninguna parte.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PC as PC Host<br/>(fuera de alcance)
+    participant Lk as rpc_link.c<br/>(main)
+    participant Cobs as cobs.c
+    participant Wire as rpc_wire.c
+    participant Disp as rpc_dispatch.c
+    participant H as handler de sum<br/>(main)
+
+    PC->>Lk: bytes por USB, sin bordes
+    Lk->>Lk: acumula hasta el próximo 0x00
+    Lk->>Cobs: cobs_decode(run)
+    Cobs-->>Lk: cuerpo de la trama, con sus ceros de vuelta
+
+    Lk->>Wire: rpc_frame_open(trama)
+    Wire->>Wire: CRC16 sobre el cuerpo contra los dos últimos bytes
+    Note over Wire: si no cierra, se descarta sin contestar:<br/>un identificador corrupto no sirve para responder
+    Wire-->>Lk: tipo = REQ, lector posicionado
+
+    Lk->>Wire: rpc_req_header(lector)
+    Wire-->>Lk: id = 7, ns = 3, method = 0
+    Lk->>Wire: rpc_frame_begin_rep(id = 7, status = OK)
+
+    Lk->>Disp: rpc_dispatch(req, args, ret)
+    Disp->>Disp: ¿existe ese namespace y ese método?
+    Note over Disp: si no, RPC_NO_METHOD y nadie<br/>de main llega a enterarse
+    Disp->>H: handler(args, ret)
+    H->>Wire: rpc_r_u32(args) dos veces
+    Wire-->>H: 2 y 3
+    H->>Wire: rpc_w_u32(ret, 5)
+    H-->>Disp: RPC_OK
+
+    Disp->>Wire: ¿el lector quedó ok y sin sobras?
+    Note over Disp,Wire: sobró un argumento o faltó: RPC_BAD_FRAME,<br/>y se rebobina lo que el handler ya había escrito
+    Disp-->>Lk: RPC_OK
+
+    Lk->>Wire: rpc_frame_finish(ret)
+    Wire->>Wire: calcula el CRC16 y lo agrega al final
+    Wire-->>Lk: longitud del cuerpo
+    Lk->>Cobs: cobs_encode(cuerpo)
+    Cobs-->>Lk: bytes sin ningún cero adentro
+    Lk->>PC: eso, más el 0x00 que cierra
+```
+
+Dos cosas que el diagrama deja ver mejor que la prosa. El estado se escribe dos veces: la respuesta arranca con `OK` antes de saber nada, y solo se corrige si algo falló, lo que evita tener que mover el encabezado después. Y la validación de argumentos ocurre después del handler, no antes, porque el que sabe cuántos argumentos debía haber es el handler, y el lector se acuerda solo de si se quedó sin bytes.
+
 ## Interfaces RPC. `main` I
 
-`rpc` mueve tramas y no sabe qué significan. Los significados viven acá, en `rpc_api.h`, y se registran al arrancar con una llamada por namespace.
+La librería `rpc` solo nos ofrece una manera de transferir tramas y asociarlas con llamadas a funciones, pero naturalmente se entiende que la librería necesitará de una capa compartida para normalizar las diferencias con las otras librerías con las que interactúe. En este caso, se sabrá lo siguiente:
 
-Ese header es el otro lado de la división, y está en `main` por el mismo motivo que `board.h`: nombra drivers, registros y llamadas de la librería, así que cambia cuando cambia esta máquina y el transporte no. Los dos extremos lo compilan, igual que al del componente, porque un número de método escrito dos veces se desincroniza en silencio: la PC pide el método 4 y el firmware ejecuta el que antes era el 4.
+| Archivo | Qué aporta |
+| --- | --- |
+| `rpc_api.h` | El vocabulario compartido entre la PC y el firmware: qué namespaces existen, qué número tiene cada método, qué estados puede devolver un handler y qué versión de protocolo se habla.|
+| `rpc_status.c` | La correspondencia entre el error de la librería `tmc2209` y el estado que viaja por el cable. Son dos vocabularios practicamente idénticos. |
+| `rpc_methods.h` | Declara las tres tablas de handlers, para que la raíz de composición pueda registrarlas sin nombrar a ninguno. |
+| `rpc_passthrough.c` | El handler de `passthrough`. |
+| `rpc_raw.c` | Los handlers de `raw`, uno por función pública de `tmc2209.h`. |
+| `rpc_sys.c` | Los handlers de `sys`. |
+| `rpc_link.c` | Ata todo eso al cable: junta los bytes que llegan por USB, le entrega las tramas al dispatch y devuelve la respuesta. |
 
-Son cuatro namespaces, y la pregunta que los ordena es a quién le está hablando la PC en cada caso:
+Los tres primeros y los dos handlers de driver no incluyen nada de ESP-IDF, y por eso `test/unit` los compila en la PC contra un mock. Los que sí lo incluyen son `rpc_sys.c`, que pregunta por el descriptor de la aplicación y el uptime, y `rpc_link.c`, que habla con el periférico USB. `smart` todavía no tiene archivo.
+
+Esto nos permite generar cuatro namespaces de procedimientos remotos, y la pregunta que los ordena es a quién le está hablando la PC en cada caso:
 
 | Namespace | La PC le habla | Quién arma los bytes que van al driver |
 | --- | --- | --- |
@@ -391,7 +454,7 @@ Con eso en mente, las funciones tentativas se parecerían más a esto que a un e
 
 ## Orquestación. `main` II
 
-Las dos librerías no se conocen entre sí y ninguna sabe en qué placa está. Alguien tiene que decidir qué existe, construirlo, conectarlo y decidir qué hacer cuando algo sale mal. Eso es el resto de `main`, y son cinco archivos con una responsabilidad cada uno.
+Alguien tiene que decidir qué existe, construirlo, conectarlo y decidir qué hacer cuando algo sale mal. Eso es el resto de `main`, y son cinco archivos con una responsabilidad cada uno.
 
 | Archivo | Qué decide |
 | --- | --- |

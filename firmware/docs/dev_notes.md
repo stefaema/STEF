@@ -28,6 +28,10 @@ At some point a change may be done to the stepgen module where on the event of
 finishing a run, it should interrupt and act upon a callback. [This will be
 addressed by the user, LLMs ignore]
 
+## Refactor
+
+I want to refactor RPC system and the main II readme.md entry
+
 ## About Device
 
 Hardware tested:
