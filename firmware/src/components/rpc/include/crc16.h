@@ -9,7 +9,7 @@
  *
  * CRC-16/CCITT-FALSE: polynomial 0x1021, initial value 0xFFFF, no reflection,
  * no final xor. Chosen for being the one every other implementation agrees on,
- * so the PC side is a library call and not a second opinion.
+ * so the other side is a library call and not a second opinion.
  */
 
 #ifndef CRC16_H

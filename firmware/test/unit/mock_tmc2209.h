@@ -27,6 +27,7 @@
    so neither is a property the library may assume. FACTORY_CONF is given a
    non-zero trim precisely because a real part never reads back zero, which is
    what makes "read it, do not seed it" testable. */
+#define MOCK_RESET_IOIN         0x21000000u   /* revision byte; the mock picks one, like a part would */
 #define MOCK_RESET_GCONF        0x00000101u
 #define MOCK_RESET_GSTAT        0x00000001u   /* reset flag set at power-on */
 #define MOCK_RESET_CHOPCONF     0x10000053u

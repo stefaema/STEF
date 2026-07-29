@@ -719,8 +719,7 @@ static void test_poll_load_is_valid_once_the_window_is_open(void)
 static void test_poll_pins_decodes_live_state(void)
 {
     setup_ready();
-    mock_set_reg(&g_mock, TMC2209_IOIN,
-                 ((uint32_t)TMC2209_IOIN_VERSION << 24) | (1u << 6) | (1u << 4));
+    mock_set_reg(&g_mock, TMC2209_IOIN, MOCK_RESET_IOIN | (1u << 6) | (1u << 4));
 
     tmc2209_ioin_t pins = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_pins(&g_dev, &pins));
@@ -769,25 +768,21 @@ static void test_poll_raw_does_not_update_the_cache(void)
 
 /* ── Verdicts ───────────────────────────────────────────────────────────── */
 
-static void test_poll_version_reports_the_revision(void)
+/* The revision is carried, never recognised: no value is special to the
+   library, so every value comes back as it was found. Whether to accept one is
+   the caller's policy, exactly as with the retry thresholds in design.md §8. */
+static void test_poll_version_reports_whatever_the_part_answers(void)
 {
-    setup_ready();
-    uint8_t version = 0;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
-    TEST_ASSERT_EQUAL_HEX8(TMC2209_IOIN_VERSION, version);
-}
+    static const uint8_t revisions[] = { 0x00, 0x20, 0x21, 0x22, 0xFF };
 
-/* The field is a compatibility generation, not a model number, so an unfamiliar
-   revision is reported rather than refused. Whether to accept it is the
-   caller's policy, exactly as with the retry thresholds in design.md §8. */
-static void test_poll_version_reports_an_unfamiliar_revision_without_judging(void)
-{
-    setup_ready();
-    mock_set_reg(&g_mock, TMC2209_IOIN, 0x22000000U);
+    for (size_t i = 0; i < sizeof revisions / sizeof revisions[0]; i++) {
+        setup_ready();
+        mock_set_reg(&g_mock, TMC2209_IOIN, (uint32_t)revisions[i] << 24);
 
-    uint8_t version = 0;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
-    TEST_ASSERT_EQUAL_HEX8(0x22, version);
+        uint8_t version = 0;
+        TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
+        TEST_ASSERT_EQUAL_HEX8(revisions[i], version);
+    }
 }
 
 /* IOIN carries both, but the two answer different questions and are read
@@ -795,15 +790,14 @@ static void test_poll_version_reports_an_unfamiliar_revision_without_judging(voi
 static void test_poll_version_and_poll_pins_read_the_same_register(void)
 {
     setup_ready();
-    mock_set_reg(&g_mock, TMC2209_IOIN,
-                 ((uint32_t)TMC2209_IOIN_VERSION << 24) | (1U << 6));
+    mock_set_reg(&g_mock, TMC2209_IOIN, (0x5AU << 24) | (1U << 6));
 
     uint8_t version = 0;
     tmc2209_ioin_t pins = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_pins(&g_dev, &pins));
 
-    TEST_ASSERT_EQUAL_HEX8(TMC2209_IOIN_VERSION, version);
+    TEST_ASSERT_EQUAL_HEX8(0x5A, version);
     TEST_ASSERT_TRUE(pins.pdn_uart);
 }
 
@@ -1117,8 +1111,7 @@ void run_device_tests(void)
     RUN_TEST(test_poll_raw_refuses_write_only_registers);
     RUN_TEST(test_poll_raw_does_not_update_the_cache);
 
-    RUN_TEST(test_poll_version_reports_the_revision);
-    RUN_TEST(test_poll_version_reports_an_unfamiliar_revision_without_judging);
+    RUN_TEST(test_poll_version_reports_whatever_the_part_answers);
     RUN_TEST(test_poll_version_and_poll_pins_read_the_same_register);
     RUN_TEST(test_verify_config_agrees_after_bringup);
     RUN_TEST(test_verify_config_reports_a_disagreeing_register);

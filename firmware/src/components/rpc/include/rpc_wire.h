@@ -4,8 +4,8 @@
  *
  * A serialiser written on each side of a link is two implementations of one
  * agreement, and the second one drifts. This is the one implementation: the
- * firmware builds replies with it and the PC parses them with the same object
- * code, through cffi.
+ * firmware builds replies with it and the other side parses them with the same
+ * object code.
  *
  * Nothing here is a struct copied onto the wire. Every value is written with an
  * explicit width and an explicit byte order, so no padding rule, enum width or

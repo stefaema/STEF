@@ -1,12 +1,10 @@
 /*
- * tmc2209_uart.h: the single-wire link, and the policy for driving it.
+ * tmc2209_uart.h: the single-wire link handling TMC2209 smart configuration.
  *
  * The library's only output is bytes. It is channel agnostic: an ESP32 UART
  * peripheral, a PC serial port, or an array in a unit test all work, as long as
  * something moves the bytes.
  *
- * Note what is absent: there is no clock. Timeouts are a millisecond count and
- * the backend decides how to wait.
  *
  * The struct holds two kinds of thing, and it is worth knowing which is which.
  * The calls, the ctx and `echoes` are the backend's: an implementor supplies
@@ -34,8 +32,8 @@ typedef struct tmc2209_uart {
 
     void (*purge_rx)(void *ctx);   /* drop stale bytes before a transaction. may be NULL */
 
-    /* Serialize a whole transaction. Both NULL or both set. Unused on target,
-       where a single control task owns the link; kept for the PC-side harness. */
+    /* Serialize a whole transaction. Both NULL or both set. Unneeded where a
+       single control task owns the link. */
     void (*lock)(void *ctx);
     void (*unlock)(void *ctx);
 

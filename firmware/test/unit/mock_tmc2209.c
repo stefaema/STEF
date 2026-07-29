@@ -129,7 +129,7 @@ void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes)
        device model, rather than in the register table: they describe what a
        driver holds before anyone configures it, which is the mock's business and
        not something the library should carry defaults for. */
-    m->regs[TMC2209_IOIN]         = (uint32_t)TMC2209_IOIN_VERSION << 24;
+    m->regs[TMC2209_IOIN]         = MOCK_RESET_IOIN;
     m->regs[TMC2209_GCONF]        = MOCK_RESET_GCONF;
     m->regs[TMC2209_GSTAT]        = MOCK_RESET_GSTAT;
     m->regs[TMC2209_CHOPCONF]     = MOCK_RESET_CHOPCONF;

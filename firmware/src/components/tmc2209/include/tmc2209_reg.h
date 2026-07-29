@@ -9,10 +9,8 @@
  * hold is a question it cannot answer.
  *
  * Class (@ref tmc2209_class_t) is who can change the value, which decides
- * whether a remembered value is still true. It is a physical property of the
- * part, not a performance judgement: cache by ownership, never by cost.
+ * whether a remembered value is still true.
  *
- * There is deliberately no reset-value column. See design.md §1.
  */
 
 #ifndef TMC2209_REG_H
@@ -21,6 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/** @brief Every register the library knows, by its datasheet address. */
 typedef enum {
     TMC2209_GCONF        = 0x00,
     TMC2209_GSTAT        = 0x01,
@@ -47,18 +46,18 @@ typedef enum {
     TMC2209_PWM_AUTO     = 0x72,
 } tmc2209_reg_t;
 
-/** Total slots. Kept under 32 so the validity bitmap is a single uint32_t. */
+/** Registers in the table, and therefore cache slots. OTP_PROG is excluded: it blows fuses. */
 #define TMC2209_REG_COUNT   23
-/** Registers a configuration must cover. See tmc2209_bringup(). */
+/** Registers whose modification should be exclusive to the library. */
 #define TMC2209_OWNED_COUNT 10
 
-/** What the driver permits. */
+/** @brief What the driver permits, as a bitmask. */
 enum {
-    TMC2209_ACCESS_READ  = 1U << 0,
-    TMC2209_ACCESS_WRITE = 1U << 1,
+    TMC2209_ACCESS_READ  = 1U << 0,  /**< the register can be read back */
+    TMC2209_ACCESS_WRITE = 1U << 1,  /**< the register can be written */
 };
 
-/** Who can change the value, and therefore whether it can be cached. */
+/** Who changes the value, and therefore whether it can be cached. */
 typedef enum {
     /** Not in the table. */
     TMC2209_CLASS_UNKNOWN = 0,
@@ -79,20 +78,24 @@ tmc2209_class_t tmc2209_reg_class(tmc2209_reg_t reg);
 /** Datasheet name, or "?" if the register is not in the table. */
 const char     *tmc2209_reg_name(tmc2209_reg_t reg);
 
-/* Slot-indexed accessors, for iterating the cache without a reverse lookup.
-   Callers must keep slot in [0, TMC2209_REG_COUNT). */
+/**
+ * @name Slot-indexed accessors
+ * For iterating the cache without a reverse lookup.
+ * Callers must keep slot in [0, TMC2209_REG_COUNT).
+ * @{
+ */
 tmc2209_reg_t   tmc2209_reg_at(int slot);
 uint8_t         tmc2209_reg_access_at(int slot);
 tmc2209_class_t tmc2209_reg_class_at(int slot);
+/** @} */
 
 /* ── Conditions ─────────────────────────────────────────────────────────── */
 
 /**
  * @brief What tmc2209_poll_health() reports, as a bitmask.
  *
- * Conditions, not register contents: the caller asks whether the driver is
- * healthy without learning that brownout lives in GSTAT and overtemperature
- * lives in DRV_STATUS.
+ * The caller asks whether the driver is healthy without learning
+ * that brownout lives in GSTAT and overtemperature lives in DRV_STATUS.
  *
  * The two halves behave differently in time, which the caller must know.
  * Latched conditions report that something *happened* and stay asserted until
@@ -133,21 +136,26 @@ typedef struct {
 
 /* ── Field enums ────────────────────────────────────────────────────────── */
 
+/** @brief CHOPCONF.mres, named for the microstep count and not the raw code. */
 typedef enum {
     TMC2209_MRES_256 = 0, TMC2209_MRES_128, TMC2209_MRES_64, TMC2209_MRES_32,
     TMC2209_MRES_16,      TMC2209_MRES_8,   TMC2209_MRES_4,  TMC2209_MRES_2,
     TMC2209_MRES_FULL,
 } tmc2209_mres_t;
 
-/** Microsteps per full step, for the rate arithmetic the actuator layer needs. */
+/** Microsteps per full step. */
 uint16_t tmc2209_mres_microsteps(tmc2209_mres_t mres);
 
+/** @brief CHOPCONF.tbl, comparator blank time in clock cycles. */
 typedef enum { TMC2209_TBL_16 = 0, TMC2209_TBL_24, TMC2209_TBL_32, TMC2209_TBL_40 } tmc2209_tbl_t;
+/** @brief COOLCONF.seup, current increment per step when load rises. */
 typedef enum { TMC2209_SEUP_1 = 0, TMC2209_SEUP_2, TMC2209_SEUP_4, TMC2209_SEUP_8 } tmc2209_seup_t;
+/** @brief COOLCONF.sedn, measurements per current decrement when load falls. */
 typedef enum { TMC2209_SEDN_32 = 0, TMC2209_SEDN_8, TMC2209_SEDN_2, TMC2209_SEDN_1 } tmc2209_sedn_t;
 
 /* ── Field codecs ───────────────────────────────────────────────────────── */
 
+/** @brief GCONF, the global mode flags. */
 typedef struct {
     bool i_scale_analog;    /**< external VREF */
     bool internal_rsense;
@@ -164,6 +172,7 @@ typedef struct {
 uint32_t        tmc2209_gconf_encode(const tmc2209_gconf_t *g);
 tmc2209_gconf_t tmc2209_gconf_decode(uint32_t raw);
 
+/** @brief CHOPCONF, the chopper and microstep resolution settings. */
 typedef struct {
     uint8_t        toff;    /**< 0 = driver disabled */
     uint8_t        hstrt;
@@ -180,8 +189,9 @@ typedef struct {
 uint32_t           tmc2209_chopconf_encode(const tmc2209_chopconf_t *c);
 tmc2209_chopconf_t tmc2209_chopconf_decode(uint32_t raw);
 
+/** @brief IHOLD_IRUN, the run and hold current scalers. */
 typedef struct {
-    uint8_t ihold;       /**< 0..31, holds film tension at rest */
+    uint8_t ihold;       /**< 0..31 */
     uint8_t irun;        /**< 0..31 */
     uint8_t iholddelay;  /**< 0..15 */
 } tmc2209_ihold_irun_t;
@@ -189,6 +199,7 @@ typedef struct {
 uint32_t             tmc2209_ihold_irun_encode(const tmc2209_ihold_irun_t *i);
 tmc2209_ihold_irun_t tmc2209_ihold_irun_decode(uint32_t raw);
 
+/** @brief COOLCONF, the CoolStep load-adaptive current thresholds. */
 typedef struct {
     uint8_t        semin;   /**< 0 = CoolStep off */
     tmc2209_seup_t seup;
@@ -200,6 +211,7 @@ typedef struct {
 uint32_t           tmc2209_coolconf_encode(const tmc2209_coolconf_t *c);
 tmc2209_coolconf_t tmc2209_coolconf_decode(uint32_t raw);
 
+/** @brief DRV_STATUS, what the output stage reports right now. */
 typedef struct {
     bool    otpw, ot;             /**< overtemperature warning / shutdown */
     bool    s2ga, s2gb;           /**< short to ground */
@@ -213,6 +225,7 @@ typedef struct {
 
 tmc2209_drv_status_t tmc2209_drv_status_decode(uint32_t raw);
 
+/** @brief GSTAT, the latched global faults. */
 typedef struct {
     bool reset;    /**< driver was reset and lost its configuration */
     bool drv_err;
@@ -225,33 +238,36 @@ tmc2209_gstat_t tmc2209_gstat_decode(uint32_t raw);
 /** The accepted-write counter, an 8-bit field that wraps. */
 uint8_t tmc2209_ifcnt_decode(uint32_t raw);
 
+/** @brief IOIN, the live state of the driver's input pins. */
 typedef struct {
     bool    enn, ms1, ms2, diag, pdn_uart, step, spread_en, dir;
-    uint8_t version;   /**< 0x21 on a genuine TMC2209 */
+    uint8_t version;   /**< revision byte, whatever the part answers */
 } tmc2209_ioin_t;
 
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw);
 
-/* Driver revision byte in IOIN, fixed for the part: what this library was
-   written and tested against. A TMC2208 reads 0x20. Overridable at build time
-   for register-compatible siblings that identify differently. */
-#ifndef TMC2209_IOIN_VERSION
-#define TMC2209_IOIN_VERSION 0x21u
-#endif
+/**
+ * Driver revision byte in IOIN: what this library was written and tested
+ * against. A TMC2209 of a later revision is still a TMC2209,
+ * so nothing here compares against this. It is published so a caller
+ * that does want to demand the tested revision has the number to demand.
+ */
+#define TMC2209_LIB_IOIN_VERSION 0x21u
 
-/* Sign-extended fields that are not plain unsigned counts. */
+/** VACTUAL, a signed 24-bit velocity. Sign-extended, not a plain count. */
 int32_t  tmc2209_vactual_decode(uint32_t raw);
 uint32_t tmc2209_vactual_encode(int32_t v);
 
 /* ── Diagnostic-only decoders ───────────────────────────────────────────── */
-/* For the PC-side report. Nothing in the control path reads these. */
 
 /**
- * NOT a current measurement. These are the entries the driver read out of its
- * internal sine table for the microstep position it is presently at, unscaled
- * by the current setting. A pure function of MSCNT: identical values whether
- * the motor is spinning, stalled, or unplugged. Both fields are 9-bit signed,
- * which is the only reason a decoder is worth having.
+ * @brief MSCURACT, the sine-table entries for the current microstep position.
+ *
+ * These are the entries the driver read out of its internal sine table for the
+ * microstep position it is presently at, unscaled by the current setting.
+ * A pure function of MSCNT: identical values whether the motor is spinning,
+ * stalled, or unplugged. Both fields are 9-bit signed, which is the only reason
+ * a decoder is worth having.
  */
 typedef struct {
     int16_t cur_a;   /**< -255..255 */
@@ -260,6 +276,7 @@ typedef struct {
 
 tmc2209_mscuract_t tmc2209_mscuract_decode(uint32_t raw);
 
+/** @brief PWM_SCALE, the duty StealthChop is currently applying. */
 typedef struct {
     uint8_t sum;        /**< actual PWM duty StealthChop settled on */
     int16_t automatic;  /**< -255..255, signed amplitude correction */
@@ -267,6 +284,7 @@ typedef struct {
 
 tmc2209_pwm_scale_t tmc2209_pwm_scale_decode(uint32_t raw);
 
+/** @brief PWM_AUTO, the offset and gradient StealthChop tuned for itself. */
 typedef struct {
     uint8_t ofs_auto;
     uint8_t grad_auto;

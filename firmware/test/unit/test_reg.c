@@ -276,10 +276,12 @@ static void test_drv_status_decodes_fields(void)
     TEST_ASSERT_TRUE(s.stst);
 }
 
+/* The version is bits 31..24 verbatim. An arbitrary byte proves the field is
+   carried through rather than recognised. */
 static void test_ioin_decodes_version(void)
 {
-    tmc2209_ioin_t i = tmc2209_ioin_decode(0x21000000u | (1u << 6));
-    TEST_ASSERT_EQUAL_HEX8(TMC2209_IOIN_VERSION, i.version);
+    tmc2209_ioin_t i = tmc2209_ioin_decode(0x5A000000u | (1u << 6));
+    TEST_ASSERT_EQUAL_HEX8(0x5A, i.version);
     TEST_ASSERT_TRUE(i.pdn_uart);
     TEST_ASSERT_FALSE(i.enn);
 }

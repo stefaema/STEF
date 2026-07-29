@@ -1,17 +1,7 @@
 /*
  * tmc2209_uart_priv.h: the inside of the uart subsystem.
  *
- * Deliberately not in include/. Every other header here is public because
- * somebody outside has to fill it in or call it. This one exists only because
- * tmc2209.c and tmc2209_uart.c sit on either side of a seam: the device layer
- * reads and writes registers on every call it makes, and the code that puts
- * those on the wire lives in the other file. A caller that wants bytes on the
- * wire without the cache has tmc2209_uart_send(), which is public and says so.
  *
- * What lives below this line is a datagram and the attempts it took. What lives
- * above it is the cache, IFCNT, and what a value means. So nothing here touches
- * a tmc2209_t: the address is passed in rather than reached for, which is what
- * lets these run without a device at all.
  */
 
 #ifndef TMC2209_UART_PRIV_H

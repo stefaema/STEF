@@ -407,7 +407,7 @@ static rpc_status_t raw_move(rpc_reader_t *args, rpc_writer_t *ret)
     uint8_t    idx = rpc_r_u8(args);
     tmc2209_t *dev = args->ok ? devices_at(idx) : NULL;
 
-    tmc2209_move_t m = {
+    tmc2209_movement_plan_t m = {
         .dir         = rpc_r_bool(args),
         .shaft       = rpc_r_bool(args),
         .pulses      = rpc_r_u32(args),
@@ -465,7 +465,7 @@ static rpc_status_t raw_motion(rpc_reader_t *args, rpc_writer_t *ret)
         return RPC_ARG;
     }
 
-    tmc2209_motion_t m   = { 0 };
+    tmc2209_motion_report_t m   = { 0 };
     tmc2209_err_t    err = tmc2209_get_motion_report(dev, &m);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
@@ -474,6 +474,8 @@ static rpc_status_t raw_motion(rpc_reader_t *args, rpc_writer_t *ret)
     rpc_w_u32(ret, m.emitted);
     rpc_w_u32(ret, m.rate_pps);
     rpc_w_bool(ret, m.running);
+    rpc_w_bool(ret, m.dir);
+    rpc_w_bool(ret, m.shaft);
     return RPC_OK;
 }
 

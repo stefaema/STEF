@@ -10,8 +10,8 @@
  * Two themes. A move states both halves of its direction, the DIR level and the
  * shaft bit it was planned around, and both are in effect before the first
  * pulse: a driver holding the other shaft bit is written first. And a run's
- * count must survive long enough to be collected: the backend holds one, so a
- * second move before anyone read the first is refused.
+ * count stays readable until the next move replaces it, with the direction it
+ * was emitted in, because nothing else records that once the pins move on.
  */
 
 #include "unity.h"
@@ -40,7 +40,7 @@ static tmc2209_regval_t g_config[] = {
 /* ── The fakes ──────────────────────────────────────────────────────────── */
 
 typedef struct {
-    tmc2209_run_t plan;          /* what the last run() was asked for */
+    tmc2209_run_plan_t plan;          /* what the last run() was asked for */
     unsigned      runs;
     unsigned      halts;
     unsigned      retargets;
@@ -85,7 +85,7 @@ static int board_write(void *ctx, tmc2209_line_t line, bool level)
     return 0;
 }
 
-static int gen_run(void *ctx, const tmc2209_run_t *plan)
+static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
 {
     fake_gen_t *g = (fake_gen_t *)ctx;
     if (g->fail_run) {
@@ -181,9 +181,9 @@ static void setup_ready(uint32_t gconf)
         tmc2209_bringup(&g_dev, g_config, TMC2209_NELEM(g_config), NULL));
 }
 
-static tmc2209_move_t a_move(bool dir, uint32_t pulses)
+static tmc2209_movement_plan_t a_move(bool dir, uint32_t pulses)
 {
-    const tmc2209_move_t m = {
+    const tmc2209_movement_plan_t m = {
         .dir         = dir,
         .shaft       = g_shaft,
         .pulses      = pulses,
@@ -194,18 +194,11 @@ static tmc2209_move_t a_move(bool dir, uint32_t pulses)
     return m;
 }
 
-static tmc2209_motion_t motion_now(void)
+static tmc2209_motion_report_t motion_now(void)
 {
-    tmc2209_motion_t motion;
+    tmc2209_motion_report_t motion;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_get_motion_report(&g_dev, &motion));
     return motion;
-}
-
-/* What a caller does between runs: collect the count so the next move is
-   allowed to overwrite it. */
-static uint32_t collect_count(void)
-{
-    return motion_now().emitted;
 }
 
 /* ── Attachment ─────────────────────────────────────────────────────────── */
@@ -215,8 +208,8 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
     setup_ready(CFG_GCONF);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_stepgen(&g_dev, NULL));
 
-    const tmc2209_move_t m = a_move(true, 100);
-    tmc2209_motion_t motion;
+    const tmc2209_movement_plan_t m = a_move(true, 100);
+    tmc2209_motion_report_t motion;
     bool running = false;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_move(&g_dev, &m));
@@ -270,7 +263,7 @@ static void test_attach_rejects_a_backend_that_pulses_too_narrowly(void)
 static void test_attach_is_refused_while_a_run_is_in_flight(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY, tmc2209_attach_stepgen(&g_dev, NULL));
@@ -283,7 +276,7 @@ static void test_attach_is_refused_while_a_run_is_in_flight(void)
 static void test_dir_is_set_before_the_first_pulse(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(1u, g_board.writes[TMC2209_LINE_DIR]);
@@ -296,7 +289,7 @@ static void test_dir_is_set_before_the_first_pulse(void)
 static void test_the_dir_level_reaches_the_pin_uninterpreted(void)
 {
     setup_ready(CFG_GCONF_SHAFT);
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
@@ -310,7 +303,7 @@ static void test_a_move_writes_the_shaft_bit_it_declares(void)
     setup_ready(CFG_GCONF);
     TEST_ASSERT_FALSE(tmc2209_gconf_decode(mock_reg(&g_mock, TMC2209_GCONF)).shaft);
 
-    tmc2209_move_t m = a_move(true, 1000);
+    tmc2209_movement_plan_t m = a_move(true, 1000);
     m.shaft = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
@@ -325,7 +318,7 @@ static void test_setting_the_shaft_bit_leaves_the_rest_of_gconf_alone(void)
 {
     setup_ready(CFG_GCONF);
 
-    tmc2209_move_t m = a_move(true, 1000);
+    tmc2209_movement_plan_t m = a_move(true, 1000);
     m.shaft = true;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
@@ -339,7 +332,7 @@ static void test_a_move_that_needs_no_shaft_change_writes_nothing(void)
     setup_ready(CFG_GCONF_SHAFT);
 
     const unsigned writes_before = g_mock.writes_seen;
-    tmc2209_move_t m = a_move(false, 1000);
+    tmc2209_movement_plan_t m = a_move(false, 1000);
     m.shaft = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
@@ -354,7 +347,7 @@ static void test_an_unknown_gconf_stops_the_move(void)
     setup_ready(CFG_GCONF);
     tmc2209_invalidate_owned(&g_dev);
 
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(0u, g_gen.runs);
     TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
@@ -365,12 +358,12 @@ static void test_an_unknown_gconf_stops_the_move(void)
 static void test_a_finished_run_reports_its_count(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     gen_finish(4000);
 
-    const tmc2209_motion_t motion = motion_now();
+    const tmc2209_motion_report_t motion = motion_now();
     TEST_ASSERT_FALSE(motion.running);
     TEST_ASSERT_EQUAL_UINT32(4000, motion.emitted);
 }
@@ -381,7 +374,7 @@ static void test_a_finished_run_reports_its_count(void)
 static void test_polling_a_finished_run_reports_the_same_count(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     gen_finish(4000);
 
@@ -395,11 +388,11 @@ static void test_polling_a_finished_run_reports_the_same_count(void)
 static void test_a_run_in_flight_shows_its_progress(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     g_gen.emitted = 1500;
-    tmc2209_motion_t motion = motion_now();
+    tmc2209_motion_report_t motion = motion_now();
     TEST_ASSERT_TRUE(motion.running);
     TEST_ASSERT_EQUAL_UINT32(1500, motion.emitted);
 
@@ -407,48 +400,41 @@ static void test_a_run_in_flight_shows_its_progress(void)
     TEST_ASSERT_EQUAL_UINT32(4000, motion_now().emitted);
 }
 
-/* A backend holds one run's count, so a second move would overwrite a total
-   nobody has seen, and those pulses went into film. */
-static void test_a_move_needs_the_last_count_collected(void)
+/* A count is a magnitude. The sign is DIR and the shaft bit, so the report
+   carries the pair the run was started with and the caller never has to
+   remember what it asked for. */
+static void test_the_report_carries_the_direction_the_run_was_started_with(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    tmc2209_movement_plan_t m = a_move(false, 1000);
+    m.shaft = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     gen_finish(1000);
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(1u, g_gen.runs);
-
-    TEST_ASSERT_EQUAL_UINT32(1000, collect_count());
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(2u, g_gen.runs);
+    const tmc2209_motion_report_t motion = motion_now();
+    TEST_ASSERT_EQUAL_UINT32(1000, motion.emitted);
+    TEST_ASSERT_FALSE(motion.dir);
+    TEST_ASSERT_TRUE(motion.shaft);
 }
 
-/* Polling mid-run settles nothing, because the total being acknowledged does
-   not exist yet. A loop that watched a run go by and then started another one
-   would otherwise lose the count it never actually saw. */
-static void test_polling_mid_run_does_not_pay_the_debt(void)
+/* The whole reason the pair is remembered rather than read back: nothing holds
+   DIR still, so a caller aiming the driver at the next move must not change the
+   sign of a count that has not been read yet. */
+static void test_aiming_at_the_next_move_does_not_rewrite_the_last_count(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    g_gen.emitted = 500;
-    TEST_ASSERT_TRUE(motion_now().running);
-
     gen_finish(1000);
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
-}
 
-/* The first move owes nothing, and a refused one owes nothing either. */
-static void test_a_first_move_owes_no_count(void)
-{
-    setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    /* The run is over, so this is allowed, and it aims at the opposite way. */
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
 
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(1u, g_gen.runs);
+    const tmc2209_motion_report_t motion = motion_now();
+    TEST_ASSERT_EQUAL_UINT32(1000, motion.emitted);
+    TEST_ASSERT_TRUE(motion.dir);   /* the run's direction, not the pin's */
 }
 
 /* An aborted run moved as far as it moved. The count is the only record of it,
@@ -457,7 +443,7 @@ static void test_a_first_move_owes_no_count(void)
 static void test_an_aborted_run_keeps_the_pulses_it_did_emit(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     g_gen.emitted = 1234;
@@ -470,7 +456,7 @@ static void test_an_aborted_run_keeps_the_pulses_it_did_emit(void)
 static void test_a_ramped_halt_is_not_over_until_the_pulses_stop(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 0);   /* unbounded */
+    const tmc2209_movement_plan_t m = a_move(true, 0);   /* unbounded */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     g_gen.emitted = 900;
@@ -486,7 +472,7 @@ static void test_a_ramped_halt_is_not_over_until_the_pulses_stop(void)
 static void test_asking_whether_it_runs_collects_nothing(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 1000);
+    const tmc2209_movement_plan_t m = a_move(true, 1000);
     bool running = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
@@ -496,8 +482,6 @@ static void test_asking_whether_it_runs_collects_nothing(void)
     gen_finish(1000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_running(&g_dev, &running));
     TEST_ASSERT_FALSE(running);
-
-    TEST_ASSERT_EQUAL(TMC2209_ERR_UNREAD, tmc2209_move(&g_dev, &m));
 }
 
 /* ── The profile ────────────────────────────────────────────────────────── */
@@ -507,7 +491,7 @@ static void test_asking_whether_it_runs_collects_nothing(void)
 static void test_the_plan_reaches_the_backend_unaltered(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL_UINT32(4000,   g_gen.plan.pulses);
@@ -522,7 +506,7 @@ static void test_the_plan_reaches_the_backend_unaltered(void)
 static void test_an_incoherent_profile_is_refused(void)
 {
     setup_ready(CFG_GCONF);
-    tmc2209_move_t m = a_move(true, 100);
+    tmc2209_movement_plan_t m = a_move(true, 100);
 
     m.pullin_pps = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, &m));
@@ -547,7 +531,7 @@ static void test_an_incoherent_profile_is_refused(void)
 static void test_a_flat_profile_needs_no_ramp(void)
 {
     setup_ready(CFG_GCONF);
-    tmc2209_move_t m = a_move(true, 100);
+    tmc2209_movement_plan_t m = a_move(true, 100);
     m.cruise_pps  = m.pullin_pps;
     m.accel_pps_s = 0;
 
@@ -557,7 +541,7 @@ static void test_a_flat_profile_needs_no_ramp(void)
 static void test_a_rate_the_board_cannot_emit_is_refused(void)
 {
     setup_ready(CFG_GCONF);
-    tmc2209_move_t m = a_move(true, 100);
+    tmc2209_movement_plan_t m = a_move(true, 100);
     m.cruise_pps = g_stepgen.max_pps + 1u;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_move(&g_dev, &m));
@@ -569,7 +553,7 @@ static void test_a_rate_the_board_cannot_emit_is_refused(void)
 static void test_a_second_move_while_running_is_refused(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY, tmc2209_move(&g_dev, &m));
@@ -584,7 +568,7 @@ static void test_a_move_under_the_velocity_generator_is_refused(void)
     setup_ready(CFG_GCONF);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, 1000));
 
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(0u, g_gen.runs);
 
@@ -599,7 +583,7 @@ static void test_a_move_without_dir_is_refused(void)
     setup_ready(CFG_GCONF);
     g_lines.wired = TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIR);
 
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(0u, g_gen.runs);
 
@@ -612,7 +596,7 @@ static void test_a_move_without_dir_is_refused(void)
 static void test_retarget_changes_a_run_in_flight(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 0);
+    const tmc2209_movement_plan_t m = a_move(true, 0);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_retarget(&g_dev, 12000));
@@ -626,7 +610,7 @@ static void test_retarget_changes_a_run_in_flight(void)
 static void test_retarget_may_go_below_the_pullin_rate(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 0);
+    const tmc2209_movement_plan_t m = a_move(true, 0);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_retarget(&g_dev, m.pullin_pps / 2u));
@@ -637,7 +621,7 @@ static void test_retarget_needs_something_to_retarget(void)
     setup_ready(CFG_GCONF);
     TEST_ASSERT_EQUAL(TMC2209_ERR_IDLE, tmc2209_retarget(&g_dev, 12000));
 
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     gen_finish(4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_IDLE, tmc2209_retarget(&g_dev, 12000));
@@ -648,7 +632,7 @@ static void test_retarget_needs_something_to_retarget(void)
 static void test_retarget_refuses_a_rate_the_board_cannot_emit(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 0);
+    const tmc2209_movement_plan_t m = a_move(true, 0);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_retarget(&g_dev, g_stepgen.max_pps + 1u));
@@ -669,7 +653,7 @@ static void test_halting_an_idle_driver_does_nothing_and_succeeds(void)
 static void test_halt_passes_on_which_kind_was_asked_for(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 0);
+    const tmc2209_movement_plan_t m = a_move(true, 0);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_halt(&g_dev, false));
@@ -711,45 +695,30 @@ static void test_a_stepgen_leaves_the_other_lines_alone(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, true));
 }
 
-/* DIR belongs to the run while the run lasts. Flipping it between two pulses
-   would have both halves counted in the direction the run started, and with no
-   encoder that is not detected. ENN stays available throughout, because cutting
-   the power stage is the one thing that must never be refused. */
-static void test_dir_is_held_for_the_duration_of_a_run(void)
+/* DIR is the caller's throughout, run or no run. Flipping it between two pulses
+   reverses the motor at speed and has both halves counted the same way, which
+   with no encoder is not detected: the library reports what the run started
+   with and leaves the pin to whoever owns the machine. */
+static void test_dir_stays_writable_during_a_run(void)
 {
     setup_ready(CFG_GCONF);
 
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);
 
     g_gen.emitted = 1000;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY,
+    TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
-    TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);   /* refused, not applied */
+    TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);   /* applied, not refused */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, false));
 
+    /* The report still names the direction the run began with, which is the
+       only record of it once the pin has moved on. */
     gen_finish(4000);
-    TEST_ASSERT_EQUAL_UINT32(4000, collect_count());
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
-    TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);
-}
-
-/* The hold ends with the run and not with a call to tmc2209_get_motion_report(): the
-   pin is free as soon as the last pulse is out, whether anyone asked or not. */
-static void test_dir_is_free_once_the_pulses_stop(void)
-{
-    setup_ready(CFG_GCONF);
-
-    const tmc2209_move_t m = a_move(true, 4000);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    gen_finish(4000);
-
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, false));
-    /* And the count it produced is still there to be collected. */
-    TEST_ASSERT_EQUAL_UINT32(4000, collect_count());
+    const tmc2209_motion_report_t motion = motion_now();
+    TEST_ASSERT_EQUAL_UINT32(4000, motion.emitted);
+    TEST_ASSERT_TRUE(motion.dir);
 }
 
 /* Without a stepgen the pin is nobody's, so no run can be in flight to hold it. */
@@ -771,7 +740,7 @@ static void test_a_refused_run_leaves_nothing_in_flight(void)
     setup_ready(CFG_GCONF);
     g_gen.fail_run = 1;
 
-    const tmc2209_move_t m = a_move(true, 4000);
+    const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_move(&g_dev, &m));
 
     g_gen.fail_run = 0;
@@ -782,7 +751,7 @@ static void test_a_refused_run_leaves_nothing_in_flight(void)
 static void test_a_backend_failure_yields_no_count(void)
 {
     setup_ready(CFG_GCONF);
-    tmc2209_motion_t motion;
+    tmc2209_motion_report_t motion;
 
     g_gen.fail_state = 1;
     TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_get_motion_report(&g_dev, &motion));
@@ -795,7 +764,7 @@ static void test_a_backend_failure_yields_no_count(void)
 static void test_null_arguments_are_bad_arguments(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_move_t m = a_move(true, 100);
+    const tmc2209_movement_plan_t m = a_move(true, 100);
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(NULL, &m));
@@ -813,9 +782,8 @@ static void test_init_leaves_the_stepgen_detached(void)
     setup_ready(CFG_GCONF);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
-    tmc2209_motion_t motion;
+    tmc2209_motion_report_t motion;
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
-    TEST_ASSERT_FALSE(g_dev.count_unread);
 }
 
 void run_stepgen_tests(void)
@@ -836,9 +804,8 @@ void run_stepgen_tests(void)
     RUN_TEST(test_a_finished_run_reports_its_count);
     RUN_TEST(test_polling_a_finished_run_reports_the_same_count);
     RUN_TEST(test_a_run_in_flight_shows_its_progress);
-    RUN_TEST(test_a_move_needs_the_last_count_collected);
-    RUN_TEST(test_polling_mid_run_does_not_pay_the_debt);
-    RUN_TEST(test_a_first_move_owes_no_count);
+    RUN_TEST(test_the_report_carries_the_direction_the_run_was_started_with);
+    RUN_TEST(test_aiming_at_the_next_move_does_not_rewrite_the_last_count);
     RUN_TEST(test_an_aborted_run_keeps_the_pulses_it_did_emit);
     RUN_TEST(test_a_ramped_halt_is_not_over_until_the_pulses_stop);
     RUN_TEST(test_asking_whether_it_runs_collects_nothing);
@@ -862,8 +829,7 @@ void run_stepgen_tests(void)
 
     RUN_TEST(test_a_stepgen_takes_the_step_pin);
     RUN_TEST(test_a_stepgen_leaves_the_other_lines_alone);
-    RUN_TEST(test_dir_is_held_for_the_duration_of_a_run);
-    RUN_TEST(test_dir_is_free_once_the_pulses_stop);
+    RUN_TEST(test_dir_stays_writable_during_a_run);
     RUN_TEST(test_dir_is_free_on_a_device_without_a_stepgen);
 
     RUN_TEST(test_a_refused_run_leaves_nothing_in_flight);

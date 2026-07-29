@@ -70,7 +70,7 @@ Sobre el shadow y las clases se apoya la API pública, que se ordena en familias
 | | `tmc2209_attach_uart(dev, uart)` | Acopla el canal UART con el que se podrá comunicar la librería. Un mismo canal lo pueden compartir hasta cuatro dispositivos, ya que hay dos bits de direccionamiento. |
 | | `tmc2209_bringup(dev, config[], n, *at_bringup)` | Inicializa un driver a nivel físico: lee el contador de escritura para usar como base, se fija y devuelve las banderas de estado del driver antes de ser reseteadas, lee registros constantes y configura los registros propios. |
 | Valores | `tmc2209_read(dev, reg, *out)` | Lee un registro shadow y no toca el bus nunca. Sirve propios y constantes; rechaza volátiles, porque de esos no hay copia que valga. |
-| | `tmc2209_write(dev, ops[], n, *failed_at)` | El lote es la unidad de trabajo: `n` datagramas y una sola verificación al final, así diez registros cuestan once transacciones y no veinte. |
+| | `tmc2209_write(dev, ops[], n, *failed_at)` | El lote es la unidad de trabajo: `n` datagramas y una sola verificación al final, así diez registros cuestan once transacciones y no veinte. No se rechaza durante una corrida, aunque tres registros la corrompen sin avisar: `GCONF.shaft` da vuelta el motor a velocidad, `CHOPCONF.mres` cambia cuánto vale un pulso a mitad de camino, y un `VACTUAL` distinto de cero saca al driver de su pin STEP mientras el conteo sigue subiendo. |
 | Condiciones | `tmc2209_poll_health(dev, *conditions)` | Transacción real. Cruza `GSTAT` con `DRV_STATUS` y devuelve un conjunto de condiciones, no contenido de registro. |
 | | `tmc2209_poll_load(dev, *out)` | La estimación de carga de StallGuard, junto con si se la puede creer. |
 | | `tmc2209_poll_pins(dev, *out)` | `IOIN` decodificado: qué ve el driver en sus propios pines. |
@@ -231,7 +231,7 @@ Sobre esa base, la API pública:
 | `tmc2209_move(dev, *m)` | Arranca una corrida según un plan de acción que marca sentido, velocidades, aceleración y cotas. La única llamada asíncrona de toda la librería y vuelve enseguida. |
 | `tmc2209_retarget(dev, cruise_pps)` | Cambia la tasa de crucero de una corrida en vuelo, manteniendo la rampa con la aceleración del plan de acción original. |
 | `tmc2209_halt(dev, immediate)` | Termina la corrida, cortando en el próximo pulso o desacelerando hasta `pullin_pps`. |
-| `tmc2209_get_motion_report(dev, *out)` | Recoge los pulsos de la corrida, la tasa actual y si todavía está andando. Recogerlo una vez terminada la corrida es lo que habilita la siguiente. |
+| `tmc2209_get_motion_report(dev, *out)` | Recoge los pulsos de la corrida, la tasa actual, si todavía está andando, y el `dir` y `shaft` con los que arrancó: el conteo es una magnitud y ese par es su signo. Recogerlo una vez terminada la corrida es lo que habilita la siguiente. |
 
 
 La librería por sí sola no garantiza un encoder para el motor o un lazo cerrado, pero sí ofrece un reporte de movimiento dinámico en cada corrida. El backend guarda uno reporte "singleton", y su contenido será de la corrida en curso o de la última (no habiendo ninguna en curso). Además, desde la librería se promueve su lectura ampliamente, al punto que olvidar leer el reporte al terminar una corrida no permite empezar una segunda.
@@ -254,8 +254,6 @@ sequenceDiagram
     Note over Lib: crucero por debajo del pull-in, o sin<br/>rampa cuando hace falta: ERR_ARG.<br/>Por encima de max_pps: ERR_RATE
     Lib->>Gen: state()
     Gen-->>Lib: no hay nada corriendo
-    Lib->>Lib: ¿quedó alguna cuenta sin recoger?
-    Note over Lib: la anterior sin leer se perdería<br/>al arrancar esta: ERR_UNREAD
     Lib->>Lib: compara el shaft declarado contra GCONF del shadow
     Note over Lib: slot inválido: ERR_INVALID_SLOT, porque el resto<br/>de GCONF habría que inventarlo
     opt el driver tiene el otro shaft
@@ -278,7 +276,7 @@ sequenceDiagram
             App->>Lib: tmc2209_get_motion_report(dev, &out)
             Lib->>Gen: state()
             Gen-->>Lib: emitidos, tasa, corriendo
-            Lib-->>App: progreso, la cuenta sigue pendiente
+            Lib-->>App: progreso
         end
     end
 
@@ -286,15 +284,14 @@ sequenceDiagram
     App->>Lib: tmc2209_get_motion_report(dev, &out)
     Lib->>Gen: state()
     Gen-->>Lib: emitidos, corriendo = false
-    Lib->>Lib: cuenta recogida: DIR se libera y el<br/>próximo move ya puede arrancar
-    Lib-->>App: total de la corrida
+    Lib-->>App: total de la corrida, con el sentido<br/>en el que se emitió
 ```
 
 Características:
 
-- **El reporte se actualiza en vivo y debe ser leído entre corridas.** `tmc2209_get_motion_report()` le pregunta al generador de pulsos: durante la corrida, los pulsos que ya salieron; una vez que termina, los pulsos totales. Lo único que cambia es que una corrida terminada debe ser leída para que la próxima empiece, para obligar al código que no desestime esa información.
+- **El reporte se actualiza en vivo y conviene leerlo entre corridas.** `tmc2209_get_motion_report()` le pregunta al generador de pulsos: durante la corrida, los pulsos que ya salieron; una vez que termina, los pulsos totales. El backend guarda una corrida por vez, así que el próximo `move()` pisa ese total. La librería no lo impide: quien necesita la cuenta es quien la lee.
 
-- **`DIR` queda tomado mientras dura la corrida.** Se fija antes del primer flanco y no se puede tocar hasta que salga el último. El sentido es entonces una propiedad de la corrida entera, que es lo que hace que una sola cuenta alcance para describirla: si el nivel cambiara en el medio, los pulsos de antes y los de después caerían bajo el mismo número. `ENN` sigue disponible durante todo el movimiento, porque cortar la etapa de potencia es lo único que nunca se puede rechazar.
+- **El sentido viaja con la cuenta, no con los pines.** El reporte devuelve el `dir` y el `shaft` con los que arrancó la corrida, porque la cuenta es una magnitud y necesita signo. Nada congela `DIR` ni `GCONF.shaft` mientras la corrida está en vuelo: cambiarlos a mitad de camino da vuelta el motor a velocidad y hace que los pulsos de antes y los de después caigan bajo el mismo número, sin que nada lo detecte. Es responsabilidad de quien lo escriba.
 
 - **La cuenta es de pulsos emitidos, no de pasos exitosos.** Coinciden mientras el motor no pierda sincronismo ni ocurra un `TMC2209_DRIVER_RESET` por ejemplo, que es el aviso de que pueden haber dejado de coincidir.
 

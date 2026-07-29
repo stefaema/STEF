@@ -29,7 +29,6 @@ typedef enum {
     TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
     TMC2209_ERR_BUSY,         /**< A run is in flight and this call would disturb it. **/
     TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
-    TMC2209_ERR_UNREAD,       /**< the last run's pulse count was ignored and another run was requested */
     TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. */
 } tmc2209_err_t;
 

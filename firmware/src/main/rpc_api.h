@@ -147,7 +147,6 @@ enum {
     RPC_BUSY         = 15, /**< a run is in flight and this would disturb it */
     RPC_IDLE         = 16, /**< no run is in flight and this needs one */
     RPC_RATE         = 17, /**< a rate beyond what this stepgen can emit */
-    RPC_UNREAD       = 18, /**< the last run's pulse count was never collected */
 
     /* This image's own, for a call the library never got to see. */
     RPC_REFUSED      = 34, /**< policy: unsafe in the present state */

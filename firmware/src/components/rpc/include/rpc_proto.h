@@ -12,8 +12,9 @@
  * the handlers that implement them. A component that named `raw.move` would be
  * a component that has to change when the library does.
  *
- * Nothing in this file may include anything but stdint. It is compiled for the
- * ESP32 and again for the host, and it is what the PC's cffi build reads.
+ * Nothing in this file may include anything but stdint. It is compiled once for
+ * this firmware and again for the other side, which is what binds the two to one
+ * definition.
  */
 
 #ifndef RPC_PROTO_H
@@ -35,9 +36,9 @@
 
 /** @brief Which of the three kinds of frame this is. First byte, always. */
 typedef enum {
-    RPC_FRAME_REQ = 0, /**< PC to firmware. `u16 id`, `u8 ns`, `u8 method`, args */
-    RPC_FRAME_REP = 1, /**< firmware to PC. `u16 id`, `u8 status`, return values */
-    RPC_FRAME_LOG = 2, /**< firmware to PC, unprompted. `u8 level`, `u32 uptime_ms`, text */
+    RPC_FRAME_REQ = 0, /**< inbound. `u16 id`, `u8 ns`, `u8 method`, args */
+    RPC_FRAME_REP = 1, /**< outbound, answering a request. `u16 id`, `u8 status`, return values */
+    RPC_FRAME_LOG = 2, /**< outbound, unprompted. `u8 level`, `u32 uptime_ms`, text */
 } rpc_frame_t;
 
 /**

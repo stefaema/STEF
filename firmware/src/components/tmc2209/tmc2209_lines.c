@@ -84,18 +84,6 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
         return TMC2209_ERR_ACCESS;
     }
 
-    /* Do not allow DIR write when the motor is running. This is library policy. */
-    if (line == TMC2209_LINE_DIR && dev->stepgen) {
-        bool running = false;
-        tmc2209_err_t rerr = tmc2209_is_running(dev, &running);
-        if (rerr != TMC2209_OK) {
-            return rerr;
-        }
-        if (running) {
-            return TMC2209_ERR_BUSY;
-        }
-    }
-
     /* Write pin using backend */
     return (dev->lines->write(dev->lines->ctx, line, level) < 0)
         ? TMC2209_ERR_IO
