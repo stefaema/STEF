@@ -14,7 +14,7 @@
 #include "freertos/task.h"
 #include "rpc_dispatch.h"
 #include "rpc_api.h"
-#include "rpc_wire.h"
+#include "rpc_frame.h"
 #include "watchdog.h"
 
 /* Encoded worst case, plus the delimiter that closes the frame. */
@@ -79,7 +79,7 @@ static void tx_task(void *arg)
 }
 
 /** Hands a finished frame to the TX task. False when the queue is full. */
-static bool tx_send(const uint8_t *data, size_t len, TickType_t wait)
+static bool tx_send(const void *data, size_t len, TickType_t wait)
 {
     if (s_txq == NULL || len == 0 || len > RPC_MAX_FRAME) {
         return false;
@@ -158,17 +158,18 @@ static int log_to_link(const char *fmt, va_list ap)
         return n;
     }
 
-    uint8_t      buf[RPC_MAX_FRAME];
-    rpc_writer_t w;
-    rpc_frame_begin_log(&w, buf, sizeof(buf), level_of(text, len),
-                        (uint32_t)(esp_timer_get_time() / 1000));
-    rpc_w_bytes(&w, (const uint8_t *)text, len);
+    /* The text is the whole payload, so its length is the frame's and no count
+     * has to travel with it. */
+    rpc_buf_t buf;
+    memcpy(rpc_payload(&buf), text, len);
 
-    size_t frame_len = rpc_frame_finish(&w);
+    size_t frame_len = rpc_frame_seal_log(&buf, level_of(text, len),
+                                          (uint32_t)(esp_timer_get_time() / 1000),
+                                          len);
     if (frame_len > 0) {
         /* Never wait. A full queue means the PC is not draining, and a log is
          * not worth stalling the task that produced it. */
-        (void)tx_send(buf, frame_len, 0);
+        (void)tx_send(&buf, frame_len, 0);
     }
 
     return n;
@@ -178,42 +179,35 @@ static int log_to_link(const char *fmt, va_list ap)
 
 /* Answers one decoded frame. Replies to requests; ignores anything else,
  * since a reply or a log arriving here is the PC echoing, not asking. */
-static void serve(const uint8_t *frame, size_t len)
+static void serve(const rpc_buf_t *frame, size_t len)
 {
-    static uint8_t reply[RPC_MAX_FRAME];
+    static rpc_buf_t reply;
 
-    uint8_t      type;
-    rpc_reader_t args;
-    if (!rpc_frame_open(frame, len, &type, &args) || type != RPC_FRAME_REQ) {
+    rpc_view_t v;
+    if (!rpc_frame_open(frame, len, &v) || v.type != RPC_FRAME_REQ) {
         return;
     }
 
-    rpc_req_t req;
-    if (!rpc_req_header(&args, &req)) {
-        return; /* no id to answer with, so there is nothing to say */
-    }
+    const rpc_req_hdr_t *req = v.hdr;
 
     /* Any request that parsed is the PC proving it is still there. */
     watchdog_feed();
 
-    rpc_writer_t w;
-    rpc_frame_begin_rep(&w, reply, sizeof(reply), req.id, RPC_OK);
-    size_t mark = w.len;
+    /*
+     * The handler writes its return values straight into the reply frame, so
+     * what comes back is only how much of it to send. No length can exceed what
+     * a frame holds: rpc_register refused the table otherwise, which is why
+     * there is no "it did not fit" path left to write.
+     */
+    size_t       ret_len = 0;
+    rpc_status_t status  = rpc_dispatch(req->ns, req->method,
+                                        v.payload, v.payload_len,
+                                        rpc_payload(&reply), &ret_len);
 
-    rpc_status_t status = rpc_dispatch(&req, &args, &w, mark);
-    if (status != RPC_OK) {
-        rpc_frame_set_status(&w, status);
+    size_t reply_len = rpc_frame_seal_rep(&reply, req->id, status, ret_len);
+    if (reply_len > 0) {
+        (void)tx_send(&reply, reply_len, pdMS_TO_TICKS(100));
     }
-
-    size_t reply_len = rpc_frame_finish(&w);
-    if (reply_len == 0) {
-        /* The return values did not fit. The caller is owed an answer either
-         * way, so it gets the header alone with the reason. */
-        rpc_frame_begin_rep(&w, reply, sizeof(reply), req.id, RPC_INTERNAL);
-        reply_len = rpc_frame_finish(&w);
-    }
-
-    (void)tx_send(reply, reply_len, pdMS_TO_TICKS(100));
 }
 
 /*
@@ -230,7 +224,10 @@ static void rx_task(void *arg)
 
     static uint8_t chunk[RPC_USB_CHUNK];
     static uint8_t run[RPC_ENCODED_MAX];
-    static uint8_t decoded[RPC_MAX_FRAME];
+
+    /* The union rather than a byte array, because serve() reads the header
+     * through its own type and a byte array is aligned for nothing. */
+    static rpc_buf_t decoded;
 
     size_t run_len = 0;
     bool   overrun = false;
@@ -262,9 +259,10 @@ static void rx_task(void *arg)
             }
 
             if (!overrun && run_len > 0) {
-                size_t len = cobs_decode(run, run_len, decoded, sizeof(decoded));
+                size_t len = cobs_decode(run, run_len, decoded.bytes,
+                                         sizeof(decoded.bytes));
                 if (len > 0) {
-                    serve(decoded, len);
+                    serve(&decoded, len);
                 }
             }
 

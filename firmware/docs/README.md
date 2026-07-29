@@ -317,15 +317,19 @@ Lo que entonces engloba a la librería en sí son cuatro componentes:
 | --- | --- |
 | `cobs` | Una trama debe ser identificada como tal. La codificación `cobs` garantiza que no quede ningún cero adentro de la trama, entonces podemos utilizar ese cero para darle fin a la misma, nunca significando otra cosa. De esta forma, un receptor perdido se resincroniza a lo sumo una trama después. No se perdería el canal de comunicación indefinidamente, como sí pasaría si se usara un campo de longitud, por ejemplo.|
 | `crc16` | Una trama bien delimitada todavía puede venir corrupta. El CRC hace que se rechace en vez de decodificarse. |
-| `rpc_wire` | Lee y escribe los campos de una trama, con ancho y orden de bytes explícitos y nada copiado desde memoria. |
+| `rpc_frame` | Pone un encabezado y un CRC alrededor de un payload, y se los saca. Nunca mira lo que hay adentro: para él es un tramo de bytes, y para quien pidió la llamada es un struct. |
 | `rpc_dispatch` | Convierte un namespace y un número de método en una llamada, contra tablas que alguien de afuera registra. |
-| `rpc_proto` | Lo mínimo que las dos puntas tienen que acordar para intercambiar una trama: qué tipos de trama hay, cuán grande puede ser, y que un estado es un byte. |
+| `rpc_proto` | Lo mínimo que las dos puntas tienen que acordar para intercambiar una trama: qué tipos de trama hay, cuán grande puede ser, que un estado es un byte, y las tres reglas de layout que hacen que un struct se pueda leer en el lugar. |
 
 De esta forma, además podemos concluir:
 
-**Por el cable viajan escalares, nunca structs.** Un struct es un layout de memoria, y un layout es padding, ancho de enum y tamaño de `bool`. Dos compiladores, uno apuntando a xtensa y otro a x86-64, tienen todo el derecho a no coincidir en los tres, y agregarle un campo a una estructura corre de lugar todo lo que sigue mientras los dos extremos siguen reportando la misma versión. Ningún handshake atrapa eso, porque los dos están diciendo la verdad. Como cada struct decodificado de la librería es una vista de un `uint32_t`, lo que cruza es ese `uint32_t` y la PC reconstruye la vista de su lado.
+**Por el cable viajan structs, y el layout se declara en vez de heredarse.** Un struct es un layout de memoria, y un layout librado al compilador es padding, ancho de enum y tamaño de `bool`: dos compiladores, uno apuntando a xtensa y otro a x86-64, tienen todo el derecho a no coincidir en los tres. La salida no es evitar el struct, es no dejarle ninguna de esas tres decisiones al compilador. Nada lleva `packed`, cada campo cae en un offset múltiplo de su propio ancho por medio de miembros `_pad` declarados, ningún `bool` ni ningún enum viaja como tal sino como `uint8_t`, y cada struct afirma su propio tamaño con un `_Static_assert`. Un layout que se corre deja de compilar en la punta que se corrió, que es la única forma de que alguien se entere de un desacuerdo.
 
-**El serializador se escribe una sola vez.** Escribirlo de los dos lados son dos implementaciones de un mismo acuerdo, y la segunda se desincroniza. Así que `rpc_wire.c` y los codecs de registro son C portable sin nada de ESP-IDF, la PC los compila como biblioteca compartida, y las dos puntas ejecutan el mismo código objeto. Ese es también el motivo de que no haya CBOR ni protobuf: existen para negociar estructura entre partes que no pueden compartir código, y estas dos sí pueden.
+**Nada lleva `packed`, y eso no es una preferencia.** Un struct empaquetado pone `uint32_t` en offsets impares, y en xtensa una lectura de 32 bits desalineada es una excepción y no una lectura lenta. Por eso los tres encabezados miden exactamente ocho bytes: el payload arranca siempre en un offset múltiplo de cuatro, y sus campos quedan alineados sin que nadie tenga que pensarlo. Eso es también lo que permite pasarle a la librería un puntero adentro de la trama de respuesta, y que el valor no exista en ningún otro lado.
+
+**El layout se escribe una sola vez.** Escribirlo de los dos lados son dos implementaciones de un mismo acuerdo, y la segunda se desincroniza. Así que `rpc_api.h` no incluye más que `stdint.h` y `rpc_proto.h`: la PC lo parsea con cffi y obtiene los mismos structs que compiló el firmware, en lugar de reimplementarlos. Ese es también el motivo de que no haya CBOR ni protobuf: existen para negociar estructura entre partes que no pueden compartir código, y estas dos sí pueden.
+
+**No hay serializador, y eso es una consecuencia.** Un escritor campo por campo existe para dos cosas: llevar la cuenta de dónde va el próximo campo, y acordarse de que algo no entró. Las dos nacen de escribir campo por campo. Cuando el payload es un struct, el struct es el layout y un único chequeo de longitud reemplaza a la bandera de error, así que ninguna de las dos sobrevive.
 
 Sobre esa base, tres tipos de trama comparten el enlace RPC y el primer byte dice cuál es: pedido, respuesta y log. La respuesta repite el identificador del pedido que contesta, lo que evita que una respuesta demorada se lea como la de otra pregunta. El log es la única trama que sale sin que nadie la haya pedido: no espera acuse, no obliga a nada, y un cliente al que no le interesa la descarta mirando un solo byte. Que exista como tipo de trama es del transporte; quién la produce y por qué es de `main`.
 
@@ -339,7 +343,7 @@ sequenceDiagram
     participant PC as PC Host<br/>(fuera de alcance)
     participant Lk as rpc_link.c<br/>(main)
     participant Cobs as cobs.c
-    participant Wire as rpc_wire.c
+    participant Fr as rpc_frame.c
     participant Disp as rpc_dispatch.c
     participant H as handler de sum<br/>(main)
 
@@ -348,37 +352,33 @@ sequenceDiagram
     Lk->>Cobs: cobs_decode(run)
     Cobs-->>Lk: cuerpo de la trama, con sus ceros de vuelta
 
-    Lk->>Wire: rpc_frame_open(trama)
-    Wire->>Wire: CRC16 sobre el cuerpo contra los dos últimos bytes
-    Note over Wire: si no cierra, se descarta sin contestar:<br/>un identificador corrupto no sirve para responder
-    Wire-->>Lk: tipo = REQ, lector posicionado
+    Lk->>Fr: rpc_frame_open(trama)
+    Fr->>Fr: CRC16 sobre el cuerpo contra los dos últimos bytes
+    Note over Fr: si no cierra, se descarta sin contestar:<br/>un identificador corrupto no sirve para responder
+    Fr-->>Lk: tipo = REQ, encabezado y payload, ya alineados
 
-    Lk->>Wire: rpc_req_header(lector)
-    Wire-->>Lk: id = 7, ns = 3, method = 0
-    Lk->>Wire: rpc_frame_begin_rep(id = 7, status = OK)
-
-    Lk->>Disp: rpc_dispatch(req, args, ret)
+    Lk->>Disp: rpc_dispatch(ns = 3, method = 0, args, 8, ret, &ret_len)
     Disp->>Disp: ¿existe ese namespace y ese método?
     Note over Disp: si no, RPC_NO_METHOD y nadie<br/>de main llega a enterarse
+    Disp->>Disp: ¿el payload mide lo que la tabla dice?
+    Note over Disp: ocho bytes para dos uint32_t. Si no,<br/>RPC_BAD_FRAME y el handler nunca corre
+    Disp->>Disp: limpia ret, para que el padding no herede nada
     Disp->>H: handler(args, ret)
-    H->>Wire: rpc_r_u32(args) dos veces
-    Wire-->>H: 2 y 3
-    H->>Wire: rpc_w_u32(ret, 5)
+    H->>H: out->total = in->a + in->b
     H-->>Disp: RPC_OK
+    Disp-->>Lk: RPC_OK, ret_len = 4
 
-    Disp->>Wire: ¿el lector quedó ok y sin sobras?
-    Note over Disp,Wire: sobró un argumento o faltó: RPC_BAD_FRAME,<br/>y se rebobina lo que el handler ya había escrito
-    Disp-->>Lk: RPC_OK
-
-    Lk->>Wire: rpc_frame_finish(ret)
-    Wire->>Wire: calcula el CRC16 y lo agrega al final
-    Wire-->>Lk: longitud del cuerpo
-    Lk->>Cobs: cobs_encode(cuerpo)
+    Lk->>Fr: rpc_frame_seal_rep(id = 7, RPC_OK, 4)
+    Fr->>Fr: escribe el encabezado entero y le agrega el CRC16
+    Fr-->>Lk: longitud total
+    Lk->>Cobs: cobs_encode(trama)
     Cobs-->>Lk: bytes sin ningún cero adentro
     Lk->>PC: eso, más el 0x00 que cierra
 ```
 
-Dos cosas que el diagrama deja ver mejor que la prosa. El estado se escribe dos veces: la respuesta arranca con `OK` antes de saber nada, y solo se corrige si algo falló, lo que evita tener que mover el encabezado después. Y la validación de argumentos ocurre después del handler, no antes, porque el que sabe cuántos argumentos debía haber es el handler, y el lector se acuerda solo de si se quedó sin bytes.
+Dos cosas que el diagrama deja ver mejor que la prosa. El estado se escribe una sola vez: el encabezado se sella al final, cuando ya se sabe qué pasó y cuánto mide la respuesta, así que no queda nada por corregir después. Y la validación de argumentos ocurre antes del handler y no después, porque la longitud que cada método espera vive en la tabla al lado de la función: el handler no llega a ver una trama que no mide lo que debía, y por lo tanto tampoco tiene que acordarse de chequearlo.
+
+Los pocos métodos que llevan un lote, una tira de bytes o una lista son la excepción, y solo porque la cuenta que zanja su longitud viaja adentro del payload, donde `rpc_dispatch` no puede verla. Ahí la tabla aporta un mínimo y el handler concilia el resto en un `if`. Son cinco de veintiséis, y es el único lugar donde una longitud se chequea a mano.
 
 ## Interfaces RPC. `main` I
 

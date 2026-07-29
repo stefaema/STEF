@@ -51,7 +51,7 @@ target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
 add_library(rpc STATIC
     ${RPC_DIR}/cobs.c
     ${RPC_DIR}/crc16.c
-    ${RPC_DIR}/rpc_wire.c
+    ${RPC_DIR}/rpc_frame.c
     ${RPC_DIR}/rpc_dispatch.c)
 target_include_directories(rpc PUBLIC ${RPC_DIR}/include)
 
@@ -64,7 +64,7 @@ add_executable(unit_tests
     test_lines.c
     test_stepgen.c
     test_cobs.c
-    test_wire.c
+    test_rpc_frame.c
     test_rpc.c
     fake_devices.c
     fake_watchdog.c

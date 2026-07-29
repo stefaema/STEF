@@ -1,6 +1,6 @@
 /**
  * @file rpc_api.h
- * @brief What this firmware serves: namespaces, method numbers, statuses.
+ * @brief What this firmware serves: namespaces, method numbers, payloads.
  *
  * The `rpc` component moves frames and is entitled to know nothing about what
  * they ask for. This is the other half of that split, and it belongs to `main`
@@ -13,9 +13,21 @@
  * that used to be 4. So the numbering lives here, in a header both ends
  * compile, and neither end is entitled to its own copy.
  *
+ * ## The payloads are here too, and that is the point
+ *
+ * Every method's arguments and return values are a struct below. Not a
+ * convenience: it is the difference between a protocol you can read and one you
+ * have to reconstruct by following the order of calls in a handler body. What a
+ * method takes is a declaration, both ends compile it, and the PC's cffi build
+ * parses this file rather than reimplementing it.
+ *
+ * `rpc_proto.h` states the three layout rules these structs obey. The short
+ * version: nothing is packed, every field is naturally aligned by way of
+ * explicit `_pad` members, and every struct asserts its own size.
+ *
  * Nothing in this file may include anything but stdint and rpc_proto.h. It is
  * compiled for the ESP32 and again for the host, and it is what the PC's cffi
- * build reads alongside the component's header.
+ * build reads alongside the component's headers.
  */
 
 #ifndef RPC_API_H
@@ -27,9 +39,9 @@
 
 /**
  * What the two ends check before trusting each other. Bump on any change to a
- * frame layout, a method number, or a status value. `sys.version` is what makes
- * the mismatch a clean rejection at connect time rather than a decode that
- * succeeds and lies.
+ * payload layout, a method number, or a status value. `sys.version` is what
+ * makes the mismatch a clean rejection at connect time rather than a decode
+ * that succeeds and lies.
  */
 #define RPC_PROTOCOL_VERSION 1
 
@@ -42,12 +54,58 @@ typedef enum {
     RPC_NS_COUNT       = 4,
 } rpc_ns_t;
 
+/* ── Bounds ─────────────────────────────────────────────────────────────── */
+
+/**
+ * @brief Largest batch `raw.write` or `raw.bringup` will accept.
+ *
+ * A batch names registers, and there are 23 of them. Room to name one twice,
+ * which the library allows, and a bound so the firmware needs no allocation.
+ */
+#define RPC_MAX_OPS 32
+
+/** @brief The part's longest datagram, both directions. */
+#define RPC_PT_MAX_BYTES 32
+
+/** @brief Most drivers one board can declare, since four addresses fit a wire. */
+#define RPC_MAX_DEVICES 4
+
+/** @brief Room for a driver's name in `sys.devices`, terminator included. */
+#define RPC_NAME_MAX 16
+
+/** @brief Room for one of `sys.version`'s strings, terminator included. */
+#define RPC_STR_MAX 32
+
+/* ── Shared payload shapes ──────────────────────────────────────────────── */
+
+/**
+ * @brief A device index and nothing else, which is most of `raw`'s arguments.
+ *
+ * Devices are named by index into the board table. `sys.devices` is how a
+ * client learns which index is which, and giving them prettier names is the
+ * PC's job.
+ */
+typedef struct {
+    uint8_t idx;
+    uint8_t _pad[3];
+} rpc_dev_args;
+RPC_WIRE_SIZE(rpc_dev_args, 4);
+
+/** @brief One register and the value to put in it, as a batch element. */
+typedef struct {
+    uint32_t value;
+    uint8_t  reg;
+    uint8_t  _pad[3];
+} rpc_op_t;
+RPC_WIRE_SIZE(rpc_op_t, 8);
+
+/* ── sys ────────────────────────────────────────────────────────────────── */
+
 /**
  * @brief `sys` methods.
  *
  * RPC_SYS_VERSION is the one method that must answer on a link whose version
- * has not been agreed yet, so its reply shape can never change: a `u16`
- * protocol version first, and anything after it is optional to the reader.
+ * has not been agreed yet, so its reply shape can never change.
  */
 typedef enum {
     RPC_SYS_VERSION = 0,
@@ -55,6 +113,74 @@ typedef enum {
     RPC_SYS_DEVICES = 2, /**< the board table: what exists and what it has */
     RPC_SYS_COUNT   = 3,
 } rpc_sys_method_t;
+
+/**
+ * @brief What `sys.version` answers. Takes no arguments.
+ *
+ * The protocol version leads and is fixed width, so a PC built against a
+ * different protocol can read that field, decide it does not understand the
+ * rest, and say so, which is the whole point of asking. Nothing may ever be
+ * inserted before it.
+ *
+ * The strings are fixed rather than variable for the same reason. This reply
+ * has to be readable by an end that disagrees about everything after it, and a
+ * length-prefixed field is a thing that end would have to parse correctly to
+ * find the field after it.
+ *
+ * The reset reason is here because the question a stale link raises first is
+ * "did the board reboot", and answering it costs one byte.
+ */
+typedef struct {
+    uint16_t protocol;
+    uint8_t  reset_reason;
+    uint8_t  _pad;
+    char     project[RPC_STR_MAX];
+    char     version[RPC_STR_MAX];
+    char     idf[RPC_STR_MAX];
+} rpc_sys_version_ret;
+RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
+
+/**
+ * @brief What `sys.state` answers. Takes no arguments.
+ *
+ * Reported, never set. The PC does not announce that it is about to run
+ * diagnostics; it asks what is happening and is refused per call if the answer
+ * makes the call unsafe. So this is the whole of the mode system from the
+ * outside: one question, no state to keep in sync across a link that can drop.
+ */
+typedef struct {
+    uint32_t uptime_ms;
+    uint32_t watchdog_trips; /**< a trip is the firmware having stopped the machine itself */
+    uint16_t device_count;
+    uint8_t  mode;           /**< @ref rpc_mode_t */
+    uint8_t  ready;
+} rpc_sys_state_ret;
+RPC_WIRE_SIZE(rpc_sys_state_ret, 12);
+
+/** @brief One driver, as `sys.devices` reports it. */
+typedef struct {
+    char    name[RPC_NAME_MAX];
+    uint8_t addr;        /**< set by the MS1/MS2 straps */
+    uint8_t wired;       /**< one bit per line, via TMC2209_LINE_BIT */
+    uint8_t has_uart;
+    uint8_t has_stepgen;
+} rpc_dev_info_t;
+RPC_WIRE_SIZE(rpc_dev_info_t, 20);
+
+/**
+ * @brief What `sys.devices` answers. Takes no arguments.
+ *
+ * What the board actually has, so a diagnostic loops over it instead of
+ * hardcoding one driver. A bench board with one driver and the carrier with
+ * three answer the same question, and the same script covers both.
+ */
+typedef struct {
+    uint32_t       count;
+    rpc_dev_info_t devs[];
+} rpc_sys_devices_ret;
+RPC_WIRE_SIZE(rpc_sys_devices_ret, 4);
+
+/* ── passthrough ────────────────────────────────────────────────────────── */
 
 /**
  * @brief `passthrough` methods.
@@ -66,6 +192,39 @@ typedef enum {
     RPC_PT_SEND  = 0,
     RPC_PT_COUNT = 1,
 } rpc_pt_method_t;
+
+/** @brief The datagram to send, assembled by the caller and not examined. */
+typedef struct {
+    uint8_t idx;
+    uint8_t reply_len; /**< bytes to wait for. 0 when the datagram has no reply */
+    uint8_t count;     /**< how many of @c tx follow */
+    uint8_t _pad;
+    uint8_t tx[];
+} rpc_pt_send_args;
+RPC_WIRE_SIZE(rpc_pt_send_args, 4);
+
+/**
+ * @brief What came back, and what the wire made of the attempt.
+ *
+ * @c outcome is a value rather than the frame's status because a driver that
+ * stayed silent, or one whose echo came back altered, is an *answer* here and
+ * not a failure. The bytes that did arrive are the evidence the caller asked
+ * for, and a failing status would have dispatch discard them. The frame's
+ * status then reports only whether the call was well formed, which is the one
+ * thing this tier is still entitled to have an opinion about.
+ *
+ * Only @c count bytes of @c rx are sent, so the reply is as long as the answer
+ * and no longer.
+ */
+typedef struct {
+    uint8_t outcome; /**< @ref rpc_status_t of the transaction, not of the call */
+    uint8_t count;
+    uint8_t _pad[2];
+    uint8_t rx[RPC_PT_MAX_BYTES];
+} rpc_pt_send_ret;
+RPC_WIRE_SIZE(rpc_pt_send_ret, 36);
+
+/* ── raw ────────────────────────────────────────────────────────────────── */
 
 /**
  * @brief `raw` methods, one per public library call, in the header's order.
@@ -100,18 +259,239 @@ typedef enum {
     RPC_RAW_COUNT            = 22,
 } rpc_raw_method_t;
 
+/* Registers. */
+
+typedef struct {
+    uint8_t idx;
+    uint8_t reg;
+    uint8_t _pad[2];
+} rpc_raw_read_args;
+RPC_WIRE_SIZE(rpc_raw_read_args, 4);
+
+typedef struct {
+    uint32_t value;
+} rpc_raw_read_ret;
+RPC_WIRE_SIZE(rpc_raw_read_ret, 4);
+
+typedef rpc_raw_read_args rpc_raw_poll_args;
+typedef rpc_raw_read_ret  rpc_raw_poll_ret;
+
+/** @brief A device, then @c count registers to write to it. */
+typedef struct {
+    uint8_t  idx;
+    uint8_t  _pad[3];
+    uint32_t count;
+    rpc_op_t ops[];
+} rpc_raw_write_args;
+RPC_WIRE_SIZE(rpc_raw_write_args, 8);
+
 /**
- * @brief Largest batch `raw.write` or `raw.bringup` will accept.
+ * @brief Where the library gave up, which is diagnostic only.
  *
- * A batch names registers, and there are 23 of them. Room to name one twice,
- * which the library allows, and a bound so the firmware needs no allocation.
+ * Any failure invalidates every slot in the batch, including the ops
+ * transmitted before it, because nothing is confirmed until the closing IFCNT
+ * read. So this says where the library stopped, not where the state boundary
+ * is, and it travels even on success for exactly that reason: it is never a
+ * boundary to act on.
  */
-#define RPC_MAX_OPS 32
+typedef struct {
+    uint16_t failed_at;
+    uint16_t _pad;
+} rpc_raw_write_ret;
+RPC_WIRE_SIZE(rpc_raw_write_ret, 4);
+
+/* Conditions and verdicts. */
+
+typedef rpc_dev_args rpc_raw_poll_health_args;
+
+typedef struct {
+    uint32_t conditions;
+} rpc_raw_poll_health_ret;
+RPC_WIRE_SIZE(rpc_raw_poll_health_ret, 4);
+
+typedef struct {
+    uint8_t  idx;
+    uint8_t  _pad[3];
+    uint32_t conditions;
+} rpc_raw_clear_faults_args;
+RPC_WIRE_SIZE(rpc_raw_clear_faults_args, 8);
+
+typedef rpc_dev_args rpc_raw_poll_load_args;
+
+/** @c usable travels beside the number because SG_RESULT outside the TCOOLTHRS
+ *  window is noise, and a control loop given only the number will act on it. */
+typedef struct {
+    uint16_t value;  /**< SG_RESULT, 0..510. Higher means less load */
+    uint8_t  usable;
+    uint8_t  _pad;
+} rpc_raw_poll_load_ret;
+RPC_WIRE_SIZE(rpc_raw_poll_load_ret, 4);
+
+typedef rpc_dev_args rpc_raw_poll_pins_args;
+
+/** IOIN as it came off the wire. The PC decodes it with the same codec the
+ *  firmware would have used, so decoding here would only cost a round trip. */
+typedef struct {
+    uint32_t value;
+} rpc_raw_poll_pins_ret;
+RPC_WIRE_SIZE(rpc_raw_poll_pins_ret, 4);
+
+typedef rpc_dev_args rpc_raw_poll_version_args;
+
+typedef struct {
+    uint8_t version;
+    uint8_t _pad[3];
+} rpc_raw_poll_version_ret;
+RPC_WIRE_SIZE(rpc_raw_poll_version_ret, 4);
+
+typedef rpc_dev_args rpc_raw_verify_config_args;
+
+/**
+ * @brief Whether the device agrees with the cache, and where it does not.
+ *
+ * A disagreement is a result rather than a transport failure, and the caller
+ * wants to know *which* slots disagree. A failing status would have the mask
+ * discarded with the frame, so what the call found travels as a value. Same
+ * shape as passthrough's outcome, for the same reason.
+ */
+typedef struct {
+    uint32_t mismatched; /**< one bit per register slot */
+    uint8_t  agrees;
+    uint8_t  _pad[3];
+} rpc_raw_verify_config_ret;
+RPC_WIRE_SIZE(rpc_raw_verify_config_ret, 8);
+
+/* Runtime writes. */
+
+typedef struct {
+    uint8_t idx;
+    uint8_t _pad[3];
+    int32_t velocity;
+} rpc_raw_set_velocity_args;
+RPC_WIRE_SIZE(rpc_raw_set_velocity_args, 8);
+
+typedef struct {
+    uint8_t idx;
+    uint8_t ihold;      /**< 0..31 */
+    uint8_t irun;       /**< 0..31 */
+    uint8_t iholddelay; /**< 0..15 */
+} rpc_raw_set_current_args;
+RPC_WIRE_SIZE(rpc_raw_set_current_args, 4);
+
+/* Bring-up and cache. */
+
+typedef rpc_raw_write_args rpc_raw_bringup_args;
+
+/** GSTAT as found is the only look anyone gets at what the driver went through
+ *  before this firmware owned it, so it travels even though bring-up clears it. */
+typedef struct {
+    uint32_t gstat_at_bringup;
+} rpc_raw_bringup_ret;
+RPC_WIRE_SIZE(rpc_raw_bringup_ret, 4);
+
+typedef rpc_dev_args rpc_raw_all_owned_valid_args;
+
+typedef struct {
+    uint8_t valid;
+    uint8_t _pad[3];
+} rpc_raw_all_owned_valid_ret;
+RPC_WIRE_SIZE(rpc_raw_all_owned_valid_ret, 4);
+
+typedef rpc_dev_args rpc_raw_invalidate_owned_args;
+
+/* Lines. */
+
+typedef struct {
+    uint8_t idx;
+    uint8_t line; /**< @c tmc2209_line_t */
+    uint8_t _pad[2];
+} rpc_raw_line_read_args;
+RPC_WIRE_SIZE(rpc_raw_line_read_args, 4);
+
+typedef struct {
+    uint8_t level;
+    uint8_t _pad[3];
+} rpc_raw_line_read_ret;
+RPC_WIRE_SIZE(rpc_raw_line_read_ret, 4);
+
+typedef struct {
+    uint8_t idx;
+    uint8_t line;
+    uint8_t level;
+    uint8_t _pad;
+} rpc_raw_line_write_args;
+RPC_WIRE_SIZE(rpc_raw_line_write_args, 4);
+
+typedef struct {
+    uint8_t idx;
+    uint8_t on;
+    uint8_t _pad[2];
+} rpc_raw_enable_args;
+RPC_WIRE_SIZE(rpc_raw_enable_args, 4);
+
+typedef rpc_dev_args rpc_raw_is_enabled_args;
+
+typedef struct {
+    uint8_t on;
+    uint8_t _pad[3];
+} rpc_raw_is_enabled_ret;
+RPC_WIRE_SIZE(rpc_raw_is_enabled_ret, 4);
+
+/* Motion. */
+
+/**
+ * @brief A run, and the deadline it must be kept alive under.
+ *
+ * The deadline is a parameter of the move and not a setting, because a setting
+ * gets configured once by whoever was last debugging and then governs a run
+ * nobody was watching. 0 asks for the default; there is no value that means
+ * off, which is the point.
+ */
+typedef struct {
+    uint8_t  idx;
+    uint8_t  dir;   /**< level to drive on DIR, electrical and uninterpreted */
+    uint8_t  shaft; /**< GCONF.shaft this move was planned around */
+    uint8_t  _pad;
+    uint32_t pulses;      /**< microsteps to emit. 0 runs until halted */
+    uint32_t pullin_pps;  /**< rate of the first and last pulse */
+    uint32_t cruise_pps;  /**< rate held between the ramps */
+    uint32_t accel_pps_s; /**< slope of both ramps */
+    uint32_t deadline_ms;
+} rpc_raw_move_args;
+RPC_WIRE_SIZE(rpc_raw_move_args, 24);
+
+typedef struct {
+    uint8_t  idx;
+    uint8_t  _pad[3];
+    uint32_t cruise_pps;
+} rpc_raw_retarget_args;
+RPC_WIRE_SIZE(rpc_raw_retarget_args, 8);
+
+typedef struct {
+    uint8_t idx;
+    uint8_t immediate;
+    uint8_t _pad[2];
+} rpc_raw_halt_args;
+RPC_WIRE_SIZE(rpc_raw_halt_args, 4);
+
+typedef rpc_dev_args rpc_raw_motion_args;
+
+typedef struct {
+    uint32_t emitted;  /**< pulses of the current run, or of the last one */
+    uint32_t rate_pps; /**< rate presently being emitted */
+    uint8_t  running;
+    uint8_t  dir;      /**< DIR the counted run was started with */
+    uint8_t  shaft;    /**< GCONF.shaft the counted run was started with */
+    uint8_t  _pad;
+} rpc_raw_motion_ret;
+RPC_WIRE_SIZE(rpc_raw_motion_ret, 12);
+
+/* ── State and statuses ─────────────────────────────────────────────────── */
 
 /** @brief What the firmware is doing. Reported by `sys.state`, never set. */
 typedef enum {
     RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and passthrough are permitted */
-    RPC_MODE_SCANNING = 1, /**< a scan owns the transport; raw and passthrough are refused */
+    RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and passthrough are refused */
     RPC_MODE_FAULT    = 2, /**< construction failed, so no device can be addressed */
 } rpc_mode_t;
 

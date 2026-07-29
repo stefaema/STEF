@@ -10,30 +10,19 @@
  * caller is diagnosing a driver, and an opinion from the library would be the
  * thing under suspicion. What comes back is bytes and a count.
  *
- * ## Why the outcome is a value and not the frame's status
- *
- * Passthrough reports what happened; raw reports whether it worked. A driver
- * that stayed silent, or one whose echo came back altered, is an *answer* here
- * and not a failure, and the bytes that did arrive are the evidence the caller
- * asked for. But a reply frame carrying a failing status is rewound by
- * dispatch, precisely so a handler cannot leave half an answer behind.
- *
- * So the wire's outcome travels as a field. The frame's status then reports
- * only whether the call was well formed, which is the one thing this tier is
- * still entitled to have an opinion about.
+ * Why the transaction's outcome travels as a field rather than as the frame's
+ * status is written down beside @ref rpc_pt_send_ret, where the shape it
+ * explains actually lives.
  */
 
+#include <stddef.h>
+
 #include "devices.h"
-#include "rpc_dispatch.h"
-#include "rpc_methods.h"
 #include "rpc_api.h"
+#include "rpc_methods.h"
 #include "rpc_status.h"
-#include "rpc_wire.h"
 #include "tmc2209.h"
 #include "tmc2209_frame.h"
-
-/** The part's longest datagram, both directions. */
-#define PT_MAX_BYTES 32
 
 /*
  * A datagram the library did not build is one it cannot account for: it may
@@ -49,26 +38,27 @@ static bool changes_nothing(const uint8_t *tx, size_t tx_len)
     if (tx_len != TMC2209_READ_REQ_LEN) {
         return false;
     }
-    return (tx[2] & TMC2209_WRITE_FLAG) == 0u;
+    return (tx[2] & TMC2209_WRITE_FLAG) == 0U;
 }
 
-static rpc_status_t pt_send(rpc_reader_t *args, rpc_writer_t *ret)
+static rpc_status_t pt_send(const void *args, size_t args_len,
+                            void *ret, size_t *ret_len)
 {
-    uint8_t idx       = rpc_r_u8(args);
-    uint8_t reply_len = rpc_r_u8(args);
+    const rpc_pt_send_args *in  = args;
+    rpc_pt_send_ret        *out = ret;
 
-    size_t         tx_len = 0;
-    const uint8_t *tx     = rpc_r_bytes(args, &tx_len);
-
-    if (!args->ok) {
+    /* The count is inside the payload, so dispatch could only check that a
+     * head arrived. This is the exact length, and the one line it costs. */
+    if (args_len != sizeof(*in) + in->count) {
         return RPC_BAD_FRAME;
     }
-    if (tx == NULL || tx_len == 0 || tx_len > PT_MAX_BYTES ||
-        reply_len > PT_MAX_BYTES) {
+
+    if (in->count == 0 || in->count > RPC_PT_MAX_BYTES ||
+        in->reply_len > RPC_PT_MAX_BYTES) {
         return RPC_ARG;
     }
 
-    tmc2209_t *dev = devices_at(idx);
+    tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
         return RPC_ARG;
     }
@@ -76,23 +66,25 @@ static rpc_status_t pt_send(rpc_reader_t *args, rpc_writer_t *ret)
         return RPC_NO_BACKEND;
     }
 
-    uint8_t rx[PT_MAX_BYTES];
-    size_t  rx_got = 0;
+    /* Straight into the reply frame. The library's out-parameter is the reply's
+     * own storage, so nothing is staged and nothing is copied afterwards. */
+    size_t        rx_got = 0;
+    tmc2209_err_t err    = tmc2209_uart_send(dev->uart, in->tx, in->count,
+                                             (in->reply_len > 0) ? out->rx : NULL,
+                                             in->reply_len, &rx_got);
 
-    tmc2209_err_t err = tmc2209_uart_send(dev->uart, tx, tx_len,
-                                          reply_len ? rx : NULL, reply_len, &rx_got);
-
-    if (!changes_nothing(tx, tx_len)) {
+    if (!changes_nothing(in->tx, in->count)) {
         tmc2209_invalidate_owned(dev);
     }
 
-    /* Always this shape. An empty byte string is an answer, not a gap. */
-    rpc_w_u8(ret, (uint8_t)rpc_status_of_err(err));
-    rpc_w_bytes(ret, rx, rx_got);
+    /* Always this shape. No bytes back is an answer, not a gap. */
+    out->outcome = (uint8_t)rpc_status_of_err(err);
+    out->count   = (uint8_t)rx_got;
 
+    *ret_len = offsetof(rpc_pt_send_ret, rx) + rx_got;
     return RPC_OK;
 }
 
-const rpc_handler_fn rpc_passthrough_methods[RPC_PT_COUNT] = {
-    [RPC_PT_SEND] = pt_send,
+const rpc_method_t rpc_passthrough_methods[RPC_PT_COUNT] = {
+    [RPC_PT_SEND] = RPC_METHOD_VAR(pt_send),
 };

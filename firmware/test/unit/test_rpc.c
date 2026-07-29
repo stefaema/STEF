@@ -1,7 +1,7 @@
 /*
  * test_rpc.c: the bridges, end to end, without a cable.
  *
- * A raw handler decodes arguments, makes one library call, and encodes what
+ * A raw handler reads its arguments, makes one library call, and writes what
  * came back. All three of those can be wrong independently, so the test drives
  * whole frames: build a REQ, run it through the real dispatch, and read the
  * REP the way the PC will.
@@ -13,17 +13,18 @@
  * merely reviewed.
  */
 
+#include <stddef.h>
 #include <string.h>
 
 #include "fake_devices.h"
 
 unsigned fake_watchdog_arms(void);
 #include "mock_tmc2209.h"
-#include "rpc_dispatch.h"
-#include "rpc_methods.h"
 #include "rpc_api.h"
+#include "rpc_dispatch.h"
+#include "rpc_frame.h"
+#include "rpc_methods.h"
 #include "rpc_proto.h"
-#include "rpc_wire.h"
 #include "tmc2209_frame.h"
 #include "unity.h"
 
@@ -96,69 +97,67 @@ static void rpc_setup(bool with_lines)
 
 /* ── Driving a call the way the link does ───────────────────────────────── */
 
-static uint8_t g_req[RPC_MAX_FRAME];
-static uint8_t g_rep[RPC_MAX_FRAME];
+static rpc_buf_t g_req;
+static rpc_buf_t g_rep;
+
+/* What the reply carried, so a test reads its fields as the struct they are. */
+static const void *g_ret;
+static size_t      g_ret_len;
 
 /*
  * Everything rpc_link.c's serve() does, minus the USB. Going through the real
- * framing means an argument this test encodes wrongly fails here rather than
- * on a bench, and it exercises the rewind that a failing handler depends on.
+ * framing means an argument this test lays out wrongly fails here rather than
+ * on a bench, and it exercises dispatch's length check rather than stepping
+ * around it.
  */
 static rpc_status_t call(uint8_t ns, uint8_t method,
-                         const uint8_t *args, size_t args_len,
-                         rpc_reader_t *out)
+                         const void *args, size_t args_len)
 {
-    rpc_writer_t w;
-    rpc_frame_begin_req(&w, g_req, sizeof(g_req), 0x4242, ns, method);
+    g_ret     = NULL;
+    g_ret_len = 0;
+
     if (args_len > 0) {
-        for (size_t i = 0; i < args_len; i++) {
-            rpc_w_u8(&w, args[i]);
-        }
+        memcpy(rpc_payload(&g_req), args, args_len);
     }
-    size_t req_len = rpc_frame_finish(&w);
+
+    size_t req_len = rpc_frame_seal_req(&g_req, 0x4242, ns, method, args_len);
     TEST_ASSERT_GREATER_THAN(0, req_len);
 
-    uint8_t      type;
-    rpc_reader_t r;
-    TEST_ASSERT_TRUE(rpc_frame_open(g_req, req_len, &type, &r));
-    TEST_ASSERT_EQUAL_UINT8(RPC_FRAME_REQ, type);
+    rpc_view_t rv;
+    TEST_ASSERT_TRUE(rpc_frame_open(&g_req, req_len, &rv));
+    TEST_ASSERT_EQUAL_UINT8(RPC_FRAME_REQ, rv.type);
 
-    rpc_req_t req;
-    TEST_ASSERT_TRUE(rpc_req_header(&r, &req));
+    const rpc_req_hdr_t *req = rv.hdr;
 
-    rpc_writer_t rep;
-    rpc_frame_begin_rep(&rep, g_rep, sizeof(g_rep), req.id, RPC_OK);
-    size_t mark = rep.len;
+    size_t       ret_len = 0;
+    rpc_status_t status  = rpc_dispatch(req->ns, req->method,
+                                        rv.payload, rv.payload_len,
+                                        rpc_payload(&g_rep), &ret_len);
 
-    rpc_status_t status = rpc_dispatch(&req, &r, &rep, mark);
-    if (status != RPC_OK) {
-        rpc_frame_set_status(&rep, status);
-    }
-
-    size_t rep_len = rpc_frame_finish(&rep);
+    size_t rep_len = rpc_frame_seal_rep(&g_rep, req->id, status, ret_len);
     TEST_ASSERT_GREATER_THAN(0, rep_len);
 
-    TEST_ASSERT_TRUE(rpc_frame_open(g_rep, rep_len, &type, out));
-    TEST_ASSERT_EQUAL_UINT8(RPC_FRAME_REP, type);
-    TEST_ASSERT_EQUAL_UINT16(0x4242, rpc_r_u16(out));
+    rpc_view_t pv;
+    TEST_ASSERT_TRUE(rpc_frame_open(&g_rep, rep_len, &pv));
+    TEST_ASSERT_EQUAL_UINT8(RPC_FRAME_REP, pv.type);
 
-    uint8_t reported = rpc_r_u8(out);
-    TEST_ASSERT_EQUAL_UINT8(status, reported);
+    const rpc_rep_hdr_t *rep = pv.hdr;
+    TEST_ASSERT_EQUAL_UINT16(0x4242, rep->id);
+    TEST_ASSERT_EQUAL_UINT8(status, rep->status);
+
+    g_ret     = pv.payload;
+    g_ret_len = pv.payload_len;
     return status;
 }
 
-/* Argument builders, so a test reads as the call it is making. */
-static size_t args_u8(uint8_t *buf, uint8_t a)
-{
-    buf[0] = a;
-    return 1;
-}
+/** The reply's payload as the struct the method promises, size checked. */
+#define RET(type) (TEST_ASSERT_EQUAL_size_t(sizeof(type), g_ret_len), (const type *)g_ret)
 
-static size_t args_u8_u8(uint8_t *buf, uint8_t a, uint8_t b)
+/** A device index, which is most of raw's argument list. */
+static rpc_dev_args dev_args(uint8_t idx)
 {
-    buf[0] = a;
-    buf[1] = b;
-    return 2;
+    rpc_dev_args a = { .idx = idx };
+    return a;
 }
 
 /* ── Dispatch ───────────────────────────────────────────────────────────── */
@@ -167,43 +166,49 @@ void test_rpc_unknown_namespace_and_method(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_dev_args a = dev_args(0);
 
-    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_SMART, 0, a, args_u8(a, 0), &r));
-    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_RAW, RPC_RAW_COUNT, a, args_u8(a, 0), &r));
+    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_SMART, 0, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_RAW, RPC_RAW_COUNT, &a, sizeof(a)));
 }
 
 void test_rpc_unknown_device_is_a_bad_argument(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[4];
-    rpc_reader_t r;
-
-    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                    args_u8_u8(a, 7, TMC2209_IOIN), &r));
+    rpc_raw_poll_args a = { .idx = 7, .reg = TMC2209_IOIN };
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
 }
 
-/* Both ways a frame can disagree with the method it names. */
-void test_rpc_malformed_arguments_are_bad_frames(void)
+/*
+ * Both ways a frame can disagree with the method it names. Dispatch checks the
+ * length against the table, so neither a short payload nor a long one reaches
+ * a handler, and the handler never learns that either was possible.
+ */
+void test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[8];
-    rpc_reader_t r;
+    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
-    /* One argument short: poll wants a device and a register. */
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                          args_u8(a, 0), &r));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
+                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) - 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
+                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) + 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
+                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, 0));
+}
 
-    /* One argument too many. Left over means the ends disagree about the
-       method, which is worth catching now rather than at the field that
-       eventually matters. */
-    a[0] = 0;
-    a[1] = TMC2209_IOIN;
-    a[2] = 0xFF;
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, a, 3, &r));
+/* A failing status carries nothing, so a client never reads return values that
+ * describe a call that did not happen. */
+void test_rpc_a_failing_call_carries_no_payload(void)
+{
+    rpc_setup(false);
+
+    rpc_raw_poll_args a = { .idx = 7, .reg = TMC2209_IOIN };
+
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_size_t(0, g_ret_len);
 }
 
 /* ── raw, the happy path ────────────────────────────────────────────────── */
@@ -213,32 +218,46 @@ void test_rpc_poll_returns_what_the_device_holds(void)
     rpc_setup(false);
     mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041u);
 
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                   args_u8_u8(a, 0, TMC2209_IOIN), &r));
-    TEST_ASSERT_EQUAL_HEX32(0x21000041u, rpc_r_u32(&r));
-    TEST_ASSERT_TRUE(rpc_r_done(&r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_HEX32(0x21000041u, RET(rpc_raw_poll_ret)->value);
 }
 
 void test_rpc_read_serves_the_cache_and_refuses_an_empty_slot(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_raw_read_args a = { .idx = 0, .reg = TMC2209_GCONF };
 
     /* Nothing has been written, so nothing may be reported. */
-    TEST_ASSERT_EQUAL(RPC_INVALID_SLOT, call(RPC_NS_RAW, RPC_RAW_READ, a,
-                                             args_u8_u8(a, 0, TMC2209_GCONF), &r));
+    TEST_ASSERT_EQUAL(RPC_INVALID_SLOT, call(RPC_NS_RAW, RPC_RAW_READ, &a, sizeof(a)));
 
     TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_READ, a,
-                                   args_u8_u8(a, 0, TMC2209_GCONF), &r));
-    TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, rpc_r_u32(&r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_READ, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, RET(rpc_raw_read_ret)->value);
+}
+
+/* A batch is a head and a flexible tail, so its storage is the head plus as
+   many elements as the call names. */
+typedef union {
+    rpc_raw_write_args w;
+    uint8_t            bytes[sizeof(rpc_raw_write_args) + (4U * sizeof(rpc_op_t))];
+} write_args_t;
+
+static size_t write_args(write_args_t *a, uint8_t idx, const rpc_op_t *ops, uint32_t n)
+{
+    memset(a, 0, sizeof(*a));
+    a->w.idx   = idx;
+    a->w.count = n;
+
+    for (uint32_t i = 0; i < n; i++) {
+        a->w.ops[i] = ops[i];
+    }
+
+    return sizeof(rpc_raw_write_args) + (n * sizeof(rpc_op_t));
 }
 
 void test_rpc_write_batch_lands_on_the_device(void)
@@ -247,36 +266,52 @@ void test_rpc_write_batch_lands_on_the_device(void)
     TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
-    uint8_t      a[32];
-    rpc_writer_t w;
-    rpc_w_init(&w, a, sizeof(a));
-    rpc_w_u8(&w, 0);
-    rpc_w_u16(&w, 2);
-    rpc_w_u8(&w, TMC2209_SGTHRS);
-    rpc_w_u32(&w, 0x33u);
-    rpc_w_u8(&w, TMC2209_TPOWERDOWN);
-    rpc_w_u32(&w, 0x44u);
+    const rpc_op_t ops[] = {
+        { .reg = TMC2209_SGTHRS,     .value = 0x33u },
+        { .reg = TMC2209_TPOWERDOWN, .value = 0x44u },
+    };
 
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_WRITE, a, w.len, &r));
+    write_args_t a;
+    size_t       n = write_args(&a, 0, ops, 2);
+
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
 
     TEST_ASSERT_EQUAL_HEX32(0x33u, mock_reg(&g_mock, TMC2209_SGTHRS));
     TEST_ASSERT_EQUAL_HEX32(0x44u, mock_reg(&g_mock, TMC2209_TPOWERDOWN));
+}
+
+/* The count is inside the payload, so dispatch can only check that a head
+ * arrived. The handler is what reconciles the two, and this is that check. */
+void test_rpc_a_batch_that_lies_about_its_count_is_a_bad_frame(void)
+{
+    rpc_setup(false);
+
+    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x33u } };
+
+    write_args_t a;
+    size_t       n = write_args(&a, 0, ops, 1);
+
+    a.w.count = 3; /* claims three, sent one */
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
+
+    a.w.count = 0; /* a batch of nothing is not a batch */
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
+
+    a.w.count = RPC_MAX_OPS + 1U;
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
 }
 
 void test_rpc_poll_health_reports_the_conditions(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_dev_args a = dev_args(0);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL_HEALTH, a,
-                                   args_u8(a, 0), &r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL_HEALTH, &a, sizeof(a)));
 
     /* The mock powers on with GSTAT.reset set, as a real part does. */
-    uint32_t conditions = rpc_r_u32(&r);
-    TEST_ASSERT_BITS_HIGH(TMC2209_DRIVER_RESET, conditions);
+    TEST_ASSERT_BITS_HIGH(TMC2209_DRIVER_RESET,
+                          RET(rpc_raw_poll_health_ret)->conditions);
 }
 
 void test_rpc_verify_config_reports_agreement_as_a_value(void)
@@ -285,51 +320,43 @@ void test_rpc_verify_config_reports_agreement_as_a_value(void)
     TEST_ASSERT_EQUAL(TMC2209_OK,
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_dev_args a = dev_args(0);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, a,
-                                   args_u8(a, 0), &r));
-    TEST_ASSERT_TRUE(rpc_r_bool(&r));
-    TEST_ASSERT_EQUAL_HEX32(0, rpc_r_u32(&r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_UINT8(1, RET(rpc_raw_verify_config_ret)->agrees);
+    TEST_ASSERT_EQUAL_HEX32(0, RET(rpc_raw_verify_config_ret)->mismatched);
 
     /* Disagree behind the library's back. The call still succeeds, because
        finding a mismatch is what it is for; the mask is the answer. */
     mock_set_reg(&g_mock, TMC2209_GCONF, CFG_GCONF ^ 0x40u);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, a,
-                                   args_u8(a, 0), &r));
-    TEST_ASSERT_FALSE(rpc_r_bool(&r));
-    TEST_ASSERT_NOT_EQUAL(0, rpc_r_u32(&r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_UINT8(0, RET(rpc_raw_verify_config_ret)->agrees);
+    TEST_ASSERT_NOT_EQUAL(0, RET(rpc_raw_verify_config_ret)->mismatched);
 }
 
 /* ── raw, the paths hardware will not give you ──────────────────────────── */
 
 void test_rpc_transport_faults_reach_the_wire_as_themselves(void)
 {
-    uint8_t      a[4];
-    rpc_reader_t r;
+    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
     rpc_setup(false);
     g_mock.fail_crc = 1;
-    TEST_ASSERT_EQUAL(RPC_CRC, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                    args_u8_u8(a, 0, TMC2209_IOIN), &r));
-    TEST_ASSERT_TRUE(rpc_r_done(&r)); /* an error carries nothing */
+    TEST_ASSERT_EQUAL(RPC_CRC, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_size_t(0, g_ret_len); /* an error carries nothing */
 
     rpc_setup(false);
     g_mock.drop_reply = 1;
-    TEST_ASSERT_EQUAL(RPC_RX_TIMEOUT, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                           args_u8_u8(a, 0, TMC2209_IOIN), &r));
+    TEST_ASSERT_EQUAL(RPC_RX_TIMEOUT, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
 
     rpc_setup(false);
     g_mock.wrong_reg = 1;
-    TEST_ASSERT_EQUAL(RPC_REG, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                    args_u8_u8(a, 0, TMC2209_IOIN), &r));
+    TEST_ASSERT_EQUAL(RPC_REG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
 
     rpc_setup(false);
     g_mock.corrupt_echo = 1;
-    TEST_ASSERT_EQUAL(RPC_ECHO, call(RPC_NS_RAW, RPC_RAW_POLL, a,
-                                     args_u8_u8(a, 0, TMC2209_IOIN), &r));
+    TEST_ASSERT_EQUAL(RPC_ECHO, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
 }
 
 void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)
@@ -337,42 +364,35 @@ void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)
     rpc_setup(false);
     g_mock.freeze_ifcnt = 1;
 
-    uint8_t      a[32];
-    rpc_writer_t w;
-    rpc_w_init(&w, a, sizeof(a));
-    rpc_w_u8(&w, 0);
-    rpc_w_u16(&w, 1);
-    rpc_w_u8(&w, TMC2209_SGTHRS);
-    rpc_w_u32(&w, 0x55u);
+    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x55u } };
 
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_NO_ACK, call(RPC_NS_RAW, RPC_RAW_WRITE, a, w.len, &r));
+    write_args_t a;
+    size_t       n = write_args(&a, 0, ops, 1);
+
+    TEST_ASSERT_EQUAL(RPC_NO_ACK, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
 }
 
-static size_t move_args(uint8_t *buf, size_t cap, uint32_t deadline_ms)
+static rpc_raw_move_args move_args(uint32_t deadline_ms)
 {
-    rpc_writer_t w;
-    rpc_w_init(&w, buf, cap);
-    rpc_w_u8(&w, 0);
-    rpc_w_bool(&w, true);  /* dir level */
-    rpc_w_bool(&w, false); /* the shaft bit the caller counts on */
-    rpc_w_u32(&w, 100);  /* pulses */
-    rpc_w_u32(&w, 200);  /* pullin */
-    rpc_w_u32(&w, 1000); /* cruise */
-    rpc_w_u32(&w, 5000); /* accel */
-    rpc_w_u32(&w, deadline_ms);
-    return w.len;
+    rpc_raw_move_args m = {
+        .idx         = 0,
+        .dir         = 1, /* the level to drive on DIR */
+        .shaft       = 0, /* the shaft bit the caller counts on */
+        .pulses      = 100,
+        .pullin_pps  = 200,
+        .cruise_pps  = 1000,
+        .accel_pps_s = 5000,
+        .deadline_ms = deadline_ms,
+    };
+    return m;
 }
 
 void test_rpc_a_missing_backend_is_not_a_failure_to_move(void)
 {
     rpc_setup(true);
 
-    uint8_t a[32];
-    size_t  n = move_args(a, sizeof(a), 0);
-
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, a, n, &r));
+    rpc_raw_move_args m = move_args(0);
+    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, &m, sizeof(m)));
 }
 
 /*
@@ -386,11 +406,8 @@ void test_rpc_a_refused_move_arms_nothing(void)
 
     unsigned before = fake_watchdog_arms();
 
-    uint8_t a[32];
-    size_t  n = move_args(a, sizeof(a), 0);
-
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, a, n, &r));
+    rpc_raw_move_args m = move_args(0);
+    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, &m, sizeof(m)));
     TEST_ASSERT_EQUAL_UINT(before, fake_watchdog_arms());
 }
 
@@ -400,18 +417,13 @@ void test_rpc_lines_drive_and_read_back(void)
 {
     rpc_setup(true);
 
-    uint8_t      a[8];
-    rpc_reader_t r;
-
-    a[0] = 0;
-    a[1] = TMC2209_LINE_DIR;
-    a[2] = 1;
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_LINE_WRITE, a, 3, &r));
+    rpc_raw_line_write_args w = { .idx = 0, .line = TMC2209_LINE_DIR, .level = 1 };
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_LINE_WRITE, &w, sizeof(w)));
     TEST_ASSERT_TRUE(g_board.level[TMC2209_LINE_DIR]);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_LINE_READ, a,
-                                   args_u8_u8(a, 0, TMC2209_LINE_DIR), &r));
-    TEST_ASSERT_TRUE(rpc_r_bool(&r));
+    rpc_raw_line_read_args r = { .idx = 0, .line = TMC2209_LINE_DIR };
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_LINE_READ, &r, sizeof(r)));
+    TEST_ASSERT_EQUAL_UINT8(1, RET(rpc_raw_line_read_ret)->level);
 }
 
 /* ENN is active low, so enable() and the level disagree by construction. A
@@ -420,17 +432,13 @@ void test_rpc_enable_applies_the_parts_polarity(void)
 {
     rpc_setup(true);
 
-    uint8_t      a[8];
-    rpc_reader_t r;
-
-    a[0] = 0;
-    a[1] = 1;
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_ENABLE, a, 2, &r));
+    rpc_raw_enable_args e = { .idx = 0, .on = 1 };
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_ENABLE, &e, sizeof(e)));
     TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_ENN]);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_IS_ENABLED, a,
-                                   args_u8(a, 0), &r));
-    TEST_ASSERT_TRUE(rpc_r_bool(&r));
+    rpc_dev_args a = dev_args(0);
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_IS_ENABLED, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_UINT8(1, RET(rpc_raw_is_enabled_ret)->on);
 }
 
 void test_rpc_an_unwired_line_is_refused_not_guessed(void)
@@ -438,28 +446,36 @@ void test_rpc_an_unwired_line_is_refused_not_guessed(void)
     rpc_setup(true);
     g_lines.wired = TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIAG);
 
-    uint8_t      a[8];
-    rpc_reader_t r;
-
-    TEST_ASSERT_EQUAL(RPC_UNWIRED, call(RPC_NS_RAW, RPC_RAW_LINE_READ, a,
-                                        args_u8_u8(a, 0, TMC2209_LINE_DIAG), &r));
+    rpc_raw_line_read_args r = { .idx = 0, .line = TMC2209_LINE_DIAG };
+    TEST_ASSERT_EQUAL(RPC_UNWIRED, call(RPC_NS_RAW, RPC_RAW_LINE_READ, &r, sizeof(r)));
 }
 
 /* ── Passthrough ────────────────────────────────────────────────────────── */
 
-static size_t read_request(uint8_t *buf, uint8_t dev_idx, uint8_t reply_len,
+typedef union {
+    rpc_pt_send_args s;
+    uint8_t          bytes[sizeof(rpc_pt_send_args) + RPC_PT_MAX_BYTES];
+} pt_args_t;
+
+static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len,
+                      const uint8_t *tx, uint8_t count)
+{
+    memset(a, 0, sizeof(*a));
+    a->s.idx       = idx;
+    a->s.reply_len = reply_len;
+    a->s.count     = count;
+    memcpy(a->s.tx, tx, count);
+
+    return sizeof(rpc_pt_send_args) + count;
+}
+
+static size_t read_request(pt_args_t *a, uint8_t dev_idx, uint8_t reply_len,
                            uint8_t addr, tmc2209_reg_t reg)
 {
     uint8_t datagram[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(datagram, addr, (uint8_t)reg);
 
-    rpc_writer_t w;
-    rpc_w_init(&w, buf, 32);
-    rpc_w_u8(&w, dev_idx);
-    rpc_w_u8(&w, reply_len);
-    rpc_w_bytes(&w, datagram, sizeof(datagram));
-
-    return w.len;
+    return pt_args(a, dev_idx, reply_len, datagram, sizeof(datagram));
 }
 
 void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
@@ -467,22 +483,21 @@ void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
     rpc_setup(false);
     mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041u);
 
-    uint8_t a[32];
-    size_t  n = read_request(a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    pt_args_t a;
+    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
 
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, a, n, &r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
 
     /* The frame succeeded; what the wire did is a value. */
-    TEST_ASSERT_EQUAL_UINT8(RPC_OK, rpc_r_u8(&r));
-
-    size_t         len   = 0;
-    const uint8_t *bytes = rpc_r_bytes(&r, &len);
-    TEST_ASSERT_EQUAL_size_t(TMC2209_REPLY_LEN, len);
+    const rpc_pt_send_ret *out = g_ret;
+    TEST_ASSERT_EQUAL_UINT8(RPC_OK, out->outcome);
+    TEST_ASSERT_EQUAL_UINT8(TMC2209_REPLY_LEN, out->count);
+    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx) + TMC2209_REPLY_LEN,
+                             g_ret_len);
 
     /* Undecoded, so the test decodes it the way the PC will. */
     uint32_t      value = 0;
-    tmc2209_err_t err   = tmc2209_frame_parse_reply(bytes, TMC2209_IOIN, &value);
+    tmc2209_err_t err   = tmc2209_frame_parse_reply(out->rx, TMC2209_IOIN, &value);
     TEST_ASSERT_EQUAL(TMC2209_OK, err);
     TEST_ASSERT_EQUAL_HEX32(0x21000041u, value);
 }
@@ -497,17 +512,15 @@ void test_rpc_passthrough_reports_silence_without_failing_the_call(void)
     rpc_setup(false);
     g_mock.drop_reply = 1;
 
-    uint8_t a[32];
-    size_t  n = read_request(a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    pt_args_t a;
+    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
 
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, a, n, &r));
-    TEST_ASSERT_EQUAL_UINT8(RPC_RX_TIMEOUT, rpc_r_u8(&r));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
 
-    size_t len = 1;
-    (void)rpc_r_bytes(&r, &len);
-    TEST_ASSERT_EQUAL_size_t(0, len);
-    TEST_ASSERT_TRUE(rpc_r_done(&r));
+    const rpc_pt_send_ret *out = g_ret;
+    TEST_ASSERT_EQUAL_UINT8(RPC_RX_TIMEOUT, out->outcome);
+    TEST_ASSERT_EQUAL_UINT8(0, out->count);
+    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx), g_ret_len);
 }
 
 /*
@@ -523,23 +536,16 @@ void test_rpc_passthrough_writes_void_the_cache_and_reads_do_not(void)
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
-    uint8_t      a[32];
-    rpc_reader_t r;
-
-    size_t n = read_request(a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, a, n, &r));
+    pt_args_t a;
+    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
     uint8_t datagram[TMC2209_WRITE_LEN];
     tmc2209_frame_write(datagram, 0, TMC2209_SGTHRS, 0x11u);
 
-    rpc_writer_t w;
-    rpc_w_init(&w, a, sizeof(a));
-    rpc_w_u8(&w, 0);
-    rpc_w_u8(&w, 0); /* a write has no reply */
-    rpc_w_bytes(&w, datagram, sizeof(datagram));
-
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, a, w.len, &r));
+    n = pt_args(&a, 0, 0, datagram, sizeof(datagram)); /* a write has no reply */
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
@@ -547,28 +553,27 @@ void test_rpc_passthrough_refuses_an_oversized_datagram(void)
 {
     rpc_setup(false);
 
-    uint8_t      a[64];
-    rpc_writer_t w;
-    rpc_w_init(&w, a, sizeof(a));
-    rpc_w_u8(&w, 0);
-    rpc_w_u8(&w, 0);
-    rpc_w_u16(&w, 40); /* claims 40 bytes, over the part's longest datagram */
-    for (int i = 0; i < 40; i++) {
-        rpc_w_u8(&w, 0xAA);
-    }
+    /* Claims more than the part's longest datagram, and sends that much, so
+       what is refused is the size and not a length that disagrees with it. */
+    pt_args_t a;
+    memset(&a, 0, sizeof(a));
+    a.s.idx   = 0;
+    a.s.count = RPC_PT_MAX_BYTES + 1U;
 
-    rpc_reader_t r;
-    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, a, w.len, &r));
+    size_t n = sizeof(rpc_pt_send_args) + RPC_PT_MAX_BYTES + 1U;
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
 }
 
 void run_rpc_tests(void)
 {
     RUN_TEST(test_rpc_unknown_namespace_and_method);
     RUN_TEST(test_rpc_unknown_device_is_a_bad_argument);
-    RUN_TEST(test_rpc_malformed_arguments_are_bad_frames);
+    RUN_TEST(test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame);
+    RUN_TEST(test_rpc_a_failing_call_carries_no_payload);
     RUN_TEST(test_rpc_poll_returns_what_the_device_holds);
     RUN_TEST(test_rpc_read_serves_the_cache_and_refuses_an_empty_slot);
     RUN_TEST(test_rpc_write_batch_lands_on_the_device);
+    RUN_TEST(test_rpc_a_batch_that_lies_about_its_count_is_a_bad_frame);
     RUN_TEST(test_rpc_poll_health_reports_the_conditions);
     RUN_TEST(test_rpc_verify_config_reports_agreement_as_a_value);
     RUN_TEST(test_rpc_transport_faults_reach_the_wire_as_themselves);

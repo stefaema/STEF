@@ -5,94 +5,102 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "rpc_api.h"
-#include "rpc_wire.h"
 #include "tmc2209.h"
 #include "watchdog.h"
 
-/*
- * The one method that must answer on a link whose version has not been agreed
- * yet. So the protocol version goes first and is fixed width: a PC built
- * against a different protocol can read that field, decide it does not
- * understand the rest, and say so, which is the whole point of asking.
- *
- * Everything after it is descriptive. The reset reason is here because the
- * question a stale link raises first is "did the board reboot", and answering
- * it costs one word.
- */
-static rpc_status_t sys_version(rpc_reader_t *args, rpc_writer_t *ret)
+/* Copies @p src into a fixed field and zeroes the rest of it. The tail matters:
+ * the field travels whole, so anything left in it from a previous reply would
+ * be both a changing CRC for an unchanged answer and a look at memory the
+ * caller was never offered. */
+static void set_str(char *dst, size_t cap, const char *src)
+{
+    size_t n = 0;
+
+    if (src != NULL) {
+        while (n + 1U < cap && src[n] != '\0') {
+            dst[n] = src[n];
+            n++;
+        }
+    }
+
+    while (n < cap) {
+        dst[n] = '\0';
+        n++;
+    }
+}
+
+static rpc_status_t sys_version(const void *args, void *ret)
 {
     (void)args;
 
+    rpc_sys_version_ret  *out = ret;
     const esp_app_desc_t *app = esp_app_get_description();
 
-    rpc_w_u16(ret, RPC_PROTOCOL_VERSION);
-    rpc_w_str(ret, app ? app->project_name : "");
-    rpc_w_str(ret, app ? app->version : "");
-    rpc_w_str(ret, app ? app->idf_ver : "");
-    rpc_w_u8(ret, (uint8_t)esp_reset_reason());
+    out->protocol     = RPC_PROTOCOL_VERSION;
+    out->reset_reason = (uint8_t)esp_reset_reason();
+
+    set_str(out->project, sizeof(out->project), app ? app->project_name : "");
+    set_str(out->version, sizeof(out->version), app ? app->version : "");
+    set_str(out->idf, sizeof(out->idf), app ? app->idf_ver : "");
 
     return RPC_OK;
 }
 
-/*
- * Reported, never set. The PC does not announce that it is about to run
- * diagnostics; it asks what is happening and is refused per call if the answer
- * makes the call unsafe. So this is the whole of the mode system from the
- * outside: one question, no state to keep in sync across a link that can drop.
- */
-static rpc_status_t sys_state(rpc_reader_t *args, rpc_writer_t *ret)
+static rpc_status_t sys_state(const void *args, void *ret)
 {
     (void)args;
 
-    bool ready = devices_ready();
+    rpc_sys_state_ret *out   = ret;
+    bool               ready = devices_ready();
 
-    rpc_w_u8(ret, (uint8_t)(ready ? RPC_MODE_IDLE : RPC_MODE_FAULT));
-    rpc_w_bool(ret, ready);
-    rpc_w_u32(ret, (uint32_t)(esp_timer_get_time() / 1000));
-    rpc_w_u16(ret, (uint16_t)devices_count());
-
-    /* A trip is the firmware having stopped the machine on its own. Nothing
-     * else reports it, and a scan that ended early is a scan someone will want
-     * to explain. */
-    rpc_w_u32(ret, watchdog_trips());
+    out->uptime_ms      = (uint32_t)(esp_timer_get_time() / 1000);
+    out->watchdog_trips = watchdog_trips();
+    out->device_count   = (uint16_t)devices_count();
+    out->mode           = (uint8_t)(ready ? RPC_MODE_IDLE : RPC_MODE_FAULT);
+    out->ready          = ready ? 1U : 0U;
 
     return RPC_OK;
 }
 
-/*
- * What the board actually has, so a diagnostic loops over it instead of
- * hardcoding one driver. A bench board with one driver and the carrier with
- * three answer the same question, and the same script covers both.
- */
-static rpc_status_t sys_devices(rpc_reader_t *args, rpc_writer_t *ret)
+static rpc_status_t sys_devices(const void *args, size_t args_len,
+                                void *ret, size_t *ret_len)
 {
     (void)args;
+    (void)args_len;
+
+    rpc_sys_devices_ret *out = ret;
 
     size_t n = devices_count();
-    rpc_w_u16(ret, (uint16_t)n);
+    if (n > RPC_MAX_DEVICES) {
+        n = RPC_MAX_DEVICES;
+    }
+
+    out->count = (uint32_t)n;
 
     for (size_t i = 0; i < n; i++) {
-        const tmc2209_t *dev = devices_at(i);
+        const tmc2209_t *dev  = devices_at(i);
+        rpc_dev_info_t  *info = &out->devs[i];
 
         uint8_t wired = 0;
         for (int line = 0; line < TMC2209_LINE_COUNT; line++) {
-            if (dev && tmc2209_line_is_wired(dev, (tmc2209_line_t)line)) {
+            if (dev != NULL && tmc2209_line_is_wired(dev, (tmc2209_line_t)line)) {
                 wired |= TMC2209_LINE_BIT(line);
             }
         }
 
-        rpc_w_str(ret, devices_name(i));
-        rpc_w_u8(ret, dev ? dev->addr : 0u);
-        rpc_w_u8(ret, wired);
-        rpc_w_bool(ret, dev != NULL && dev->uart != NULL);
-        rpc_w_bool(ret, dev != NULL && dev->stepgen != NULL);
+        set_str(info->name, sizeof(info->name), devices_name(i));
+        info->addr        = (dev != NULL) ? dev->addr : 0U;
+        info->wired       = wired;
+        info->has_uart    = (dev != NULL && dev->uart != NULL) ? 1U : 0U;
+        info->has_stepgen = (dev != NULL && dev->stepgen != NULL) ? 1U : 0U;
     }
 
+    *ret_len = sizeof(*out) + (n * sizeof(rpc_dev_info_t));
     return RPC_OK;
 }
 
-const rpc_handler_fn rpc_sys_methods[RPC_SYS_COUNT] = {
-    [RPC_SYS_VERSION] = sys_version,
-    [RPC_SYS_STATE]   = sys_state,
-    [RPC_SYS_DEVICES] = sys_devices,
+const rpc_method_t rpc_sys_methods[RPC_SYS_COUNT] = {
+    [RPC_SYS_VERSION] = RPC_METHOD_GET(sys_version),
+    [RPC_SYS_STATE]   = RPC_METHOD_GET(sys_state),
+    [RPC_SYS_DEVICES] = RPC_METHOD_VAR_GET(sys_devices),
 };
