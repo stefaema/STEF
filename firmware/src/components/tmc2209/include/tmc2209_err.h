@@ -1,32 +1,24 @@
 /**
  * @file tmc2209_err.h
- * @brief The component's failure vocabulary.
+ * @brief The library's failure vocabulary.
  *
- * A single call like tmc2209_read can fail at three different depths: the
- * port never delivered the bytes, the datagram came back malformed, or the
- * device disagreed with what the cache believed. The caller gets one return
- * value and still has to tell those apart, because the right response differs:
- * a CRC error is worth retrying, a register mismatch means a second driver is
- * answering and retrying will not help.
+ * The codes are one flat enum spanning every layer, and it lives here
+ * rather than in any one layer's header.
  *
- * So the codes are one flat enum spanning every layer, and it lives here
- * rather than in any one layer's header. tmc2209_uart.h would be the wrong
- * home: it names only the transport, while these codes also describe framing
- * and cache state.
  */
 
 #ifndef TMC2209_ERR_H
 #define TMC2209_ERR_H
 
-/** @brief Every way a call in this component can fail. */
+/** @brief Every way a call in this library can fail. */
 typedef enum {
     TMC2209_OK = 0,
     TMC2209_ERR_ARG,          /**< caller passed something impossible */
     TMC2209_ERR_TX_TIMEOUT,   /**< Port accepted fewer bytes than it was given. */
     TMC2209_ERR_RX_TIMEOUT,   /**< port delivered fewer bytes than were asked for */
     TMC2209_ERR_IO,           /**< port failed for its own reasons */
-    TMC2209_ERR_ECHO,         /**< what came back is not what we sent: collision or jammed line */
-    TMC2209_ERR_PREAMBLE,     /**< first two bytes of a reply datagram wrong: SYNC and MASTER_ADDR */
+    TMC2209_ERR_ECHO,         /**< what came back is not what we sent: collision or jammed UART line */
+    TMC2209_ERR_PREAMBLE,     /**< bad preamble: sync or master address wrong in a reply */
     TMC2209_ERR_CRC,          /**< CRC error */
     TMC2209_ERR_REG,          /**< reply is for a register we did not ask about */
     TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance enough: the write didn't land right */
