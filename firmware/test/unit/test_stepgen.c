@@ -692,10 +692,10 @@ static void test_a_stepgen_takes_the_step_pin(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_write(&g_dev, TMC2209_LINE_STEP, true));
     TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_STEP]);
 
-    /* Reading the level disturbs nothing, and is the diagnostic that catches a
-       peripheral that stopped mid-pulse. */
+    /* Reading is refused for the same reason: the lines backend is not driving
+       the pin, so the level it reports is not the one the contract promises. */
     bool level = true;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_read(&g_dev, TMC2209_LINE_STEP, &level));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_read(&g_dev, TMC2209_LINE_STEP, &level));
 
     /* Without one, the board owns the pin again. */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_stepgen(&g_dev, NULL));

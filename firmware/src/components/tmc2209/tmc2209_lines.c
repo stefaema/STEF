@@ -1,3 +1,5 @@
+#include "tmc2209_lines.h"
+
 #include "tmc2209.h"
 
 /* DIAG is the only line the driver drives. The other three it reads, which is
@@ -16,6 +18,11 @@ bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line)
     }
     return (dev->lines->wired & TMC2209_LINE_BIT(line)) != 0;
 }
+/* STEP under a device with a stepgen attached is not the lines backend's to drive. */
+static bool stepgen_owns(const tmc2209_t *dev, tmc2209_line_t line)
+{
+    return (bool)(line == TMC2209_LINE_STEP && dev->stepgen != NULL);
+}
 
 static tmc2209_err_t check_line(const tmc2209_t *dev, tmc2209_line_t line)
 {
@@ -27,6 +34,9 @@ static tmc2209_err_t check_line(const tmc2209_t *dev, tmc2209_line_t line)
     }
     if (!tmc2209_line_is_wired(dev, line)) {
         return TMC2209_ERR_UNWIRED;
+    }
+    if (stepgen_owns(dev, line)) {
+        return TMC2209_ERR_ACCESS;
     }
     return TMC2209_OK;
 }
@@ -53,6 +63,7 @@ tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool 
         return err;
     }
 
+    /* Read pin using backend */
     int got = dev->lines->read(dev->lines->ctx, line);
     if (got < 0) {
         return TMC2209_ERR_IO;
@@ -67,23 +78,12 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
     if (err != TMC2209_OK) {
         return err;
     }
-    /* Checked after wiring, so a board that does not connect DIAG reports that
-       rather than a policy violation it was never in a position to commit. */
+
     if (!tmc2209_line_is_output(line)) {
         return TMC2209_ERR_ACCESS;
     }
-    /* A stepgen owns the pin it pulses. Letting a level write through as well
-       would give one pin two owners, and which of them the pad ends up
-       following is a detail of whichever peripheral the board happens to use.
-       Reads stay open: observing a level disturbs nothing. */
-    if (line == TMC2209_LINE_STEP && dev->stepgen) {
-        return TMC2209_ERR_ACCESS;
-    }
-    /* DIR belongs to the run for as long as the run lasts. A run reports one
-       pulse count, so a level flipped between two pulses would have the travel
-       before it and the travel after it fall under the same number, and with no
-       encoder that error is not detected, it is believed. Held until the run
-       ends rather than until the caller stops asking. */
+
+    /* Do not allow DIR write when the motor is running. This is library policy. */
     if (line == TMC2209_LINE_DIR && dev->stepgen) {
         bool running = false;
         tmc2209_err_t rerr = tmc2209_is_running(dev, &running);
@@ -95,12 +95,15 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
         }
     }
 
+    /* Write pin using backend */
     return (dev->lines->write(dev->lines->ctx, line, level) < 0)
         ? TMC2209_ERR_IO
         : TMC2209_OK;
 }
 
 /* ── Meaning ────────────────────────────────────────────────────────────── */
+
+/* ENN is active low, so library policy wants callers never have to remember that. */
 
 tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on)
 {

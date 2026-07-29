@@ -16,6 +16,8 @@
  * is reported and the accumulating is somebody else's.
  */
 
+#include "tmc2209_stepgen.h"
+
 #include "tmc2209.h"
 
 static tmc2209_err_t check_stepgen(const tmc2209_t *dev)
