@@ -26,8 +26,7 @@
 #include "tmc2209_uart.h"
 
 /* The largest raw transfer tmc2209_uart_send() will carry, and therefore the
-   stack buffer that verifies its echo. Larger than any single datagram on
-   purpose: a passthrough caller may hand over several at once. */
+   stack buffer that verifies its echo. */
 #define TMC2209_MAX_TRANSFER 32U
 
 /* No-ops when the backend supplies no lock, which is the target build. */
