@@ -11,7 +11,7 @@
  * reply         [0] sync  [1] master addr [2] reg        [3..6] value  [7] crc
  * @endverbatim
  *
- * A reply carries no slave address, so which driver answered is not a question
+ * A reply carries no driver address, so which driver answered is not a question
  * this layer can settle.
  */
 

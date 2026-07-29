@@ -2,8 +2,7 @@
 
 #include "tmc2209.h"
 
-/* DIAG is the only line the driver drives. The other three it reads, which is
-   what makes them writable from here. */
+/* DIAG is the only line the driver drives. */
 bool tmc2209_line_is_output(tmc2209_line_t line)
 {
     return (bool)(line == TMC2209_LINE_ENN
@@ -18,6 +17,7 @@ bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line)
     }
     return (dev->lines->wired & TMC2209_LINE_BIT(line)) != 0;
 }
+
 /* STEP under a device with a stepgen attached is not the lines backend's to drive. */
 static bool stepgen_owns(const tmc2209_t *dev, tmc2209_line_t line)
 {
@@ -41,6 +41,7 @@ static tmc2209_err_t check_line(const tmc2209_t *dev, tmc2209_line_t line)
     return TMC2209_OK;
 }
 
+/* Attach control line-handling backend */
 tmc2209_err_t tmc2209_attach_lines(tmc2209_t *dev, const tmc2209_lines_t *lines)
 {
     if (!dev) {

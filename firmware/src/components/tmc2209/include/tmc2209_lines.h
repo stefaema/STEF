@@ -3,13 +3,14 @@
  *
  * UART configures the driver; but you also got ENN, DIR, STEP and DIAG lines:
  * ENN enables at active low, DIR selects a phase order that GCONF.shaft then inverts,
- * STEP advances one microstep whose size CHOPCONF.mres sets.
+ * STEP advances one microstep whose size CHOPCONF.mres sets. DIAG is an input that signals
+ * driver error or StallGuard, depending on GCONF settings.
  *
  * The library does not know what the board does with those lines, so it does not drive them.
  * It defers to a backend, which may be a GPIO fd, peripheral, stub, etc.
  *
- * The levels here are electrical, at the driver's pin, with no polarity
- * applied.
+ * The levels at the backend level and at this file are electrical, what the driver's
+ * pin sees, with no polarity applied.
  *
  */
 
