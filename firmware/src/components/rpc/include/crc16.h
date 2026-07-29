@@ -2,14 +2,11 @@
  * @file crc16.h
  * @brief The check that tells a well-formed frame from a plausible one.
  *
- * COBS says where a frame ends, not whether it survived the trip. A flipped bit
- * inside a group produces a frame that decodes perfectly and means something
- * else, which on this link would be a register value that was never read or a
- * method nobody called.
+ * COBS says where a frame ends, not whether it survived the trip.
  *
  * CRC-16/CCITT-FALSE: polynomial 0x1021, initial value 0xFFFF, no reflection,
- * no final xor. Chosen for being the one every other implementation agrees on,
- * so the other side is a library call and not a second opinion.
+ * no final xor.
+ *
  */
 
 #ifndef CRC16_H

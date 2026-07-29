@@ -58,7 +58,7 @@ size_t cobs_decode(const uint8_t *src, size_t len, uint8_t *dst, size_t cap)
             return 0; /* a delimiter inside the frame: not our encoding */
         }
 
-        size_t n = (size_t)code - 1u;
+        size_t n = (size_t)code - 1U;
         if (i + n > len || out + n > cap) {
             return 0;
         }

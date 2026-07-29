@@ -47,8 +47,8 @@ void rpc_w_u16(rpc_writer_t *w, uint16_t v)
 {
     uint8_t *at = take(w, 2);
     if (at) {
-        at[0] = (uint8_t)(v & 0xFFu);
-        at[1] = (uint8_t)((v >> 8) & 0xFFu);
+        at[0] = (uint8_t)(v & 0xFFU);
+        at[1] = (uint8_t)((v >> 8) & 0xFFU);
     }
 }
 
@@ -56,10 +56,10 @@ void rpc_w_u32(rpc_writer_t *w, uint32_t v)
 {
     uint8_t *at = take(w, 4);
     if (at) {
-        at[0] = (uint8_t)(v & 0xFFu);
-        at[1] = (uint8_t)((v >> 8) & 0xFFu);
-        at[2] = (uint8_t)((v >> 16) & 0xFFu);
-        at[3] = (uint8_t)((v >> 24) & 0xFFu);
+        at[0] = (uint8_t)(v & 0xFFU);
+        at[1] = (uint8_t)((v >> 8) & 0xFFU);
+        at[2] = (uint8_t)((v >> 16) & 0xFFU);
+        at[3] = (uint8_t)((v >> 24) & 0xFFU);
     }
 }
 
@@ -72,7 +72,7 @@ void rpc_w_i32(rpc_writer_t *w, int32_t v)
 
 void rpc_w_bool(rpc_writer_t *w, bool v)
 {
-    rpc_w_u8(w, v ? 1u : 0u);
+    rpc_w_u8(w, (uint8_t)v);
 }
 
 void rpc_w_bytes(rpc_writer_t *w, const uint8_t *src, size_t len)
@@ -80,7 +80,7 @@ void rpc_w_bytes(rpc_writer_t *w, const uint8_t *src, size_t len)
     if (w == NULL || !w->ok) {
         return;
     }
-    if (len > 0xFFFFu || (src == NULL && len > 0)) {
+    if (len > 0xFFFFU || (src == NULL && len > 0)) {
         w->ok = false;
         return;
     }
@@ -133,14 +133,14 @@ void rpc_r_init(rpc_reader_t *r, const uint8_t *buf, size_t len)
 uint8_t rpc_r_u8(rpc_reader_t *r)
 {
     const uint8_t *at = give(r, 1);
-    return at ? at[0] : 0u;
+    return at ? at[0] : 0U;
 }
 
 uint16_t rpc_r_u16(rpc_reader_t *r)
 {
     const uint8_t *at = give(r, 2);
     if (!at) {
-        return 0u;
+        return 0U;
     }
     return (uint16_t)((uint16_t)at[0] | ((uint16_t)at[1] << 8));
 }
@@ -149,7 +149,7 @@ uint32_t rpc_r_u32(rpc_reader_t *r)
 {
     const uint8_t *at = give(r, 4);
     if (!at) {
-        return 0u;
+        return 0U;
     }
     return (uint32_t)at[0] | ((uint32_t)at[1] << 8) | ((uint32_t)at[2] << 16) |
            ((uint32_t)at[3] << 24);
@@ -164,7 +164,7 @@ int32_t rpc_r_i32(rpc_reader_t *r)
  * frame over it would fail a call that is otherwise unambiguous. */
 bool rpc_r_bool(rpc_reader_t *r)
 {
-    return rpc_r_u8(r) != 0u;
+    return rpc_r_u8(r) != 0U;
 }
 
 const uint8_t *rpc_r_bytes(rpc_reader_t *r, size_t *len)
@@ -187,7 +187,10 @@ const uint8_t *rpc_r_bytes(rpc_reader_t *r, size_t *len)
 
 bool rpc_r_done(const rpc_reader_t *r)
 {
-    return r != NULL && r->ok && r->pos == r->len;
+    if (r == NULL || !r->ok) {
+        return false;
+    }
+    return r->pos == r->len;
 }
 
 /* ── Frames ─────────────────────────────────────────────────────────────── */
@@ -250,7 +253,10 @@ size_t rpc_frame_finish(rpc_writer_t *w)
     uint16_t crc = crc16_ccitt(w->buf, w->len);
     rpc_w_u16(w, crc);
 
-    return w->ok ? w->len : 0;
+    if (!w->ok) {
+        return 0;
+    }
+    return w->len;
 }
 
 bool rpc_frame_open(const uint8_t *buf, size_t len, uint8_t *type, rpc_reader_t *r)
@@ -289,5 +295,8 @@ bool rpc_req_header(rpc_reader_t *r, rpc_req_t *out)
     out->ns     = rpc_r_u8(r);
     out->method = rpc_r_u8(r);
 
-    return r != NULL && r->ok;
+    if (r == NULL) {
+        return false;
+    }
+    return r->ok;
 }

@@ -3,15 +3,11 @@
  * @brief Turns a frame into a run of bytes that contains no zero.
  *
  * A byte stream has no boundaries, so a receiver needs some byte to mean "the
- * frame ends here". Any byte you pick can also occur inside the payload, and
- * escaping it costs a second special case that can itself be corrupted.
+ * frame ends here". Any byte that is picked could also occur inside the payload.
  *
  * COBS removes the problem instead of managing it: the encoding is guaranteed
  * to contain no zero byte at all, so a zero in the stream means end-of-frame
- * and can mean nothing else. A receiver that has lost track resynchronises at
- * the next zero, which is at most one frame away. That bound is the reason this
- * is here rather than a length prefix, which desynchronises permanently the
- * first time a length byte is corrupted.
+ * and can mean nothing else.
  *
  * Neither function writes the delimiter. Framing is the caller's, so the caller
  * appends the zero.
@@ -24,7 +20,7 @@
 #include <stdint.h>
 
 /** Worst case encoded length for @p n bytes, delimiter not included. */
-#define COBS_ENCODED_MAX(n) ((n) + ((n) / 254u) + 1u)
+#define COBS_ENCODED_MAX(n) ((n) + ((n) / 254U) + 1U)
 
 /**
  * @brief Encodes @p len bytes so that none of the output is zero.

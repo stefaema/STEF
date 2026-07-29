@@ -25,8 +25,8 @@ La librería TMC2209 tiene tres vías de control para manejar al driver, y cada 
 | Vía | Qué resuelve | Naturaleza |
 | --- | --- | --- |
 | UART | Configuración y salud del driver | Transaccional, bytes |
-| Líneas de control | Habilitado o no, en qué sentido, qué falla reporta | Niveles instantáneos |
-| Pulsos en STEP | Movimiento y velocidad | Temporal, asíncrona |
+| Líneas de control | Habilitado o no, en qué sentido, qué falla reporta | Niveles instantáneos digitales |
+| Pulsos en STEP | Movimiento y velocidad | Temporal, no-bloqueante |
 
 La librería cubre las tres, y las mantiene lo más separadas posible: la única cosa que las une es la estructura del dispositivo. Además, no solo están separadas entre sí si no que funcionan aisladas del sistema en el que operan, ya que cada vía declara un *backend*, es decir un contrato de punteros a función que alguien de afuera debe cumplir:
 
@@ -40,7 +40,7 @@ Una consecuencia de diseño que atraviesa todo lo que sigue: la librería inform
 
 ### Bus UART
 
-El driver expone 23 registros mediante el envío y recepción de datagramas UART, con un único cable half duplex como canal
+El driver expone 24 registros mediante el envío y recepción de datagramas UART, con un único cable half duplex como canal.
 
 Luego de un análisis de los mismos, se encontró que cada registro entra en una clasificación, según quién suele cambiar su valor y qué se suele hacer con él:
 
@@ -50,6 +50,8 @@ Luego de un análisis de los mismos, se encontró que cada registro entra en una
 | **B. Escritura y lectura del lado del driver, pero el firmware los modifica** | `GCONF`, `CHOPCONF` | A estos registros podríamos leerlos preguntándole al driver, pero una copia local serviría para ahorrar el datagrama de consulta y de respuesta, y como el firmware mismo es el que los modifica, no nos tenemos que preocupar demasiado porque el valor local se haya invalidado con el tiempo. |
 | **C. De fábrica, difícilmente modificados** | `FACTORY_CONF`, `OTP_READ`, `PWMCONF` | Nadie los escribe. Los dos primeros traen el trim y los fusibles de esa pieza en particular; `PWMCONF` el driver lo deja escribir, pero este diseño no lo toca porque con autoscale el ajuste fino aparece en `PWM_SCALE` y `PWM_AUTO`. Si nadie escribe, el valor no cambia nunca: alcanza con leerlos una vez. |
 | **D. Modificación fuera del firmware** | `GSTAT`, `IFCNT`, `IOIN`, `TSTEP`, `SG_RESULT`, `MSCNT`, `DRV_STATUS`, `MSCURACT`, `PWM_SCALE`, `PWM_AUTO` | Los escribe el driver solamente: `GSTAT` late fallas por hardware, `IFCNT` se incrementa solo, `IOIN` refleja pines, `TSTEP` es una medición, `MSCNT` avanza con cada paso. Una copia sería falsa apenas se guarde, por lo que el acceso al registro deberá pasar por el driver cada vez. |
+
+> Además, se ignora OTP_PROG ya que esta librería no explora en profundidad esa característica actualmente.
 
 Las dos primeras clasificaciones llegan a la misma implicación, guardar el valor y servir las lecturas desde ahí, así que se agrupan como si fuesen registros propios de la librería. De ahí salen las tres **clases** que maneja:
 
@@ -325,11 +327,7 @@ De esta forma, además podemos concluir:
 
 **El serializador se escribe una sola vez.** Escribirlo de los dos lados son dos implementaciones de un mismo acuerdo, y la segunda se desincroniza. Así que `rpc_wire.c` y los codecs de registro son C portable sin nada de ESP-IDF, la PC los compila como biblioteca compartida, y las dos puntas ejecutan el mismo código objeto. Ese es también el motivo de que no haya CBOR ni protobuf: existen para negociar estructura entre partes que no pueden compartir código, y estas dos sí pueden.
 
-Lo que no está en `rpc_proto.h` es tan importante como lo que está: ni un namespace, ni un número de método, ni ninguno de los estados que puede devolver un handler. Eso describe qué sirve este firmware y no cómo viaja una trama, así que vive en `main`. Un componente que nombrara `raw.move` sería un componente que hay que tocar cada vez que cambia la librería.
-
-Por eso el estado es un `uint8_t` y no un enum: el componente se queda con los suyos, los tres que puede producir sin llegar a un handler, numerados desde el 32 para que el vocabulario de arriba crezca por debajo sin chocar nunca.
-
-Sobre esa base, tres tipos de trama comparten el enlace y el primer byte dice cuál es: pedido, respuesta y log. La respuesta repite el identificador del pedido que contesta, lo que evita que una respuesta demorada se lea como la de otra pregunta. El log es la única trama que sale sin que nadie la haya pedido: no espera acuse, no obliga a nada, y un cliente al que no le interesa la descarta mirando un solo byte. Que exista como tipo de trama es del transporte; quién la produce y por qué es de `main`.
+Sobre esa base, tres tipos de trama comparten el enlace RPC y el primer byte dice cuál es: pedido, respuesta y log. La respuesta repite el identificador del pedido que contesta, lo que evita que una respuesta demorada se lea como la de otra pregunta. El log es la única trama que sale sin que nadie la haya pedido: no espera acuse, no obliga a nada, y un cliente al que no le interesa la descarta mirando un solo byte. Que exista como tipo de trama es del transporte; quién la produce y por qué es de `main`.
 
 Con todo eso junto, vale la pena seguir una trama entera. El ejemplo es inventado a propósito: un método `sum` que suma dos enteros, que no existe en ninguno de los cuatro namespaces, justamente para que lo único que se vea sea el camino. El lado de la PC no se modela, porque este documento explora el firmware: alcanza con saber que manda una trama pidiendo 2 más 3 y espera una con el 5.
 

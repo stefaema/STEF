@@ -8,7 +8,7 @@
 
 uint16_t crc16_ccitt(const uint8_t *data, size_t len)
 {
-    uint16_t crc = 0xFFFFu;
+    uint16_t crc = 0xFFFFU;
 
     if (data == NULL) {
         return crc;
@@ -18,7 +18,7 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t len)
         crc ^= (uint16_t)((uint16_t)data[i] << 8);
 
         for (int bit = 0; bit < 8; bit++) {
-            crc = (crc & 0x8000u) ? (uint16_t)((uint16_t)(crc << 1) ^ 0x1021u)
+            crc = (crc & 0x8000U) ? (uint16_t)((uint16_t)(crc << 1) ^ 0x1021U)
                                   : (uint16_t)(crc << 1);
         }
     }
