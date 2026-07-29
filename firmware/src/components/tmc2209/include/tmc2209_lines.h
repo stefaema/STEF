@@ -1,21 +1,16 @@
 /*
  * tmc2209_lines.h: the four control lines, as levels.
  *
- * UART configures the driver; it does not move it. ENN, DIR, STEP and DIAG do,
- * and what each one means is a fact about the part rather than about the board:
- * ENN is active low, DIR selects a phase order that GCONF.shaft then inverts,
- * STEP advances one microstep whose size CHOPCONF.mres sets. Every one of those
- * facts is already in this component, which is why the lines belong here and
- * not in the layer above.
+ * UART configures the driver; but you also got ENN, DIR, STEP and DIAG lines:
+ * ENN enables at active low, DIR selects a phase order that GCONF.shaft then inverts,
+ * STEP advances one microstep whose size CHOPCONF.mres sets.
  *
- * Note what is absent, and it is the same absence as in tmc2209_port.h: there
- * is no clock. A backend sets and reads levels. Holding a level for a minimum
- * width, and emitting trains of them at a rate, is timing, and timing is the
- * step generator's problem.
+ * The library does not know what the board does with those lines, so it does not drive them.
+ * It defers to a backend, which may be a GPIO fd, peripheral, stub, etc.
  *
  * The levels here are electrical, at the driver's pin, with no polarity
- * applied. A board that inserts an inverting buffer converts in its backend, so
- * that "ENN high" always means what the datasheet says it means.
+ * applied.
+ *
  */
 
 #ifndef TMC2209_LINES_H
@@ -30,22 +25,25 @@ typedef enum {
     TMC2209_LINE_DIR,      /**< output. Phase order, before GCONF.shaft inverts it */
     TMC2209_LINE_STEP,     /**< output. One microstep per edge */
     TMC2209_LINE_DIAG,     /**< input. Driver error or StallGuard, per GCONF */
-    TMC2209_LINE_COUNT,
+    TMC2209_LINE_COUNT,    /**< meta. Amount of lines a driver has */
 } tmc2209_line_t;
 
 /** Position of @p line in a @ref tmc2209_lines_t::wired mask. */
-#define TMC2209_LINE_BIT(line) ((uint8_t)(1u << (unsigned)(line)))
+#define TMC2209_LINE_BIT(line) ((uint8_t)(1U << (unsigned)(line)))
 
 /** Every line this driver has, for a board that wires all four. */
-#define TMC2209_LINES_ALL ((uint8_t)((1u << TMC2209_LINE_COUNT) - 1u))
+#define TMC2209_LINES_ALL ((uint8_t)((1U << TMC2209_LINE_COUNT) - 1U))
 
 /**
- * @brief What the lines are attached to. One per driver, unlike the shared bus.
+ * @brief Filled with how a backend reads and writes the four control lines of the driver, through fn pointers.
  *
- * Both calls report failure as a plain int, as the port does: a backend knows
- * only that a pin moved or did not.
+ * Both calls need to be implemented by the backend, and they are called with the same @p ctx pointer.
+ * If a line is not wired on this board, the backend must be able to know and tell the library,
+ * in order to make `TMC2209_ERR_UNWIRED` possible as a return value.
+ *
  */
 typedef struct tmc2209_lines {
+
     /** @return 0 or 1, the level presently on the pin, or negative on failure.
         An output answers with the level it is driving. */
     int (*read)(void *ctx, tmc2209_line_t line);

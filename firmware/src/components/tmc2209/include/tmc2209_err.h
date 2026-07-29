@@ -1,5 +1,6 @@
-/*
- * tmc2209_err.h: the component's failure vocabulary.
+/**
+ * @file tmc2209_err.h
+ * @brief The component's failure vocabulary.
  *
  * A single call like tmc2209_read can fail at three different depths: the
  * port never delivered the bytes, the datagram came back malformed, or the
@@ -17,39 +18,36 @@
 #ifndef TMC2209_ERR_H
 #define TMC2209_ERR_H
 
+/** @brief Every way a call in this component can fail. */
 typedef enum {
     TMC2209_OK = 0,
     TMC2209_ERR_ARG,          /**< caller passed something impossible */
-    /* Two directions, two codes. A single timeout would leave the caller unable
-       to tell its own transmit path from a driver that said nothing, which are
-       opposite ends of the cable. */
-    TMC2209_ERR_TX_TIMEOUT,   /**< port accepted fewer bytes than it was given */
+    TMC2209_ERR_TX_TIMEOUT,   /**< Port accepted fewer bytes than it was given. */
     TMC2209_ERR_RX_TIMEOUT,   /**< port delivered fewer bytes than were asked for */
     TMC2209_ERR_IO,           /**< port failed for its own reasons */
     TMC2209_ERR_ECHO,         /**< what came back is not what we sent: collision or jammed line */
-    TMC2209_ERR_SYNC,         /**< reply sync byte or master address wrong */
+    TMC2209_ERR_PREAMBLE,     /**< first two bytes of a reply datagram wrong: SYNC and MASTER_ADDR */
     TMC2209_ERR_CRC,          /**< CRC error */
     TMC2209_ERR_REG,          /**< reply is for a register we did not ask about */
     TMC2209_ERR_NO_ACK,       /**< IFCNT did not advance enough: the write didn't land right */
-    TMC2209_ERR_ACCESS,       /**< the register access policy does not permit this operation,
-                                   or the line named is one the driver drives rather than reads */
+    TMC2209_ERR_ACCESS,       /**< the register/line access policy does not permit this operation */
     TMC2209_ERR_NO_BACKEND,   /**< nothing is attached to carry out this call */
     TMC2209_ERR_UNWIRED,      /**< the line is not connected on this board */
-    TMC2209_ERR_INVALID_SLOT, /**< the cache holds an invalid value for that register,
-                                   because none was ever written or because the driver
-                                   may have a different value than the cached one. */
+    TMC2209_ERR_INVALID_SLOT, /**< the cache holds an invalid value for that register */
     TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
-    /* A run either is or is not in flight, and both states refuse work the
-       other accepts. */
-    TMC2209_ERR_BUSY,         /**< a run is in flight and this call would disturb it */
+    TMC2209_ERR_BUSY,         /**< A run is in flight and this call would disturb it. **/
     TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
-    TMC2209_ERR_UNREAD,       /**< the last run's pulse count was never collected, and
-                                   starting another one would discard it */
-    TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. A board
-                                   limit, so no retry and no wait changes it */
+    TMC2209_ERR_UNREAD,       /**< the last run's pulse count was ignored and another run was requested */
+    TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. */
 } tmc2209_err_t;
 
-/* Never NULL, including for a value outside the enum. */
+/**
+ * @brief Names a error code, for a log line or an operator.
+ *
+ * @param err  any value, in the enum or not
+ *
+ * @return a static string, never NULL, so it drops straight into a %s
+ */
 const char *tmc2209_strerror(tmc2209_err_t err);
 
 #endif /* TMC2209_ERR_H */

@@ -106,7 +106,7 @@ static void test_parse_reply_rejects_bad_sync(void)
     reply[7] = tmc2209_crc8(reply, 7);   /* keep CRC valid so sync is what fails */
 
     uint32_t value = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_SYNC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
 static void test_parse_reply_rejects_non_master_address(void)
@@ -117,7 +117,7 @@ static void test_parse_reply_rejects_non_master_address(void)
     reply[7] = tmc2209_crc8(reply, 7);
 
     uint32_t value = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_SYNC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
 /* An intact reply naming a register we did not ask about: the reply stream has
@@ -134,7 +134,7 @@ static void test_parse_reply_rejects_wrong_register(void)
 
 /* The ordering these three pin down: a corrupted byte is corruption, whichever
    field it lands on. Checked in the other order, noise on the register byte
-   reports ERR_REG and noise on the sync byte reports ERR_SYNC, and the caller
+   reports ERR_REG and noise on the sync byte reports ERR_PREAMBLE, and the caller
    declines to retry something a retry would have fixed. */
 static void test_corrupt_register_byte_is_corruption_not_a_wrong_register(void)
 {

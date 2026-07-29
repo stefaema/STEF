@@ -52,8 +52,8 @@ tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
         return TMC2209_ERR_CRC;
     }
 
-    /* SYNC and MASTER_ADDR mayb e considered as the preamble. They don't change in a reply. */
-    if (in[0] != TMC2209_SYNC || in[1] != TMC2209_MASTER_ADDR) {
+    /* Preamble: the only fields that don't change per reply. Sync is a nibble wide. */
+    if ((in[0] & TMC2209_SYNC_MASK) != TMC2209_SYNC || in[1] != TMC2209_MASTER_ADDR) {
         return TMC2209_ERR_PREAMBLE;
     }
     /* A read request for a register must have a reply pointing out the same register. */

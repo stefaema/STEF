@@ -9,7 +9,7 @@ rpc_status_t rpc_status_of_err(tmc2209_err_t err)
     case TMC2209_ERR_RX_TIMEOUT:    return RPC_RX_TIMEOUT;
     case TMC2209_ERR_IO:            return RPC_IO;
     case TMC2209_ERR_ECHO:          return RPC_ECHO;
-    case TMC2209_ERR_SYNC:          return RPC_SYNC;
+    case TMC2209_ERR_PREAMBLE:      return RPC_SYNC;
     case TMC2209_ERR_CRC:           return RPC_CRC;
     case TMC2209_ERR_REG:           return RPC_REG;
     case TMC2209_ERR_NO_ACK:        return RPC_NO_ACK;
