@@ -69,12 +69,11 @@ add_executable(unit_tests
     test_rpc.c
     fake_devices.c
     fake_watchdog.c
-    # The bridges. They include nothing from ESP-IDF, which is what lets them be
-    # compiled here against the mock driver rather than against a cable. The two
-    # that do, rpc_sys.c and rpc_link.c, stay out.
+
     ${RPC_BIND_DIR}/rpc_raw.c
     ${RPC_BIND_DIR}/rpc_passthrough.c
     ${RPC_BIND_DIR}/rpc_status.c)
+    
 # rpc_status.h is private to rpc_bind, so both of its directories are named.
 # devices.h and watchdog.h come from tmc2209_bind; the tests link fakes for both.
 target_include_directories(unit_tests PRIVATE

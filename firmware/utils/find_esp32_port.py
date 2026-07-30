@@ -27,14 +27,7 @@ from serial.tools import list_ports
 
 # (vendor_id, product_id) -> human description. product_id of None matches
 # any product from that vendor.
-#
-# Matched at the vendor level rather than an exact PID list: each of these
-# chip families ships many near-identical PIDs across revisions (confirmed
-# against platformio-core's udev rules, which lists e.g. 6+ CP210x PIDs and
-# 10+ FTDI PIDs: https://github.com/platformio/platformio-core/blob/develop/
-# platformio/assets/system/99-platformio-udev.rules), so an exact-PID list
-# silently misses boards, as it did here for a CH9102 (0x55d3 wasn't in the
-# original list, only its sibling 0x55d4).
+
 KNOWN_BRIDGES = {
     (0x303A, None): "Espressif native USB (USB-Serial/JTAG or native USB CDC)",
     (0x10C4, None): "Silicon Labs CP210x USB-UART bridge",

@@ -1,9 +1,6 @@
 # clangd config for the host-native unit tests.
 #
-# This tree is compiled by the system GCC, not the cross toolchain, so nothing
-# has to be stripped. It only needs its own compile database, because a
-# directory gets exactly one, and firmware/src/ already claims the target one.
-# Keep the build directory in sync with cmake.buildDirectory in .vscode/settings.json.
+
 CompileFlags:
   CompilationDatabase: build
 

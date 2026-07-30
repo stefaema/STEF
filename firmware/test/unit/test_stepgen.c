@@ -20,21 +20,21 @@
 #include <string.h>
 
 /* GCONF with pdn_disable and mstep_reg_select, as any working driver needs. */
-#define CFG_GCONF       0x000000C0u
+#define CFG_GCONF       0x000000C0U
 /* The same, with shaft set: same board, opposite rotation. */
-#define CFG_GCONF_SHAFT 0x000000C8u
+#define CFG_GCONF_SHAFT 0x000000C8U
 
 static tmc2209_regval_t g_config[] = {
     { TMC2209_GCONF,      CFG_GCONF    },
-    { TMC2209_SLAVECONF,  0x00000200u  },
-    { TMC2209_IHOLD_IRUN, 0x00081810u  },
-    { TMC2209_TPOWERDOWN, 0x00000014u  },
-    { TMC2209_TPWMTHRS,   0x000001F4u  },
-    { TMC2209_TCOOLTHRS,  0x000003E8u  },
-    { TMC2209_VACTUAL,    0x00000000u  },
-    { TMC2209_SGTHRS,     0x00000050u  },
-    { TMC2209_COOLCONF,   0x00010203u  },
-    { TMC2209_CHOPCONF,   0x14010053u  },
+    { TMC2209_SLAVECONF,  0x00000200U  },
+    { TMC2209_IHOLD_IRUN, 0x00081810U  },
+    { TMC2209_TPOWERDOWN, 0x00000014U  },
+    { TMC2209_TPWMTHRS,   0x000001F4U  },
+    { TMC2209_TCOOLTHRS,  0x000003E8U  },
+    { TMC2209_VACTUAL,    0x00000000U  },
+    { TMC2209_SGTHRS,     0x00000050U  },
+    { TMC2209_COOLCONF,   0x00010203U  },
+    { TMC2209_CHOPCONF,   0x14010053U  },
 };
 
 /* ── The fakes ──────────────────────────────────────────────────────────── */
@@ -217,7 +217,7 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_retarget(&g_dev, 1000));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_running(&g_dev, &running));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
 }
 
 /* Half a backend is not a backend, on the same terms as the port and the
@@ -250,7 +250,7 @@ static void test_attach_rejects_a_backend_that_pulses_too_narrowly(void)
     setup_ready(CFG_GCONF);
 
     tmc2209_stepgen_t narrow = g_stepgen;
-    narrow.min_pulse_ns = TMC2209_STEP_MIN_PULSE_NS - 1u;
+    narrow.min_pulse_ns = TMC2209_STEP_MIN_PULSE_NS - 1U;
     TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_attach_stepgen(&g_dev, &narrow));
 
     tmc2209_stepgen_t still = g_stepgen;
@@ -279,7 +279,7 @@ static void test_dir_is_set_before_the_first_pulse(void)
     const tmc2209_movement_plan_t m = a_move(true, 1000);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(1u, g_board.writes[TMC2209_LINE_DIR]);
+    TEST_ASSERT_EQUAL(1U, g_board.writes[TMC2209_LINE_DIR]);
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
 }
 
@@ -308,7 +308,7 @@ static void test_a_move_writes_the_shaft_bit_it_declares(void)
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_TRUE(tmc2209_gconf_decode(mock_reg(&g_mock, TMC2209_GCONF)).shaft);
-    TEST_ASSERT_EQUAL(1u, g_gen.runs);
+    TEST_ASSERT_EQUAL(1U, g_gen.runs);
     TEST_ASSERT_TRUE(g_gen.dir_at_run);   /* DIR is still what was asked for */
 }
 
@@ -349,8 +349,8 @@ static void test_an_unknown_gconf_stops_the_move(void)
 
     const tmc2209_movement_plan_t m = a_move(true, 1000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_DIR]);
 }
 
 /* ── The count ──────────────────────────────────────────────────────────── */
@@ -516,7 +516,7 @@ static void test_an_incoherent_profile_is_refused(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, &m));
 
     m = a_move(true, 100);
-    m.cruise_pps = m.pullin_pps - 1u;
+    m.cruise_pps = m.pullin_pps - 1U;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, &m));
 
     /* A ramp is required to reach cruise, and none was allowed. */
@@ -524,7 +524,7 @@ static void test_an_incoherent_profile_is_refused(void)
     m.accel_pps_s = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, &m));
 
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
 }
 
 /* Cruising at the pull-in rate needs no ramp, so no accel is coherent there. */
@@ -542,10 +542,10 @@ static void test_a_rate_the_board_cannot_emit_is_refused(void)
 {
     setup_ready(CFG_GCONF);
     tmc2209_movement_plan_t m = a_move(true, 100);
-    m.cruise_pps = g_stepgen.max_pps + 1u;
+    m.cruise_pps = g_stepgen.max_pps + 1U;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
 }
 
 /* ── Preconditions ──────────────────────────────────────────────────────── */
@@ -557,8 +557,8 @@ static void test_a_second_move_while_running_is_refused(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_BUSY, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(1u, g_gen.runs);
-    TEST_ASSERT_EQUAL(1u, g_board.writes[TMC2209_LINE_DIR]);
+    TEST_ASSERT_EQUAL(1U, g_gen.runs);
+    TEST_ASSERT_EQUAL(1U, g_board.writes[TMC2209_LINE_DIR]);
 }
 
 /* VACTUAL takes the driver off its STEP pin silently. Pulses would still be
@@ -570,7 +570,7 @@ static void test_a_move_under_the_velocity_generator_is_refused(void)
 
     const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, 0));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
@@ -585,7 +585,7 @@ static void test_a_move_without_dir_is_refused(void)
 
     const tmc2209_movement_plan_t m = a_move(true, 4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(0u, g_gen.runs);
+    TEST_ASSERT_EQUAL(0U, g_gen.runs);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_move(&g_dev, &m));
@@ -602,7 +602,7 @@ static void test_retarget_changes_a_run_in_flight(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_retarget(&g_dev, 12000));
     TEST_ASSERT_EQUAL_UINT32(12000, g_gen.last_retarget);
     TEST_ASSERT_EQUAL_UINT32(12000, motion_now().rate_pps);
-    TEST_ASSERT_EQUAL(1u, g_gen.runs);     /* not a restart */
+    TEST_ASSERT_EQUAL(1U, g_gen.runs);     /* not a restart */
 }
 
 /* Pull-in bounds starting and stopping, not running. A motor already turning
@@ -613,7 +613,7 @@ static void test_retarget_may_go_below_the_pullin_rate(void)
     const tmc2209_movement_plan_t m = a_move(true, 0);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_retarget(&g_dev, m.pullin_pps / 2u));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_retarget(&g_dev, m.pullin_pps / 2U));
 }
 
 static void test_retarget_needs_something_to_retarget(void)
@@ -626,7 +626,7 @@ static void test_retarget_needs_something_to_retarget(void)
     gen_finish(4000);
     TEST_ASSERT_EQUAL(TMC2209_ERR_IDLE, tmc2209_retarget(&g_dev, 12000));
 
-    TEST_ASSERT_EQUAL(0u, g_gen.retargets);
+    TEST_ASSERT_EQUAL(0U, g_gen.retargets);
 }
 
 static void test_retarget_refuses_a_rate_the_board_cannot_emit(void)
@@ -635,9 +635,9 @@ static void test_retarget_refuses_a_rate_the_board_cannot_emit(void)
     const tmc2209_movement_plan_t m = a_move(true, 0);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_retarget(&g_dev, g_stepgen.max_pps + 1u));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_retarget(&g_dev, g_stepgen.max_pps + 1U));
     TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_retarget(&g_dev, 0));
-    TEST_ASSERT_EQUAL(0u, g_gen.retargets);
+    TEST_ASSERT_EQUAL(0U, g_gen.retargets);
 }
 
 /* ── Halt ───────────────────────────────────────────────────────────────── */
@@ -672,7 +672,7 @@ static void test_a_stepgen_takes_the_step_pin(void)
     setup_ready(CFG_GCONF);
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_write(&g_dev, TMC2209_LINE_STEP, true));
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_STEP]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_STEP]);
 
     /* Reading is refused for the same reason: the lines backend is not driving
        the pin, so the level it reports is not the one the contract promises. */

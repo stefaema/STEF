@@ -186,7 +186,7 @@ static void test_names_are_present_and_unknown_is_marked(void)
 
 static void test_chopconf_reset_decodes_to_256_microsteps_interpolated(void)
 {
-    tmc2209_chopconf_t c = tmc2209_chopconf_decode(0x10000053u);
+    tmc2209_chopconf_t c = tmc2209_chopconf_decode(0x10000053U);
     TEST_ASSERT_EQUAL_UINT8(3, c.toff);
     TEST_ASSERT_EQUAL_UINT8(5, c.hstrt);
     TEST_ASSERT_EQUAL_UINT8(0, c.hend);
@@ -197,7 +197,7 @@ static void test_chopconf_reset_decodes_to_256_microsteps_interpolated(void)
 
 static void test_ihold_irun_reset_decodes(void)
 {
-    tmc2209_ihold_irun_t i = tmc2209_ihold_irun_decode(0x00071703u);
+    tmc2209_ihold_irun_t i = tmc2209_ihold_irun_decode(0x00071703U);
     TEST_ASSERT_EQUAL_UINT8(3,  i.ihold);
     TEST_ASSERT_EQUAL_UINT8(23, i.irun);
     TEST_ASSERT_EQUAL_UINT8(7,  i.iholddelay);
@@ -269,7 +269,7 @@ static void test_mres_maps_to_microsteps(void)
 
 static void test_drv_status_decodes_fields(void)
 {
-    tmc2209_drv_status_t s = tmc2209_drv_status_decode(0x80170002u);
+    tmc2209_drv_status_t s = tmc2209_drv_status_decode(0x80170002U);
     TEST_ASSERT_TRUE(s.ot);
     TEST_ASSERT_FALSE(s.otpw);
     TEST_ASSERT_EQUAL_UINT8(0x17, s.cs_actual);
@@ -280,7 +280,7 @@ static void test_drv_status_decodes_fields(void)
    carried through rather than recognised. */
 static void test_ioin_decodes_version(void)
 {
-    tmc2209_ioin_t i = tmc2209_ioin_decode(0x5A000000u | (1u << 6));
+    tmc2209_ioin_t i = tmc2209_ioin_decode(0x5A000000U | (1U << 6));
     TEST_ASSERT_EQUAL_HEX8(0x5A, i.version);
     TEST_ASSERT_TRUE(i.pdn_uart);
     TEST_ASSERT_FALSE(i.enn);
@@ -294,46 +294,46 @@ static void test_vactual_round_trips_signed(void)
     TEST_ASSERT_EQUAL_INT32(-1000, tmc2209_vactual_decode(tmc2209_vactual_encode(-1000)));
 
     /* The field is 24 bits, so encode must not leak sign bits into 31..24. */
-    TEST_ASSERT_EQUAL_HEX32(0x00FFFFFFu, tmc2209_vactual_encode(-1));
+    TEST_ASSERT_EQUAL_HEX32(0x00FFFFFFU, tmc2209_vactual_encode(-1));
 }
 
 /* Both phases are 9-bit two's complement, which is the awkward part and the
    only reason these registers get decoders at all. */
 static void test_mscuract_sign_extends_both_phases(void)
 {
-    tmc2209_mscuract_t m = tmc2209_mscuract_decode(0u);
+    tmc2209_mscuract_t m = tmc2209_mscuract_decode(0U);
     TEST_ASSERT_EQUAL_INT16(0, m.cur_a);
     TEST_ASSERT_EQUAL_INT16(0, m.cur_b);
 
     /* Peak positive on A (+255), peak negative on B (-255). */
-    m = tmc2209_mscuract_decode(0x00FFu | (0x101u << 16));
+    m = tmc2209_mscuract_decode(0x00FFU | (0x101U << 16));
     TEST_ASSERT_EQUAL_INT16(255,  m.cur_a);
     TEST_ASSERT_EQUAL_INT16(-255, m.cur_b);
 
     /* Quarter cycle apart: A at zero crossing, B at -1. */
-    m = tmc2209_mscuract_decode(0x0000u | (0x1FFu << 16));
+    m = tmc2209_mscuract_decode(0x0000U | (0x1FFU << 16));
     TEST_ASSERT_EQUAL_INT16(0,  m.cur_a);
     TEST_ASSERT_EQUAL_INT16(-1, m.cur_b);
 }
 
 static void test_pwm_scale_and_auto_decode(void)
 {
-    tmc2209_pwm_scale_t p = tmc2209_pwm_scale_decode(0x01FF0080u);
+    tmc2209_pwm_scale_t p = tmc2209_pwm_scale_decode(0x01FF0080U);
     TEST_ASSERT_EQUAL_UINT8(0x80, p.sum);
     TEST_ASSERT_EQUAL_INT16(-1, p.automatic);   /* signed, unlike sum */
 
-    tmc2209_pwm_auto_t a = tmc2209_pwm_auto_decode(0x000E0024u);
+    tmc2209_pwm_auto_t a = tmc2209_pwm_auto_decode(0x000E0024U);
     TEST_ASSERT_EQUAL_UINT8(0x24, a.ofs_auto);
     TEST_ASSERT_EQUAL_UINT8(0x0E, a.grad_auto);
 }
 
 static void test_gstat_round_trips(void)
 {
-    tmc2209_gstat_t g = tmc2209_gstat_decode(0x5u);
+    tmc2209_gstat_t g = tmc2209_gstat_decode(0x5U);
     TEST_ASSERT_TRUE(g.reset);
     TEST_ASSERT_FALSE(g.drv_err);
     TEST_ASSERT_TRUE(g.uv_cp);
-    TEST_ASSERT_EQUAL_HEX32(0x5u, tmc2209_gstat_encode(&g));
+    TEST_ASSERT_EQUAL_HEX32(0x5U, tmc2209_gstat_encode(&g));
 }
 
 void run_reg_tests(void)
