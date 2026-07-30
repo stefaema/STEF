@@ -16,6 +16,7 @@ static size_t seal(rpc_buf_t *b, size_t payload_len)
     size_t   body = RPC_HDR_LEN + payload_len;
     uint16_t crc  = crc16_ccitt(b->bytes, body);
 
+    /* Add CRC bytes to the now sealed frame */
     b->bytes[body]     = (uint8_t)(crc & 0xFFU);
     b->bytes[body + 1] = (uint8_t)((crc >> 8) & 0xFFU);
 

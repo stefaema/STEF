@@ -34,10 +34,10 @@ static const char *TAG = "stef";
 void app_main(void)
 {
     /*
-     * The composition root composes. The bridges in rpc_*.c are where the two
-     * libraries meet; this is the only file that decides which of them this
-     * image installs, and it is the only one nothing else calls. Everything
-     * else offers a capability. This chooses.
+     * The composition root composes. `rpc_bind` is where the two libraries
+     * meet; this is the only file that decides which of them this image
+     * installs, and it is the only one nothing else calls. Everything else
+     * offers a capability. This chooses.
      */
     rpc_register(RPC_NS_SYS, rpc_sys_methods, RPC_SYS_COUNT);
     rpc_register(RPC_NS_PASSTHROUGH, rpc_passthrough_methods, RPC_PT_COUNT);

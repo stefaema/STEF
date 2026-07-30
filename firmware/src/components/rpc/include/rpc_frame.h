@@ -82,7 +82,11 @@ size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms,
 /* ── Reading ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Verifies the CRC and points @p out at the header and the payload.
+ * @brief Says whether @p buf holds a frame, and where its parts are.
+ *
+ * Nothing is copied or decoded. @p out borrows @p buf, so it is valid only
+ * while that buffer holds still, and a payload can become a struct by a cast the
+ * caller could make.
  *
  * @param buf  a decoded frame, CRC included. Must be aligned, which is what
  *             @ref rpc_buf_t is for: the header is read through its own type

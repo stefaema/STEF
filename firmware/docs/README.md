@@ -1,21 +1,55 @@
 # Firmware
 
-La capa de Firmware del proyecto existe para abstraer el manejo fino de los drivers TMC2209 (señales digitales, datagramas UART de comunicación y la generación de pulsos de avance paso a paso). La idea principal es otorgarle una herramienta a la PC Host que le permita controlar de forma simple e inteligente al sistema de transporte del material fílmico.
+La capa de Firmware del proyecto existe para abstraer el manejo fino de los drivers TMC2209 (señales digitales, datagramas UART de comunicación y la generación de pulsos de avance paso a paso) mediante un microcontrolador y un protocolo de pasaje de mensajes acordado con la PC Host. De esta forma, la idea principal es otorgarle una herramienta a la computadora digitalizadora que le permita controlar al sistema de transporte del material fílmico.
 
 ## Arquitectura
 
-El módulo presenta tres componentes:
+El firmware son dos librerías y la aplicación que las usa.
 
-- Comunicación con el Driver (`tmc2209`).
-- Comunicación con la PC (`rpc`).
-- Código principal de orquestación e interfaces (`main`).
+Las dos librerías se escribieron para separar responsabilidades y brindar
+herramientas que se puedan utilizar en otros proyectos.
+`tmc2209` sirve para cualquier cosa que mueva un motor paso a paso con ese
+driver, y `rpc` para cualquier cosa que llame funciones desde una PC por un
+cable. Ninguna de las dos incluye ESP-IDF ni nombra un pin.
+
+Por otro lado, la capa de aplicación que se apoya sobre ellas existe solo
+para transportar film: qué drivers hay, en qué pines, qué se les puede pedir, y en qué orden arranca todo.
+
+A esa parte la llamamos _**filmware**_: el firmware menos las librerías.
+
+Este filmware se desarrolla en tres partes:
+
+| Parte | Qué aporta |
+| --- | --- |
+| `tmc2209_bind` | Los backends de la librería cumplidos contra periféricos reales, y la tabla que dice qué drivers hay y en qué pines. |
+| `rpc_bind` | El enlace por USB, y las tablas que atan cada número de método a una función de este firmware. |
+| `main` | Qué se instala, y en qué orden. |
 
 ```mermaid
 flowchart LR
-    PC[PC Host] <-->|USB| RPC[rpc<br/>trama, CRC, despacho]
-    RPC <--> MAIN[main<br/>tabla de placa, backends,<br/>métodos RPC]
-    MAIN <--> TMC[tmc2209<br/>registros, líneas, pasos]
-    MAIN -->|UART / GPIO / RMT| HW[TMC2209 físico]
+    PC[PC Host]
+    HW[TMC2209 físico]
+
+    subgraph film["filmware"]
+        direction TB
+        M["main<br/>qué se instala y en qué orden"]
+        RB["rpc_bind<br/>enlace USB, tablas de métodos"]
+        TB["tmc2209_bind<br/>tabla de placa, backends"]
+        M <-.-> RB
+        M <-.-> TB
+    end
+
+    subgraph libs["librerías, sin nada de este proyecto"]
+        direction TB
+        RPC["rpc<br/>trama, CRC, despacho"]
+        TMC["tmc2209<br/>registros, líneas, pasos"]
+    end
+
+    PC <-->|USB| RB
+    RB <--> RPC
+    RB --> TB
+    TB <--> TMC
+    TB -->|UART / GPIO / RMT| HW
 ```
 
 ## Comunicación con el Driver: Librería `tmc2209`
@@ -34,9 +68,7 @@ La librería cubre las tres, y las mantiene lo más separadas posible: la única
 - `tmc2209_lines_t`: leer y escribir un nivel en un pin, corresponde a Líneas de Control.
 - `tmc2209_stepgen_t`: emitir un tren de pulsos, corresponde a Pulsos en STEP.
 
-Entonces, quien los implementa contra periféricos reales es otro componente, `main`. Debido a esta abstracción del backend, podemos correr los tests unitarios en una PC host o incluso portear el Firmware a otro dispositivo (por ejemplo, una Raspberry Pi) simplemente adaptando las necesidades del backend.
-
-Una consecuencia de diseño que atraviesa todo lo que sigue: la librería informa, nunca decide.
+Entonces, quien los implementa contra periféricos será la aplicación que utilice la librería. Debido a esta abstracción del backend, podemos correr los tests unitarios en una PC host o incluso portear el Firmware a otro dispositivo (por ejemplo, una Raspberry Pi) simplemente adaptando las necesidades del backend.
 
 ### Bus UART
 
@@ -46,12 +78,13 @@ Luego de un análisis de los mismos, se encontró que cada registro entra en una
 
 | Clasificación | Registros | Qué implica |
 | --- | --- | --- |
-| **A. Solo escritura del lado del driver, útiles para saber del lado de la librería** | `SLAVECONF`, `IHOLD_IRUN`, `TPOWERDOWN`, `TPWMTHRS`, `TCOOLTHRS`, `VACTUAL`, `SGTHRS`, `COOLCONF` | El driver no contesta una lectura hacia estos registros. El valor lo puso el firmware, así que el firmware es el único que lo sabe. Recordar la copia como variable es la única forma de que el dato exista en la librería. |
+| **A. Solo escritura del lado del driver, útiles si la librería los pudiese leer** | `SLAVECONF`, `IHOLD_IRUN`, `TPOWERDOWN`, `TPWMTHRS`, `TCOOLTHRS`, `VACTUAL`, `SGTHRS`, `COOLCONF` | El driver no contesta una lectura hacia estos registros. Sin embargo, como el valor lo modifica solo el firmware, recordar el último valor modificado a modo de caché sería una vía perfecta para poder simular la lectura de los mismos. |
 | **B. Escritura y lectura del lado del driver, pero el firmware los modifica** | `GCONF`, `CHOPCONF` | A estos registros podríamos leerlos preguntándole al driver, pero una copia local serviría para ahorrar el datagrama de consulta y de respuesta, y como el firmware mismo es el que los modifica, no nos tenemos que preocupar demasiado porque el valor local se haya invalidado con el tiempo. |
-| **C. De fábrica, difícilmente modificados** | `FACTORY_CONF`, `OTP_READ`, `PWMCONF` | Nadie los escribe. Los dos primeros traen el trim y los fusibles de esa pieza en particular; `PWMCONF` el driver lo deja escribir, pero este diseño no lo toca porque con autoscale el ajuste fino aparece en `PWM_SCALE` y `PWM_AUTO`. Si nadie escribe, el valor no cambia nunca: alcanza con leerlos una vez. |
+| **C. De fábrica, difícilmente modificados** | `FACTORY_CONF`, `OTP_READ`, `PWMCONF` | Nadie los escribe. Los dos primeros traen el trim de reloj y los fusibles de esa pieza en particular; `PWMCONF` el driver lo deja escribir, pero esta versión de la librería no lo prioriza. Si nadie escribe, el valor no cambia nunca: alcanza con leerlos una vez. |
 | **D. Modificación fuera del firmware** | `GSTAT`, `IFCNT`, `IOIN`, `TSTEP`, `SG_RESULT`, `MSCNT`, `DRV_STATUS`, `MSCURACT`, `PWM_SCALE`, `PWM_AUTO` | Los escribe el driver solamente: `GSTAT` late fallas por hardware, `IFCNT` se incrementa solo, `IOIN` refleja pines, `TSTEP` es una medición, `MSCNT` avanza con cada paso. Una copia sería falsa apenas se guarde, por lo que el acceso al registro deberá pasar por el driver cada vez. |
 
-> Además, se ignora OTP_PROG ya que esta librería no explora en profundidad esa característica actualmente.
+> Además, se ignora OTP_PROG ya que esta librería no explora en profundidad esa característica actualmente,
+> debido a que es una operación irreversible.
 
 Las dos primeras clasificaciones llegan a la misma implicación, guardar el valor y servir las lecturas desde ahí, así que se agrupan como si fuesen registros propios de la librería. De ahí salen las tres **clases** que maneja:
 

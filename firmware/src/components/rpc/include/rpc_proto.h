@@ -6,8 +6,8 @@
  * properties of the transport.
  *
  * Nothing in this file may include anything but stdint and assert. It is
- * compiled once for this firmware and again for the other side, which is what
- * binds the two to one definition.
+ * compiled for every side that speaks this RPC protocol, which is what
+ * binds all to one definition.
  *
  * ## The layout rules, which hold for every struct on this wire
  *

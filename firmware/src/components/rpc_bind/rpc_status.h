@@ -7,8 +7,8 @@
  * wire's values are fixed by the protocol, the library's by its own enum, and
  * neither is entitled to move the other.
  *
- * Both are `main`'s to know, which is why the correspondence is written down
- * here. A renumbering, not a translation.
+ * Both are `rpc_bind`'s to know, which is why the correspondence is written
+ * down here. A renumbering, not a translation.
  *
  * Portable by discipline: this file and the other bridges include the two
  * libraries and nothing from ESP-IDF, which is what lets `test/unit` compile

@@ -6,7 +6,7 @@
  * is handed, and `dev_main.c` is where the handing happens.
  *
  * Each table is where its namespace's payload sizes are taken, since `sizeof`
- * is evaluated here in `main` where those structs are visible. The component
+ * is evaluated here in `rpc_bind` where those structs are visible. The component
  * receives integers and still names no type of ours.
  *
  * Split by namespace and not by file for a reason: `sys` reaches into ESP-IDF

@@ -2,34 +2,35 @@
  * @file rpc_dispatch.h
  * @brief Turns a namespace and a method number into a call.
  *
- * The link layer knows how to get a frame off the wire and how to put one
- * back; it must not also know what any method means. This is the seam.
+ * This RPC frame names the procedure with two numbers, a namespace and an index
+ * within it. Turning those into a call is the whole of this.
  *
- * Namespaces are **registered**, not compiled in. A handler knows a device, a
- * peripheral or a subsystem, and this component knows none of those: it moves
- * frames. So the caller registers what it serves, and a test registers only
- * what it is testing, without either of them having to be named here.
+ * Namespaces are **registered**, not compiled in. A switch over method numbers
+ * would mean naming every handler here, and naming a handler means linking
+ * against everything that handler reaches for. Registration keeps all of it
+ * out: a caller installs the table it serves, a test installs only what it is
+ * testing, and neither has to appear in this file.
  *
  * ## Why the table carries sizes
  *
  * A handler receives its arguments as a struct, so something has to establish
  * that the payload really is that long before the first field is touched. The
- * length lives in the table beside the function and dispatch checks it there,
- * once, for every method at once.
+ * length lives in the table beside the function, and it is checked here, the
+ * same way for every method.
  *
  * `sizeof` is evaluated where the table is defined, which is wherever the
- * payload structs are visible. What arrives here is an integer, so this
- * component still names no type belonging to any handler.
+ * payload structs are visible. What arrives here is an integer, so no type
+ * belonging to a handler is named in this file either.
  *
  * ## The two shapes
  *
- * Most methods take and return a fixed struct, and those are the short form:
- * one exact length in, one exact length out.
+ * A method whose payloads are both fixed takes the short form: one exact
+ * length in, one exact length out.
  *
- * The handful that carry a batch, a byte string or a list end in a flexible
- * array member, and their length is settled by a count inside the payload that
- * no table can see. Those get the long form, where @c args_len is a minimum,
- * @c ret_len is a maximum, and the handler is handed the real lengths.
+ * A payload ending in a flexible array member has no length a table can hold,
+ * because the count that settles it travels inside the payload. Those take the
+ * long form, where @c args_len is a minimum, @c ret_len is a maximum, and the
+ * handler is handed the real lengths.
  */
 
 #ifndef RPC_DISPATCH_H

@@ -17,7 +17,8 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror -g -O1)
 
 set(TMC2209_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/tmc2209)
 set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/rpc)
-set(MAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/main)
+set(RPC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/rpc_bind)
+set(TMC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/tmc2209_bind)
 
 if(NOT DEFINED UNITY_DIR)
     if(DEFINED ENV{IDF_PATH} AND EXISTS $ENV{IDF_PATH}/components/unity/unity/src/unity.c)
@@ -68,13 +69,16 @@ add_executable(unit_tests
     test_rpc.c
     fake_devices.c
     fake_watchdog.c
-    # The bridges. They live in main/ because they are where the two libraries
-    # meet, and they include nothing from ESP-IDF, which is what lets them be
-    # compiled here against the mock driver rather than against a cable.
-    ${MAIN_DIR}/rpc_raw.c
-    ${MAIN_DIR}/rpc_passthrough.c
-    ${MAIN_DIR}/rpc_status.c)
-target_include_directories(unit_tests PRIVATE ${MAIN_DIR})
+    # The bridges. They include nothing from ESP-IDF, which is what lets them be
+    # compiled here against the mock driver rather than against a cable. The two
+    # that do, rpc_sys.c and rpc_link.c, stay out.
+    ${RPC_BIND_DIR}/rpc_raw.c
+    ${RPC_BIND_DIR}/rpc_passthrough.c
+    ${RPC_BIND_DIR}/rpc_status.c)
+# rpc_status.h is private to rpc_bind, so both of its directories are named.
+# devices.h and watchdog.h come from tmc2209_bind; the tests link fakes for both.
+target_include_directories(unit_tests PRIVATE
+    ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include)
 target_link_libraries(unit_tests PRIVATE tmc2209 rpc unity)
 
 enable_testing()

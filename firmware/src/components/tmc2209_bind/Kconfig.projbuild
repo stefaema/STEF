@@ -1,0 +1,78 @@
+menu "STEF Board"
+
+    comment "Single-wire UART to every TMC2209"
+
+    config STEF_TMC_UART_NUM
+        int "UART peripheral"
+        range 1 2
+        default 1
+        help
+            UART carrying the TMC2209 link. Not 0: that one belongs to the
+            console on boards that still have one.
+
+    config STEF_TMC_UART_TX_GPIO
+        int "UART TX GPIO"
+        range 0 48
+        default 17
+        help
+            Goes to PDN_UART through the series resistor. TX and RX are tied
+            together at the driver, so the ESP32 hears its own bytes back.
+            That echo is expected: it is what the library checks to notice a
+            collision on the wire.
+
+    config STEF_TMC_UART_RX_GPIO
+        int "UART RX GPIO"
+        range 0 48
+        default 18
+        help
+            Goes to PDN_UART directly.
+
+    config STEF_TMC_BAUD
+        int "UART baud"
+        range 9600 500000
+        default 115200
+        help
+            The TMC2209 recovers the rate from the sync byte, so this is the
+            ESP32's choice rather than the driver's. 115200 is unambiguous on
+            a hand-wired board; raise it once the carrier board exists.
+
+    comment "Driver 0"
+
+    config STEF_DRV0_NAME
+        string "Name"
+        default "capstan"
+        help
+            What the PC calls this driver. Name it after what it moves, so the
+            name survives a rewiring.
+
+    config STEF_DRV0_ADDR
+        int "Address (MS1/MS2 straps)"
+        range 0 3
+        default 0
+
+    config STEF_DRV0_ENN_GPIO
+        int "ENN GPIO"
+        range -1 48
+        default 4
+        help
+            Active low: high disables the power stage. -1 if not wired, which
+            makes every call naming it a clean refusal.
+
+    config STEF_DRV0_DIR_GPIO
+        int "DIR GPIO"
+        range -1 48
+        default 5
+
+    config STEF_DRV0_STEP_GPIO
+        int "STEP GPIO"
+        range -1 48
+        default 6
+
+    config STEF_DRV0_DIAG_GPIO
+        int "DIAG GPIO"
+        range -1 48
+        default 7
+        help
+            Input. Driver error or StallGuard, depending on GCONF.
+
+endmenu
