@@ -6,7 +6,8 @@
         "detachhead.basedpyright",
         "charliermarsh.ruff",
         "ms-python.python",
-        "ms-python.debugpy"
+        "ms-python.debugpy",
+        "myriad-dreamin.tinymist"
     ],
     // cpptools ships a second IntelliSense engine that fights clangd over the
     // same files, and its Open VSX build lags upstream anyway.
