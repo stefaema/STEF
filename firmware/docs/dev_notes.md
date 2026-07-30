@@ -25,26 +25,13 @@ fcntl(fileno(stdin), F_SETFL, 0);
 ### ISR + Callback for stepgen
 
 At some point a change may be done to the stepgen module where on the event of
-finishing a run, it should interrupt and act upon a callback. [This will be
-addressed by the user, LLMs ignore]
+finishing a run, it should interrupt and act upon a callback.
 
 ## Retry classification
-
-`read_retrying` decides retryability with a deny-list, so any error code added
-later is retried by default. An allow-list predicate in tmc2209_err
-(`tmc2209_err_is_transient`) would flip that default and give `write_retrying`,
+ tmc2209_err
+(`tmc2209_err_is_transient`) would flip that default and give write-retrying,
 which currently retries everything including `ERR_ARG`, something to filter on.
 
-## Refactor
-
-I want to refactor main II readme.md entry
-
-## CRC16
-RPC uses crc16, overhead? driver uses crc8. May be because he's dumber than an ESP32 and everything is ok.
-
-## Status band
-
-`rpc_dispatch` could reject a handler status at or above `RPC_STATUS_TRANSPORT_BASE`; the static_assert only covers the declared vocabulary, not a literal `return 241;`.
 
 ## About Device
 
