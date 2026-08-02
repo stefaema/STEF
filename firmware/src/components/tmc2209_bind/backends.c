@@ -1,5 +1,6 @@
 #include "backends.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -7,8 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
-#define BACKENDS_MAX_DRIVERS 4  /**< the address field is two bits wide */
-#define UART_RX_BUF          256
+#define UART_RX_BUF 256
 
 static const char *TAG = "backends";
 
@@ -20,11 +20,10 @@ static tmc2209_uart_t s_uart_backend;
 static tmc2209_lines_t      s_lines[BACKENDS_MAX_DRIVERS];
 static const board_driver_t *s_wiring[BACKENDS_MAX_DRIVERS];
 
-/* ── The wire ───────────────────────────────────────────────────────────── */
+/* ── UART ───────────────────────────────────────────────────────────── */
 
 /*
- * The backend reports bytes moved, never meaning. A short count is a timeout
- * and the library decides what that means; here it is just a number.
+ * The backend reports bytes moved, never meaning.
  */
 
 static int uart_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_ms)
@@ -36,11 +35,7 @@ static int uart_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
         return sent;
     }
 
-    /*
-     * Wait for the last bit to leave. The line is half duplex, so returning
-     * while bytes are still in the FIFO would have the caller listening for a
-     * reply during its own transmission.
-     */
+    /* Wait for the last bit to leave. */
     if (uart_wait_tx_done(s_uart_num, pdMS_TO_TICKS(timeout_ms)) != ESP_OK) {
         return -1;
     }
@@ -57,14 +52,39 @@ static int uart_rx(void *ctx, uint8_t *buf, size_t len, uint32_t timeout_ms)
 static void uart_purge_rx(void *ctx)
 {
     (void)ctx;
-    uart_flush_input(s_uart_num);
+
+    uint8_t scrap[32];
+    for (int i = 0; i < 16; i++) {
+        if (uart_read_bytes(s_uart_num, scrap, sizeof scrap, 0) <= 0) {
+            return;
+        }
+    }
 }
+
+#if CONFIG_STEF_TMC_UART_TRACE
+#define TRACE_MAX_BYTES 32
+
+static void uart_trace(void *ctx, bool outbound, const uint8_t *buf, size_t len)
+{
+    (void)ctx;
+
+    char   hex[(3 * TRACE_MAX_BYTES) + 1];
+    size_t shown = (len < TRACE_MAX_BYTES) ? len : TRACE_MAX_BYTES;
+    size_t n     = 0;
+
+    for (size_t i = 0; i < shown; i++) {
+        n += (size_t)snprintf(&hex[n], sizeof(hex) - n, "%02X ", buf[i]);
+    }
+    hex[n] = '\0';
+
+    ESP_LOGI(TAG, "%s %u: %s", outbound ? "tx" : "rx", (unsigned)len,
+             (len > 0) ? hex : "(-)");
+}
+#endif
 
 /* ── The pins ───────────────────────────────────────────────────────────── */
 
-/* Which GPIO carries a role on this driver, or BOARD_PIN_NONE. The library has
- * already refused an unwired line by the time this is reached, so this only
- * ever answers for lines the table declared. */
+/* Which GPIO carries a role on this driver, or BOARD_PIN_NONE. */
 static int pin_of(const board_driver_t *d, tmc2209_line_t line)
 {
     switch (line) {
@@ -85,8 +105,7 @@ static int lines_read(void *ctx, tmc2209_line_t line)
         return -1;
     }
 
-    /* Outputs are configured INPUT_OUTPUT, so this reads back the level being
-     * driven rather than the level last asked for. */
+    /* Outputs are configured INPUT_OUTPUT, so this reads back the level being driven */
     return gpio_get_level((gpio_num_t)pin);
 }
 
@@ -99,11 +118,10 @@ static int lines_write(void *ctx, tmc2209_line_t line, bool level)
         return -1;
     }
 
-    return gpio_set_level((gpio_num_t)pin, level ? 1u : 0u) == ESP_OK ? 0 : -1;
+    return gpio_set_level((gpio_num_t)pin, level ? 1U : 0U) == ESP_OK ? 0 : -1;
 }
 
-/* The mask the library checks before it calls us at all. A pin left out of the
- * table is a line this board does not connect, and it is refused there. */
+/* The mask the library checks before it calls a write or read. */
 static uint8_t wired_mask(const board_driver_t *d)
 {
     uint8_t wired = 0;
@@ -124,11 +142,7 @@ static uint8_t wired_mask(const board_driver_t *d)
     return wired;
 }
 
-/*
- * The resting level is set before the pin becomes an output, because between
- * those two calls the pin drives whatever it happens to hold. On ENN that
- * would be a power stage enabling itself during boot.
- */
+/* The resting level is set before the pin becomes an output.*/
 static esp_err_t configure_output(int pin, uint32_t resting)
 {
     esp_err_t err = gpio_set_level((gpio_num_t)pin, resting);
@@ -157,7 +171,7 @@ static esp_err_t configure_input(int pin)
     gpio_config_t cfg = {
         .pin_bit_mask = 1ULL << (unsigned)pin,
         .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_ENABLE, /* DIAG is open-drain on some boards */
+        .pull_up_en   = GPIO_PULLUP_ENABLE, /* DIAG is open-drain */
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
@@ -169,8 +183,7 @@ static esp_err_t configure_driver_pins(const board_driver_t *d)
 {
     esp_err_t err = ESP_OK;
 
-    /* ENN rests high: disabled. The one output whose resting level is not 0,
-     * and the reason this function takes it as a parameter at all. */
+    /* ENN is active low. */
     if (d->enn != BOARD_PIN_NONE) {
         err = configure_output(d->enn, 1);
     }
@@ -236,6 +249,9 @@ esp_err_t backends_init(const board_t *board)
         .tx       = uart_tx,
         .rx       = uart_rx,
         .purge_rx = uart_purge_rx,
+#if CONFIG_STEF_TMC_UART_TRACE
+        .trace    = uart_trace,
+#endif
         .ctx      = NULL,
         /* TX and RX meet at PDN_UART, so every byte we send comes back. */
         .echoes   = true,
@@ -260,9 +276,16 @@ esp_err_t backends_init(const board_t *board)
         s_lines[i]  = (tmc2209_lines_t){
             .read  = lines_read,
             .write = lines_write,
-            .ctx   = (void *)(uintptr_t)d,
+            .ctx   = (void *)d,
             .wired = wired_mask(d),
         };
+    }
+
+    /* After the pins, because both peripherals behind a pulse source attach to
+       a pad that has to already exist and already rest low. */
+    err = backends_stepgen_init(board);
+    if (err != ESP_OK) {
+        return err;
     }
 
     s_ready = true;

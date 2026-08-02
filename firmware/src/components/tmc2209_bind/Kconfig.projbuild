@@ -13,7 +13,7 @@ menu "STEF Board"
     config STEF_TMC_UART_TX_GPIO
         int "UART TX GPIO"
         range 0 48
-        default 17
+        default 42
         help
             Goes to PDN_UART through the series resistor. TX and RX are tied
             together at the driver, so the ESP32 hears its own bytes back.
@@ -23,7 +23,7 @@ menu "STEF Board"
     config STEF_TMC_UART_RX_GPIO
         int "UART RX GPIO"
         range 0 48
-        default 18
+        default 41
         help
             Goes to PDN_UART directly.
 
@@ -35,6 +35,33 @@ menu "STEF Board"
             The TMC2209 recovers the rate from the sync byte, so this is the
             ESP32's choice rather than the driver's. 115200 is unambiguous on
             a hand-wired board; raise it once the carrier board exists.
+
+    config STEF_TMC_UART_TRACE
+        bool "Log every byte on the driver bus"
+        default y
+        help
+            Logs what went out and what came back for every transaction, as a
+            log frame the PC receives like any other.
+
+            The question a silent bus raises is whether anything came back at
+            all, and no status code answers it: a bad echo says the bytes did
+            not match, not what did arrive. Costs a log line per datagram, so
+            turn it off once the wiring is settled.
+
+    comment "Pulse generation"
+
+    config STEF_STEPGEN_MAX_PPS
+        int "Fastest rate a driver may be asked for, in pulses per second"
+        range 1000 300000
+        default 100000
+        help
+            Not a limit of the RMT peripheral, which reaches further. It is
+            what the ramp arithmetic sustains with every driver on the board
+            running at once, since each one refills its channel from an
+            interrupt. A rate above this is refused rather than clamped: a move
+            that ran slower than believed is a position error.
+
+            Pulses, not steps. One full step holds up to 256 of them.
 
     comment "Driver 0"
 
@@ -49,29 +76,36 @@ menu "STEF Board"
         int "Address (MS1/MS2 straps)"
         range 0 3
         default 0
+        help
+            MS1 is bit 0 and MS2 is bit 1. Both pins carry internal pull-downs,
+            so a driver whose straps are left open answers on 0.
 
     config STEF_DRV0_ENN_GPIO
         int "ENN GPIO"
         range -1 48
-        default 4
+        default 40
         help
             Active low: high disables the power stage. -1 if not wired, which
             makes every call naming it a clean refusal.
 
+            Wants a pull-up to VIO as well. The pin carries no internal one, so
+            the level while the ESP32 is in reset or being flashed is whatever
+            the board gives it.
+
     config STEF_DRV0_DIR_GPIO
         int "DIR GPIO"
         range -1 48
-        default 5
+        default -1
 
     config STEF_DRV0_STEP_GPIO
         int "STEP GPIO"
         range -1 48
-        default 6
+        default -1
 
     config STEF_DRV0_DIAG_GPIO
         int "DIAG GPIO"
         range -1 48
-        default 7
+        default -1
         help
             Input. Driver error or StallGuard, depending on GCONF.
 

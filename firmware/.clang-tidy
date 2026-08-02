@@ -1,0 +1,19 @@
+Checks: >
+  -*,
+  bugprone-*,
+  readability-*,
+  performance-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-braces-around-statements,
+  -bugprone-easily-swappable-parameters,
+  -readability-implicit-bool-conversion
+
+CheckOptions:
+  readability-function-cognitive-complexity.IgnoreMacros: true
+
+HeaderFilterRegex: '.*/firmware/(src/components|test/unit)/.*'
+
+WarningsAsErrors: ''
+
+FormatStyle: none

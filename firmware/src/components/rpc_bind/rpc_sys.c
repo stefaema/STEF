@@ -6,7 +6,6 @@
 #include "esp_timer.h"
 #include "rpc_api.h"
 #include "tmc2209.h"
-#include "watchdog.h"
 
 /* Copies @p src into a fixed field and zeroes the rest of it. The tail matters:
  * the field travels whole, so anything left in it from a previous reply would
@@ -53,11 +52,10 @@ static rpc_status_t sys_state(const void *args, void *ret)
     rpc_sys_state_ret *out   = ret;
     bool               ready = devices_ready();
 
-    out->uptime_ms      = (uint32_t)(esp_timer_get_time() / 1000);
-    out->watchdog_trips = watchdog_trips();
-    out->device_count   = (uint16_t)devices_count();
-    out->mode           = (uint8_t)(ready ? RPC_MODE_IDLE : RPC_MODE_FAULT);
-    out->ready          = ready ? 1U : 0U;
+    out->uptime_ms    = (uint32_t)(esp_timer_get_time() / 1000);
+    out->device_count = (uint16_t)devices_count();
+    out->mode         = (uint8_t)(ready ? RPC_MODE_IDLE : RPC_MODE_FAULT);
+    out->ready        = ready ? 1U : 0U;
 
     return RPC_OK;
 }
@@ -102,5 +100,7 @@ static rpc_status_t sys_devices(const void *args, size_t args_len,
 const rpc_method_t rpc_sys_methods[RPC_SYS_COUNT] = {
     [RPC_SYS_VERSION] = RPC_METHOD_GET(sys_version),
     [RPC_SYS_STATE]   = RPC_METHOD_GET(sys_state),
-    [RPC_SYS_DEVICES] = RPC_METHOD_VAR_GET(sys_devices),
+    [RPC_SYS_DEVICES] = RPC_METHOD_VAR_GET(
+        sys_devices,
+        sizeof(rpc_sys_devices_ret) + (RPC_MAX_DEVICES * sizeof(rpc_dev_info_t))),
 };

@@ -41,6 +41,8 @@
 /**
  * What the two ends check before trusting each other. Bump on any change to a
  * payload layout, a method number, or a status value. Bounded to `sys.version`.
+ *
+ * Only bump on a dev to main merge. Nothing in between has shipped.
  */
 #define RPC_PROTOCOL_VERSION 1
 
@@ -149,12 +151,11 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
  */
 typedef struct {
     uint32_t uptime_ms;
-    uint32_t watchdog_trips; /**< a trip is the firmware having stopped the machine itself */
     uint16_t device_count;
-    uint8_t  mode;           /**< @ref rpc_mode_t */
+    uint8_t  mode;  /**< @ref rpc_mode_t */
     uint8_t  ready;
 } rpc_sys_state_ret;
-RPC_WIRE_SIZE(rpc_sys_state_ret, 12);
+RPC_WIRE_SIZE(rpc_sys_state_ret, 8);
 
 /** @brief One driver, as `sys.devices` reports it. */
 typedef struct {
@@ -439,12 +440,10 @@ RPC_WIRE_SIZE(rpc_raw_is_enabled_ret, 4);
 /* Motion. */
 
 /**
- * @brief A run, and the deadline it must be kept alive under.
+ * @brief A run, exactly as the driver library takes it.
  *
- * The deadline is a parameter of the move and not a setting, because a setting
- * gets configured once by whoever was last debugging and then governs a run
- * nobody was watching. 0 asks for the default; there is no value that means
- * off, which is the point.
+ * A run outlives the call that started it and nothing on the board ends it on
+ * the caller's behalf, so whoever starts one owns stopping it.
  */
 typedef struct {
     uint8_t  idx;
@@ -455,9 +454,8 @@ typedef struct {
     uint32_t pullin_pps;  /**< rate of the first and last pulse */
     uint32_t cruise_pps;  /**< rate held between the ramps */
     uint32_t accel_pps_s; /**< slope of both ramps */
-    uint32_t deadline_ms;
 } rpc_raw_move_args;
-RPC_WIRE_SIZE(rpc_raw_move_args, 24);
+RPC_WIRE_SIZE(rpc_raw_move_args, 20);
 
 typedef struct {
     uint8_t  idx;

@@ -17,8 +17,6 @@
 #include <string.h>
 
 #include "fake_devices.h"
-
-unsigned fake_watchdog_arms(void);
 #include "mock_tmc2209.h"
 #include "rpc_api.h"
 #include "rpc_dispatch.h"
@@ -372,7 +370,7 @@ void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)
     TEST_ASSERT_EQUAL(RPC_NO_ACK, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
 }
 
-static rpc_raw_move_args move_args(uint32_t deadline_ms)
+static rpc_raw_move_args move_args(void)
 {
     rpc_raw_move_args m = {
         .idx         = 0,
@@ -382,7 +380,6 @@ static rpc_raw_move_args move_args(uint32_t deadline_ms)
         .pullin_pps  = 200,
         .cruise_pps  = 1000,
         .accel_pps_s = 5000,
-        .deadline_ms = deadline_ms,
     };
     return m;
 }
@@ -391,24 +388,8 @@ void test_rpc_a_missing_backend_is_not_a_failure_to_move(void)
 {
     rpc_setup(true);
 
-    rpc_raw_move_args m = move_args(0);
+    rpc_raw_move_args m = move_args();
     TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, &m, sizeof(m)));
-}
-
-/*
- * A refused move must not arm the deadline. Arming one for a run that never
- * started would have the watchdog halt and disable a driver nobody touched,
- * which is the failure mode a safety mechanism can least afford.
- */
-void test_rpc_a_refused_move_arms_nothing(void)
-{
-    rpc_setup(true);
-
-    unsigned before = fake_watchdog_arms();
-
-    rpc_raw_move_args m = move_args(0);
-    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_MOVE, &m, sizeof(m)));
-    TEST_ASSERT_EQUAL_UINT(before, fake_watchdog_arms());
 }
 
 /* ── Lines ──────────────────────────────────────────────────────────────── */
@@ -564,6 +545,70 @@ void test_rpc_passthrough_refuses_an_oversized_datagram(void)
     TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
 }
 
+/* ── Variable-length replies ────────────────────────────────────────────── */
+
+/*
+ * A reply ending in a flexible array member is the one shape whose length no
+ * table can hold, because sizeof() stops at that member. So the bound is
+ * declared by hand, and these two are what keep it honest: one that the real
+ * length reaches the wire, one that a handler outgrowing its bound is reported
+ * rather than quietly emptied.
+ */
+
+#define VAR_NS   RPC_NS_FILM  /* an index this build registers nothing else on */
+#define VAR_MAX  16U
+
+static size_t g_var_claim;   /* how much the fake handler says it wrote */
+
+static rpc_status_t var_handler(const void *args, size_t args_len,
+                                void *ret, size_t *ret_len)
+{
+    (void)args;
+    (void)args_len;
+
+    memset(ret, 0xA5, g_var_claim);
+    *ret_len = g_var_claim;
+    return RPC_OK;
+}
+
+static const rpc_method_t g_var_methods[1] = {
+    [0] = RPC_METHOD_VAR_GET(var_handler, VAR_MAX),
+};
+
+static void install_var_method(size_t claim)
+{
+    rpc_setup(true);
+    g_var_claim = claim;
+    TEST_ASSERT_TRUE(rpc_register(VAR_NS, g_var_methods, 1));
+}
+
+void test_rpc_a_variable_reply_travels_at_its_real_length(void)
+{
+    install_var_method(VAR_MAX);
+    TEST_ASSERT_EQUAL(RPC_OK, call(VAR_NS, 0, NULL, 0));
+    TEST_ASSERT_EQUAL_size_t(VAR_MAX, g_ret_len);
+
+    /* Shorter than the bound is the ordinary case, and it must not be padded
+       out to it: the length on the wire is what the handler produced. */
+    install_var_method(4);
+    TEST_ASSERT_EQUAL(RPC_OK, call(VAR_NS, 0, NULL, 0));
+    TEST_ASSERT_EQUAL_size_t(4, g_ret_len);
+}
+
+/*
+ * Reported, because by the time the handler says so it has already written past
+ * the room the table promised. RPC_OK with an empty payload would read as a
+ * method that had nothing to say, which is how a bound too small to hold one
+ * element stays invisible.
+ */
+void test_rpc_a_handler_that_overruns_its_bound_is_not_a_success(void)
+{
+    install_var_method(VAR_MAX + 1U);
+
+    TEST_ASSERT_EQUAL(RPC_INTERNAL, call(VAR_NS, 0, NULL, 0));
+    TEST_ASSERT_EQUAL_size_t(0, g_ret_len);
+}
+
 void run_rpc_tests(void)
 {
     RUN_TEST(test_rpc_unknown_namespace_and_method);
@@ -579,7 +624,6 @@ void run_rpc_tests(void)
     RUN_TEST(test_rpc_transport_faults_reach_the_wire_as_themselves);
     RUN_TEST(test_rpc_an_unconfirmed_write_is_not_reported_as_a_write);
     RUN_TEST(test_rpc_a_missing_backend_is_not_a_failure_to_move);
-    RUN_TEST(test_rpc_a_refused_move_arms_nothing);
     RUN_TEST(test_rpc_lines_drive_and_read_back);
     RUN_TEST(test_rpc_enable_applies_the_parts_polarity);
     RUN_TEST(test_rpc_an_unwired_line_is_refused_not_guessed);
@@ -587,4 +631,7 @@ void run_rpc_tests(void)
     RUN_TEST(test_rpc_passthrough_reports_silence_without_failing_the_call);
     RUN_TEST(test_rpc_passthrough_writes_void_the_cache_and_reads_do_not);
     RUN_TEST(test_rpc_passthrough_refuses_an_oversized_datagram);
+
+    RUN_TEST(test_rpc_a_variable_reply_travels_at_its_real_length);
+    RUN_TEST(test_rpc_a_handler_that_overruns_its_bound_is_not_a_success);
 }

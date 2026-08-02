@@ -46,6 +46,9 @@ bool devices_init(void)
         if (terr == TMC2209_OK) {
             terr = tmc2209_attach_lines(&s_devs[i], backends_lines(i));
         }
+        if (terr == TMC2209_OK) {
+            terr = tmc2209_attach_stepgen(&s_devs[i], backends_stepgen(i));
+        }
 
         if (terr != TMC2209_OK) {
             ESP_LOGE(TAG, "%s: %s", d->name, tmc2209_strerror(terr));
@@ -53,13 +56,14 @@ bool devices_init(void)
         }
 
         /*
-         * No stepgen yet, so a move is refused with NO_BACKEND. Everything
-         * that does not emit pulses works regardless, which is the whole
-         * argument for backends being separate: a board missing a peripheral
-         * is a board that answers for what it has.
+         * A board that wires no STEP pin gets no pulse source and refuses
+         * every motion call with NO_BACKEND, while everything that does not
+         * emit pulses keeps working. That is the whole argument for backends
+         * being separate: a board missing a peripheral answers for what it has.
          */
-        ESP_LOGI(TAG, "%s at address %u, lines 0x%X", d->name, d->addr,
-                 backends_lines(i) ? backends_lines(i)->wired : 0u);
+        ESP_LOGI(TAG, "%s at address %u, lines 0x%X, %s", d->name, d->addr,
+                 backends_lines(i) ? backends_lines(i)->wired : 0U,
+                 backends_stepgen(i) ? "stepgen" : "no stepgen");
     }
 
     s_count = n;

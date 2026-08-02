@@ -106,7 +106,12 @@ rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method,
 
         size_t room = m->ret_len;
         status      = m->fn.var(args, args_len, ret, &room);
-        *ret_len    = (status == RPC_OK && room <= m->ret_len) ? room : 0;
+
+        if (status == RPC_OK && room > m->ret_len) {
+            status = RPC_INTERNAL;
+        }
+
+        *ret_len = (status == RPC_OK) ? room : 0;
     } else {
         /*
          * Exact, both ways. Short means the ends disagree about this method's

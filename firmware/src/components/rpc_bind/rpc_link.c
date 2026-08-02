@@ -13,12 +13,12 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "rpc_dispatch.h"
-#include "rpc_api.h"
 #include "rpc_frame.h"
-#include "watchdog.h"
 
 /* Encoded worst case, plus the delimiter that closes the frame. */
-#define RPC_ENCODED_MAX (COBS_ENCODED_MAX(RPC_MAX_FRAME) + 1u)
+#define RPC_ENCODED_MAX (COBS_ENCODED_MAX(RPC_MAX_FRAME) + 1U)
+
+#define RPC_RX_POLL_MS 50U
 
 #define RPC_TXQ_DEPTH   6
 #define RPC_LOG_MAX     192  /**< one log line, ANSI stripped */
@@ -62,7 +62,7 @@ static void tx_task(void *arg)
             continue;
         }
 
-        size_t n = cobs_encode(frame.data, frame.len, encoded, sizeof(encoded) - 1u);
+        size_t n = cobs_encode(frame.data, frame.len, encoded, sizeof(encoded) - 1U);
         if (n == 0) {
             continue; /* cannot happen for a frame that fits; drop rather than send garbage */
         }
@@ -150,7 +150,7 @@ static int log_to_link(const char *fmt, va_list ap)
         return n;
     }
 
-    size_t raw_len = ((size_t)n < sizeof(raw)) ? (size_t)n : sizeof(raw) - 1u;
+    size_t raw_len = ((size_t)n < sizeof(raw)) ? (size_t)n : sizeof(raw) - 1U;
 
     char   text[RPC_LOG_MAX];
     size_t len = strip_ansi(raw, raw_len, text, sizeof(text));
@@ -189,9 +189,6 @@ static void serve(const rpc_buf_t *frame, size_t len)
     }
 
     const rpc_req_hdr_t *req = v.hdr;
-
-    /* Any request that parsed is the PC proving it is still there. */
-    watchdog_feed();
 
     /*
      * The handler writes its return values straight into the reply frame, so
@@ -233,16 +230,8 @@ static void rx_task(void *arg)
     bool   overrun = false;
 
     for (;;) {
-        /*
-         * A bounded wait rather than portMAX_DELAY, because silence is the
-         * thing the watchdog is watching for and a task blocked forever cannot
-         * notice it. This task owns the devices, so the check belongs here
-         * rather than in a timer callback that would race it.
-         */
         int got = usb_serial_jtag_read_bytes(chunk, sizeof(chunk),
-                                             pdMS_TO_TICKS(WATCHDOG_TICK_MS));
-
-        watchdog_tick(usb_serial_jtag_is_connected());
+                                             pdMS_TO_TICKS(RPC_RX_POLL_MS));
 
         if (got <= 0) {
             continue;

@@ -12,11 +12,6 @@ User isn't in the group owning the device.
 
 Needs re-login (or `newgrp <group>`) to apply. A new terminal alone isn't enough.
 
-## Retry classification
- tmc2209_err
-(`tmc2209_err_is_transient`) would flip that default and give write-retrying,
-which currently retries everything including `ERR_ARG`, something to filter on.
-
 
 ## About Device
 

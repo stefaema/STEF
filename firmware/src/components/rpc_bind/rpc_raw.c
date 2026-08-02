@@ -29,7 +29,6 @@
 #include "rpc_methods.h"
 #include "rpc_status.h"
 #include "tmc2209.h"
-#include "watchdog.h"
 
 /*
  * A batch is the unit of work for both writes and bring-up: n datagrams and
@@ -394,15 +393,7 @@ static rpc_status_t raw_move(const void *args, void *ret)
         .accel_pps_s = in->accel_pps_s,
     };
 
-    tmc2209_err_t err = tmc2209_move(dev, &m);
-    if (err != TMC2209_OK) {
-        return rpc_status_of_err(err);
-    }
-
-    /* After the move, never before: arming a deadline for a run that was
-     * refused would halt and disable a driver nobody had started. */
-    watchdog_arm(in->idx, in->deadline_ms);
-    return RPC_OK;
+    return rpc_status_of_err(tmc2209_move(dev, &m));
 }
 
 static rpc_status_t raw_retarget(const void *args, void *ret)

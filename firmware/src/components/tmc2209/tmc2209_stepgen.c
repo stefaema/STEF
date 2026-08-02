@@ -1,19 +1,12 @@
 /*
- * tmc2209_stepgen.c: the driver facts a pulse source does not have.
+ * tmc2209_stepgen.c: what a pulse source is not allowed to assume.
  *
- * The backend emits edges and counts them. What it cannot know is what has to
- * be true for those edges to move the motor: that DIR is settled and stays
- * settled, that GCONF.shaft is the one the move was planned around, and that a
- * non-zero VACTUAL has not quietly taken the driver off its STEP pin.
- *
- * Same division as tmc2209_enable(), which exists so that no caller has to
- * remember ENN is active low. A backend that knew any of this would have to be
- * rewritten for every board.
- *
- * What is deliberately absent is an odometer. A count of pulses becomes a
- * position only once someone decides which direction was positive and what a
- * pulse is worth in distance, and neither is knowable here. So a run's count is
- * reported and the accumulating is the caller's.
+ * A backend emits edges and counts them. It cannot know what has to hold for
+ * those edges to turn the motor: DIR carrying the planned sign, GCONF.shaft
+ * agreeing with it, VACTUAL at zero so the STEP pin still owns motion. Those
+ * are settled here, before any backend is asked to run. The rest is refusal:
+ * an impossible ramp, a rate past the backend's ceiling, or a second run over
+ * one already in flight gets no further than this layer.
  */
 
 #include "tmc2209_stepgen.h"

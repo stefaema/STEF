@@ -7,13 +7,6 @@
  * read at all, and that a CRC failure is worth one more attempt while a reply
  * about the wrong register is not.
  *
- * Same division as tmc2209_lines.c and tmc2209_stepgen.c, which exist so that
- * no backend has to know a fact about the part. A backend that knew any of this
- * would have to be rewritten for every channel.
- *
- * What is deliberately absent is the cache. A datagram either landed or did
- * not; whether that makes a remembered value true is decided one layer up,
- * where IFCNT and the validity bitmap live.
  */
 
 #include "tmc2209.h"
@@ -62,9 +55,7 @@ static tmc2209_err_t uart_tx(const tmc2209_uart_t *uart, const uint8_t *buf, siz
     return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_TX_TIMEOUT;
 }
 
-/* @p got reports how many bytes actually arrived, which is the difference
-   between a driver that stayed silent and one that answered and was cut off.
-   NULL when the caller only needs the verdict. */
+/* @p got reports how many bytes actually arrived. */
 static tmc2209_err_t uart_rx(const tmc2209_uart_t *uart, uint8_t *buf, size_t len,
                              size_t *got)
 {
@@ -217,10 +208,7 @@ tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart,
         err = verify_echo(uart, tx, tx_len);
     }
 
-    /* A collision does not stop the driver from answering, and whether it did
-       is exactly what a diagnostic is asking. So the reply is collected even
-       after a bad echo, and the echo verdict survives as the return value
-       because it names the earlier and more specific fault. */
+    /* The reply is collected even after a bad echo.*/
     if ((err == TMC2209_OK || err == TMC2209_ERR_ECHO) && rx_len > 0) {
         size_t got = 0;
         tmc2209_err_t reply_err = uart_rx(uart, rx, rx_len, &got);

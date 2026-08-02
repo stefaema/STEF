@@ -35,6 +35,9 @@ Diagnostics:
       - readability-identifier-length
       - readability-braces-around-statements
       - bugprone-easily-swappable-parameters
+      - readability-implicit-bool-conversion
+    CheckOptions:
+      readability-function-cognitive-complexity.IgnoreMacros: true
 
 InlayHints:
   Enabled: Yes

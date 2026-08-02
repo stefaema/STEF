@@ -15,11 +15,10 @@
 #include "tmc2209_reg.h"
 #include "tmc2209_uart.h"
 
-/* The largest raw transfer tmc2209_uart_send() will carry, and therefore the
-   stack buffer that verifies its echo. */
+/* The largest raw transfer tmc2209_uart_send() will carry (therefore the echo buffer) */
 #define TMC2209_MAX_TRANSFER 32U
 
-/* No-ops when the backend supplies no lock, which is the target build. */
+/* In case concurrent access to the port is needed. */
 void tmc2209_uart_lock(const tmc2209_uart_t *uart);
 void tmc2209_uart_unlock(const tmc2209_uart_t *uart);
 

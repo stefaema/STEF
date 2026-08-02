@@ -100,9 +100,16 @@ typedef struct {
 #define RPC_METHOD_VAR(name) \
     { { .var = (name) }, sizeof(rpc_##name##_args), sizeof(rpc_##name##_ret), true }
 
-/** @brief Takes nothing, answers with something whose length varies. */
-#define RPC_METHOD_VAR_GET(name) \
-    { { .var = (name) }, 0, sizeof(rpc_##name##_ret), true }
+/**
+ * @brief Takes nothing, answers with a payload ending in a flexible array.
+ *
+ * The bound is spelled out rather than taken from `sizeof`, because `sizeof`
+ * stops at the flexible member and would declare a maximum too small to hold a
+ * single element. Give it the full reply: the base struct plus however many
+ * elements the handler can produce.
+ */
+#define RPC_METHOD_VAR_GET(name, max_len) \
+    { { .var = (name) }, 0, (max_len), true }
 
 /* ── Registry ───────────────────────────────────────────────────────────── */
 

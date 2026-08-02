@@ -68,14 +68,13 @@ add_executable(unit_tests
     test_rpc_frame.c
     test_rpc.c
     fake_devices.c
-    fake_watchdog.c
 
     ${RPC_BIND_DIR}/rpc_raw.c
     ${RPC_BIND_DIR}/rpc_passthrough.c
     ${RPC_BIND_DIR}/rpc_status.c)
     
 # rpc_status.h is private to rpc_bind, so both of its directories are named.
-# devices.h and watchdog.h come from tmc2209_bind; the tests link fakes for both.
+# devices.h comes from tmc2209_bind; the tests link a fake for it.
 target_include_directories(unit_tests PRIVATE
     ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include)
 target_link_libraries(unit_tests PRIVATE tmc2209 rpc unity)
