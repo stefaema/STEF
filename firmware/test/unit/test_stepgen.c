@@ -74,7 +74,7 @@ static tmc2209_t         g_dev;
 
 static int board_read(void *ctx, tmc2209_line_t line)
 {
-    return ((fake_board_t *)ctx)->level[line] ? 1 : 0;
+    return (int)((fake_board_t *)ctx)->level[line];
 }
 
 static int board_write(void *ctx, tmc2209_line_t line, bool level)

@@ -23,10 +23,10 @@ static void answer_read(mock_dev_t *m, uint8_t reg)
     uint8_t served = reg;
     if (m->wrong_reg) {
         m->wrong_reg--;
-        served = (uint8_t)((reg + 1) & 0x7Fu);
+        served = (uint8_t)((reg + 1) & 0x7FU);
     }
 
-    uint32_t v = m->regs[reg & 0x7Fu];
+    uint32_t v = m->regs[reg & 0x7FU];
     uint8_t reply[TMC2209_REPLY_LEN] = {
         TMC2209_SYNC, TMC2209_MASTER_ADDR, served,
         (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v, 0
@@ -35,7 +35,7 @@ static void answer_read(mock_dev_t *m, uint8_t reg)
 
     if (m->fail_crc) {
         m->fail_crc--;
-        reply[7] ^= 0xFFu;
+        reply[7] ^= 0xFFU;
     }
 
     size_t n = sizeof reply;
@@ -62,7 +62,7 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
         memcpy(echo, buf, n);
         if (m->corrupt_echo) {
             m->corrupt_echo--;
-            echo[n - 1] ^= 0x01u;
+            echo[n - 1] ^= 0x01U;
         }
         if (m->truncate_echo) {
             m->truncate_echo--;
@@ -74,8 +74,8 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
     /* Only frames addressed to us get acted on, which is what makes the
        shared-bus addressing testable. */
     if (len >= 3 && buf[0] == TMC2209_SYNC && buf[1] == m->addr) {
-        if (len == TMC2209_WRITE_LEN && (buf[2] & 0x80u)) {
-            uint8_t  reg = (uint8_t)(buf[2] & 0x7Fu);
+        if (len == TMC2209_WRITE_LEN && (buf[2] & 0x80U)) {
+            uint8_t  reg = (uint8_t)(buf[2] & 0x7FU);
             uint32_t val = ((uint32_t)buf[3] << 24) | ((uint32_t)buf[4] << 16) |
                            ((uint32_t)buf[5] << 8)  | (uint32_t)buf[6];
             if (reg == TMC2209_GSTAT) {
@@ -93,7 +93,7 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
         } else if (len == TMC2209_READ_REQ_LEN) {
             m->reads_seen++;
             m->regs[TMC2209_IFCNT] = m->ifcnt;
-            answer_read(m, (uint8_t)(buf[2] & 0x7Fu));
+            answer_read(m, (uint8_t)(buf[2] & 0x7FU));
         }
     }
     return (int)len;
@@ -149,10 +149,10 @@ void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes)
 
 uint32_t mock_reg(const mock_dev_t *m, tmc2209_reg_t reg)
 {
-    return m->regs[(uint8_t)reg & 0x7Fu];
+    return m->regs[(uint8_t)reg & 0x7FU];
 }
 
 void mock_set_reg(mock_dev_t *m, tmc2209_reg_t reg, uint32_t value)
 {
-    m->regs[(uint8_t)reg & 0x7Fu] = value;
+    m->regs[(uint8_t)reg & 0x7FU] = value;
 }

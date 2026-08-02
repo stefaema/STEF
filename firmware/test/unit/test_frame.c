@@ -37,7 +37,8 @@ static void test_crc8_reference_vectors(void)
    for driver 0 cannot be mistaken for one for driver 2. */
 static void test_crc8_distinguishes_slave_address(void)
 {
-    uint8_t a0[TMC2209_READ_REQ_LEN], a2[TMC2209_READ_REQ_LEN];
+    uint8_t a0[TMC2209_READ_REQ_LEN];
+    uint8_t a2[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(a0, 0, TMC2209_GCONF);
     tmc2209_frame_read_request(a2, 2, TMC2209_GCONF);
     TEST_ASSERT_NOT_EQUAL(a0[3], a2[3]);
@@ -46,7 +47,7 @@ static void test_crc8_distinguishes_slave_address(void)
 static void test_write_datagram_layout(void)
 {
     uint8_t dg[TMC2209_WRITE_LEN];
-    tmc2209_frame_write(dg, 0, TMC2209_CHOPCONF, 0x10000053u);
+    tmc2209_frame_write(dg, 0, TMC2209_CHOPCONF, 0x10000053U);
 
     TEST_ASSERT_EQUAL_HEX8(TMC2209_SYNC, dg[0]);
     TEST_ASSERT_EQUAL_HEX8(0x00, dg[1]);
@@ -91,11 +92,11 @@ static void make_reply(uint8_t out[TMC2209_REPLY_LEN], uint8_t reg, uint32_t v)
 static void test_parse_reply_accepts_valid_frame(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
-    make_reply(reply, TMC2209_GCONF, 0x00000101u);
+    make_reply(reply, TMC2209_GCONF, 0x00000101U);
 
     uint32_t value = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
-    TEST_ASSERT_EQUAL_HEX32(0x00000101u, value);
+    TEST_ASSERT_EQUAL_HEX32(0x00000101U, value);
 }
 
 static void test_parse_reply_rejects_bad_sync(void)
@@ -139,8 +140,8 @@ static void test_parse_reply_rejects_wrong_register(void)
 static void test_corrupt_register_byte_is_corruption_not_a_wrong_register(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
-    make_reply(reply, TMC2209_GCONF, 0x12345678u);
-    reply[2] ^= 0x01u;   /* CRC deliberately left stale */
+    make_reply(reply, TMC2209_GCONF, 0x12345678U);
+    reply[2] ^= 0x01U;   /* CRC deliberately left stale */
 
     uint32_t value = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
@@ -149,8 +150,8 @@ static void test_corrupt_register_byte_is_corruption_not_a_wrong_register(void)
 static void test_corrupt_sync_byte_is_corruption_not_a_framing_fault(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
-    make_reply(reply, TMC2209_GCONF, 0x12345678u);
-    reply[0] ^= 0x01u;
+    make_reply(reply, TMC2209_GCONF, 0x12345678U);
+    reply[0] ^= 0x01U;
 
     uint32_t value = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
@@ -159,8 +160,8 @@ static void test_corrupt_sync_byte_is_corruption_not_a_framing_fault(void)
 static void test_parse_reply_rejects_bad_crc(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
-    make_reply(reply, TMC2209_GCONF, 0x12345678u);
-    reply[7] ^= 0xFFu;
+    make_reply(reply, TMC2209_GCONF, 0x12345678U);
+    reply[7] ^= 0xFFU;
 
     uint32_t value = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
@@ -169,24 +170,24 @@ static void test_parse_reply_rejects_bad_crc(void)
 static void test_parse_reply_leaves_output_untouched_on_failure(void)
 {
     uint8_t reply[TMC2209_REPLY_LEN];
-    make_reply(reply, TMC2209_GCONF, 0x12345678u);
-    reply[7] ^= 0xFFu;
+    make_reply(reply, TMC2209_GCONF, 0x12345678U);
+    reply[7] ^= 0xFFU;
 
-    uint32_t value = 0xDEADBEEFu;
+    uint32_t value = 0xDEADBEEFU;
     (void)tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value);
-    TEST_ASSERT_EQUAL_HEX32(0xDEADBEEFu, value);
+    TEST_ASSERT_EQUAL_HEX32(0xDEADBEEFU, value);
 }
 
 static void test_parse_reply_detects_every_single_bit_corruption(void)
 {
     uint8_t clean[TMC2209_REPLY_LEN];
-    make_reply(clean, TMC2209_DRV_STATUS, 0xA5A5A5A5u);
+    make_reply(clean, TMC2209_DRV_STATUS, 0xA5A5A5A5U);
 
     for (size_t byte = 0; byte < TMC2209_REPLY_LEN; byte++) {
         for (int bit = 0; bit < 8; bit++) {
             uint8_t corrupt[TMC2209_REPLY_LEN];
             memcpy(corrupt, clean, sizeof clean);
-            corrupt[byte] ^= (uint8_t)(1u << bit);
+            corrupt[byte] ^= (uint8_t)(1U << bit);
 
             /* Every one of the 64, as CRC-8 catches all single-bit errors, and
                every one reports as corruption rather than as a field being

@@ -160,7 +160,7 @@ static rpc_status_t raw_poll_load(const void *args, void *ret)
     }
 
     out->value  = load.value;
-    out->usable = load.usable ? 1U : 0U;
+    out->usable = (uint8_t)load.usable;
 
     return RPC_OK;
 }
@@ -264,7 +264,7 @@ static rpc_status_t raw_bringup(const void *args, size_t args_len,
         return RPC_ARG;
     }
 
-    tmc2209_gstat_t at_bringup = { 0 };
+    tmc2209_gstat_t at_bringup = { false };
     tmc2209_err_t   err = tmc2209_bringup(dev, config, in->count, &at_bringup);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
@@ -286,7 +286,7 @@ static rpc_status_t raw_all_owned_valid(const void *args, void *ret)
         return RPC_ARG;
     }
 
-    out->valid = tmc2209_all_owned_valid(dev) ? 1U : 0U;
+    out->valid = (uint8_t)tmc2209_all_owned_valid(dev);
     return RPC_OK;
 }
 
@@ -322,7 +322,7 @@ static rpc_status_t raw_line_read(const void *args, void *ret)
         return rpc_status_of_err(err);
     }
 
-    out->level = level ? 1U : 0U;
+    out->level = (uint8_t)level;
     return RPC_OK;
 }
 
@@ -369,7 +369,7 @@ static rpc_status_t raw_is_enabled(const void *args, void *ret)
         return rpc_status_of_err(err);
     }
 
-    out->on = on ? 1U : 0U;
+    out->on = (uint8_t)on;
     return RPC_OK;
 }
 
@@ -449,9 +449,9 @@ static rpc_status_t raw_motion(const void *args, void *ret)
 
     out->emitted  = m.emitted;
     out->rate_pps = m.rate_pps;
-    out->running  = m.running ? 1U : 0U;
-    out->dir      = m.dir ? 1U : 0U;
-    out->shaft    = m.shaft ? 1U : 0U;
+    out->running  = (uint8_t)m.running;
+    out->dir      = (uint8_t)m.dir;
+    out->shaft    = (uint8_t)m.shaft;
 
     return RPC_OK;
 }

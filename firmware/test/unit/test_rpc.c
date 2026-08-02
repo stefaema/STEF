@@ -43,7 +43,7 @@ static tmc2209_lines_t g_lines;
 
 static int board_read(void *ctx, tmc2209_line_t line)
 {
-    return ((fake_board_t *)ctx)->level[line] ? 1 : 0;
+    return (int)((fake_board_t *)ctx)->level[line];
 }
 
 static int board_write(void *ctx, tmc2209_line_t line, bool level)
@@ -52,19 +52,19 @@ static int board_write(void *ctx, tmc2209_line_t line, bool level)
     return 0;
 }
 
-#define CFG_GCONF 0x000000C0u
+#define CFG_GCONF 0x000000C0U
 
 static const tmc2209_regval_t k_config[] = {
     { TMC2209_GCONF,      CFG_GCONF   },
-    { TMC2209_SLAVECONF,  0x00000200u },
-    { TMC2209_IHOLD_IRUN, 0x00081810u },
-    { TMC2209_TPOWERDOWN, 0x00000014u },
-    { TMC2209_TPWMTHRS,   0x000001F4u },
-    { TMC2209_TCOOLTHRS,  0x000003E8u },
-    { TMC2209_VACTUAL,    0x00000000u },
-    { TMC2209_SGTHRS,     0x00000050u },
-    { TMC2209_COOLCONF,   0x00010203u },
-    { TMC2209_CHOPCONF,   0x14010053u },
+    { TMC2209_SLAVECONF,  0x00000200U },
+    { TMC2209_IHOLD_IRUN, 0x00081810U },
+    { TMC2209_TPOWERDOWN, 0x00000014U },
+    { TMC2209_TPWMTHRS,   0x000001F4U },
+    { TMC2209_TCOOLTHRS,  0x000003E8U },
+    { TMC2209_VACTUAL,    0x00000000U },
+    { TMC2209_SGTHRS,     0x00000050U },
+    { TMC2209_COOLCONF,   0x00010203U },
+    { TMC2209_CHOPCONF,   0x14010053U },
 };
 
 static void rpc_setup(bool with_lines)
@@ -168,7 +168,7 @@ void test_rpc_unknown_namespace_and_method(void)
 
     rpc_dev_args a = dev_args(0);
 
-    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_SMART, 0, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_FILM, 0, &a, sizeof(a)));
     TEST_ASSERT_EQUAL(RPC_NO_METHOD, call(RPC_NS_RAW, RPC_RAW_COUNT, &a, sizeof(a)));
 }
 
@@ -216,12 +216,12 @@ void test_rpc_a_failing_call_carries_no_payload(void)
 void test_rpc_poll_returns_what_the_device_holds(void)
 {
     rpc_setup(false);
-    mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041u);
+    mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041U);
 
     rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
-    TEST_ASSERT_EQUAL_HEX32(0x21000041u, RET(rpc_raw_poll_ret)->value);
+    TEST_ASSERT_EQUAL_HEX32(0x21000041U, RET(rpc_raw_poll_ret)->value);
 }
 
 void test_rpc_read_serves_the_cache_and_refuses_an_empty_slot(void)
@@ -267,8 +267,8 @@ void test_rpc_write_batch_lands_on_the_device(void)
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     const rpc_op_t ops[] = {
-        { .reg = TMC2209_SGTHRS,     .value = 0x33u },
-        { .reg = TMC2209_TPOWERDOWN, .value = 0x44u },
+        { .reg = TMC2209_SGTHRS,     .value = 0x33U },
+        { .reg = TMC2209_TPOWERDOWN, .value = 0x44U },
     };
 
     write_args_t a;
@@ -276,8 +276,8 @@ void test_rpc_write_batch_lands_on_the_device(void)
 
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_WRITE, &a, n));
 
-    TEST_ASSERT_EQUAL_HEX32(0x33u, mock_reg(&g_mock, TMC2209_SGTHRS));
-    TEST_ASSERT_EQUAL_HEX32(0x44u, mock_reg(&g_mock, TMC2209_TPOWERDOWN));
+    TEST_ASSERT_EQUAL_HEX32(0x33U, mock_reg(&g_mock, TMC2209_SGTHRS));
+    TEST_ASSERT_EQUAL_HEX32(0x44U, mock_reg(&g_mock, TMC2209_TPOWERDOWN));
 }
 
 /* The count is inside the payload, so dispatch can only check that a head
@@ -286,7 +286,7 @@ void test_rpc_a_batch_that_lies_about_its_count_is_a_bad_frame(void)
 {
     rpc_setup(false);
 
-    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x33u } };
+    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x33U } };
 
     write_args_t a;
     size_t       n = write_args(&a, 0, ops, 1);
@@ -328,7 +328,7 @@ void test_rpc_verify_config_reports_agreement_as_a_value(void)
 
     /* Disagree behind the library's back. The call still succeeds, because
        finding a mismatch is what it is for; the mask is the answer. */
-    mock_set_reg(&g_mock, TMC2209_GCONF, CFG_GCONF ^ 0x40u);
+    mock_set_reg(&g_mock, TMC2209_GCONF, CFG_GCONF ^ 0x40U);
 
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, &a, sizeof(a)));
     TEST_ASSERT_EQUAL_UINT8(0, RET(rpc_raw_verify_config_ret)->agrees);
@@ -364,7 +364,7 @@ void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)
     rpc_setup(false);
     g_mock.freeze_ifcnt = 1;
 
-    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x55u } };
+    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x55U } };
 
     write_args_t a;
     size_t       n = write_args(&a, 0, ops, 1);
@@ -481,7 +481,7 @@ static size_t read_request(pt_args_t *a, uint8_t dev_idx, uint8_t reply_len,
 void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
 {
     rpc_setup(false);
-    mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041u);
+    mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041U);
 
     pt_args_t a;
     size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
@@ -499,7 +499,7 @@ void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
     uint32_t      value = 0;
     tmc2209_err_t err   = tmc2209_frame_parse_reply(out->rx, TMC2209_IOIN, &value);
     TEST_ASSERT_EQUAL(TMC2209_OK, err);
-    TEST_ASSERT_EQUAL_HEX32(0x21000041u, value);
+    TEST_ASSERT_EQUAL_HEX32(0x21000041U, value);
 }
 
 /*
@@ -542,7 +542,7 @@ void test_rpc_passthrough_writes_void_the_cache_and_reads_do_not(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
     uint8_t datagram[TMC2209_WRITE_LEN];
-    tmc2209_frame_write(datagram, 0, TMC2209_SGTHRS, 0x11u);
+    tmc2209_frame_write(datagram, 0, TMC2209_SGTHRS, 0x11U);
 
     n = pt_args(&a, 0, 0, datagram, sizeof(datagram)); /* a write has no reply */
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));

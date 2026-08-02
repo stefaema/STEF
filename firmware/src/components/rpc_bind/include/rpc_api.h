@@ -40,9 +40,7 @@
 
 /**
  * What the two ends check before trusting each other. Bump on any change to a
- * payload layout, a method number, or a status value. `sys.version` is what
- * makes the mismatch a clean rejection at connect time rather than a decode
- * that succeeds and lies.
+ * payload layout, a method number, or a status value. Bounded to `sys.version`.
  */
 #define RPC_PROTOCOL_VERSION 1
 
@@ -51,7 +49,7 @@ typedef enum {
     RPC_NS_SYS         = 0, /**< about the firmware, not about a driver */
     RPC_NS_PASSTHROUGH = 1, /**< the PC assembles the datagram */
     RPC_NS_RAW         = 2, /**< the firmware assembles it, from a register you name */
-    RPC_NS_SMART       = 3, /**< the firmware assembles it, from an outcome you name */
+    RPC_NS_FILM        = 3, /**< the firmware assembles it, from an outcome you name */
     RPC_NS_COUNT       = 4,
 } rpc_ns_t;
 
@@ -511,7 +509,7 @@ typedef enum {
  * below @ref RPC_STATUS_TRANSPORT_BASE, and @ref RPC_STATUS_LAST is what holds
  * them there. Never renumber; append.
  */
-enum {
+enum { /* NOLINT(readability-enum-initial-value): RPC_STATUS_LAST must follow, never pin */
     RPC_ARG          = 1,  /**< caller passed something impossible */
     RPC_TX_TIMEOUT   = 2,
     RPC_RX_TIMEOUT   = 3,  /**< the driver stayed silent */

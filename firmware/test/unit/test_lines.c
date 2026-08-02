@@ -37,7 +37,7 @@ static int board_read(void *ctx, tmc2209_line_t line)
     if (b->fail_read) {
         return -1;
     }
-    return b->level[line] ? 1 : 0;
+    return (int)b->level[line];
 }
 
 static int board_write(void *ctx, tmc2209_line_t line, bool level)
@@ -98,7 +98,7 @@ static void test_init_leaves_lines_detached(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_enable(&g_dev, true));
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_ENN]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_ENN]);
 }
 
 /* The two refusals carry different instructions: attach a backend, or accept
@@ -166,10 +166,10 @@ static void test_each_line_moves_only_its_own_pin(void)
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_STEP, true));
 
-    TEST_ASSERT_EQUAL(1u, g_board.writes[TMC2209_LINE_STEP]);
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_ENN]);
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIR]);
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIAG]);
+    TEST_ASSERT_EQUAL(1U, g_board.writes[TMC2209_LINE_STEP]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_ENN]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_DIR]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_DIAG]);
 }
 
 static void test_diag_reads(void)
@@ -187,7 +187,7 @@ static void test_driving_an_input_is_refused(void)
     setup_board(TMC2209_LINES_ALL);
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_write(&g_dev, TMC2209_LINE_DIAG, true));
-    TEST_ASSERT_EQUAL(0u, g_board.writes[TMC2209_LINE_DIAG]);
+    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_DIAG]);
 }
 
 /* An unwired line is refused before the access policy is consulted: this board
@@ -200,7 +200,7 @@ static void test_an_unwired_line_is_reported_as_unwired(void)
     TEST_ASSERT_FALSE(tmc2209_line_is_wired(&g_dev, TMC2209_LINE_DIAG));
     TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_line_read(&g_dev, TMC2209_LINE_DIAG, &level));
     TEST_ASSERT_EQUAL(TMC2209_ERR_UNWIRED, tmc2209_line_write(&g_dev, TMC2209_LINE_DIAG, true));
-    TEST_ASSERT_EQUAL(0u, g_board.reads[TMC2209_LINE_DIAG]);
+    TEST_ASSERT_EQUAL(0U, g_board.reads[TMC2209_LINE_DIAG]);
 }
 
 /* Missing one line leaves the rest usable, so the mask is per line and not a
@@ -278,8 +278,8 @@ static void test_enable_touches_no_register(void)
     setup_board(TMC2209_LINES_ALL);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, true));
-    TEST_ASSERT_EQUAL(0u, g_dev.valid);
-    TEST_ASSERT_EQUAL(1u, g_board.writes[TMC2209_LINE_ENN]);
+    TEST_ASSERT_EQUAL(0U, g_dev.valid);
+    TEST_ASSERT_EQUAL(1U, g_board.writes[TMC2209_LINE_ENN]);
 }
 
 void run_lines_tests(void)
