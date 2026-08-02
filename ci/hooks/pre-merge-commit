@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+
+case "$(git rev-parse --abbrev-ref HEAD)" in
+    main)    gate=3 ;;
+    develop) gate=2 ;;
+    *)       echo "pre-merge-commit: not an integration branch, nothing to check"; exit 0 ;;
+esac
+
+exec "$ROOT/ci/run.py" gate "$gate"
