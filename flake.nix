@@ -19,7 +19,8 @@
             root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
             if [ -n "$root" ] && [ "$(git config core.hooksPath || true)" != "ci/hooks" ]; then
               git config core.hooksPath ci/hooks
-              echo "hooks installed: core.hooksPath -> ci/hooks"
+              git config merge.ff false
+              echo "hooks installed: core.hooksPath -> ci/hooks, merge.ff off"
             fi
           '';
         };
