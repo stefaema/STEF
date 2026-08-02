@@ -239,14 +239,11 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
 tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
 
 /**
- * @brief Reads the StallGuard load estimate, with whether it can be believed.
+ * @brief Reads the StallGuard load estimate, with whether it can be believed at first glance
  *
  * SG_RESULT is only meaningful inside the TCOOLTHRS speed window, so a raw
  * number on its own cannot be acted on. This checks what
  * it can: TCOOLTHRS of zero means StallGuard is disabled outright.
- *
- * The speed-dependent half of the check needs the current step rate and waits
- * on stepgen. See design.md §8.
  *
  * @param dev  device
  * @param out  load estimate and its validity

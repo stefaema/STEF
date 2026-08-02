@@ -23,11 +23,7 @@ typedef struct {
  * changes it. GSTAT is readable and writable yet VOLATILE, because the
  * hardware sets its flags. Getting those two backwards is the bug this column
  * exists to prevent.
- *
- * There is no reset-value column on purpose: GCONF's reset depends on OTP bits
- * and CHOPCONF's on the address straps, so neither is a property of the part
- * number, and a seeded default is a value bringup() would eventually write.
- * See design.md §1 and §7 item 7. */
+ */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W, OWN, "GCONF"        },
     { TMC2209_GSTAT,        R | W, VOL, "GSTAT"        },  /* hardware latches the flags */
@@ -37,7 +33,7 @@ static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_FACTORY_CONF, R,     CST, "FACTORY_CONF" },  /* never written: holds the trim */
     { TMC2209_IHOLD_IRUN,       W, OWN, "IHOLD_IRUN"   },
     { TMC2209_TPOWERDOWN,       W, OWN, "TPOWERDOWN"   },
-    { TMC2209_TSTEP,        R,     VOL, "TSTEP"        },  /* the driver measures it */
+    { TMC2209_TSTEP,        R,     VOL, "TSTEP"        },  /* the driver measures it, time btwn steps */
     { TMC2209_TPWMTHRS,         W, OWN, "TPWMTHRS"     },
     { TMC2209_TCOOLTHRS,        W, OWN, "TCOOLTHRS"    },
     { TMC2209_VACTUAL,          W, OWN, "VACTUAL"      },

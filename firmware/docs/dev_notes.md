@@ -12,21 +12,6 @@ User isn't in the group owning the device.
 
 Needs re-login (or `newgrp <group>`) to apply. A new terminal alone isn't enough.
 
-## Console spins at 100% CPU, ignores keyboard input
-
-`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` alone doesn't enable blocking stdin
-or install the driver. Fix, in `app_main()` before reading stdin:
-```c
-usb_serial_jtag_driver_install(&cfg);
-usb_serial_jtag_vfs_use_driver();
-fcntl(fileno(stdin), F_SETFL, 0);
-```
-
-### ISR + Callback for stepgen
-
-At some point a change may be done to the stepgen module where on the event of
-finishing a run, it should interrupt and act upon a callback.
-
 ## Retry classification
  tmc2209_err
 (`tmc2209_err_is_transient`) would flip that default and give write-retrying,

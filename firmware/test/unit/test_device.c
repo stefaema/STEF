@@ -196,7 +196,7 @@ static void test_bringup_writes_the_whole_configuration(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* design.md §7 item 7. The old table seeded GCONF with its datasheet reset
+/* The old table seeded GCONF with its datasheet reset
    value and bringup() imposed the cache, so bringing up a fresh driver cleared
    mstep_reg_select and handed microstep resolution back to the address straps.
    The straps are the address on the wire, so all three motors would have run at
@@ -770,7 +770,7 @@ static void test_poll_raw_does_not_update_the_cache(void)
 
 /* The revision is carried, never recognised: no value is special to the
    library, so every value comes back as it was found. Whether to accept one is
-   the caller's policy, exactly as with the retry thresholds in design.md §8. */
+   the caller's policy, exactly as with the retry thresholds. */
 static void test_poll_version_reports_whatever_the_part_answers(void)
 {
     static const uint8_t revisions[] = { 0x00, 0x20, 0x21, 0x22, 0xFF };
