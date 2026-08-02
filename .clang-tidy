@@ -12,7 +12,7 @@ Checks: >
 CheckOptions:
   readability-function-cognitive-complexity.IgnoreMacros: true
 
-HeaderFilterRegex: '.*/firmware/(src/components|test/unit)/.*'
+HeaderFilterRegex: '.*/(tmc2209|rpc|shared|firmware)/.*'
 
 WarningsAsErrors: ''
 

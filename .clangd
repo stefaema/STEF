@@ -6,7 +6,7 @@
 # needed: point it at the cross GCC (settings.json --query-driver) so it can ask
 # where the system headers live, and drop the flags clang would reject below.
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: firmware/src/build
   Remove:
     - -mlongcalls
     - -mtext-section-literals

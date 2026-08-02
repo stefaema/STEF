@@ -1,5 +1,7 @@
-# Host-native unit tests. No ESP-IDF, no toolchain, no hardware: this builds
-# the same tmc2209 and rpc sources the firmware uses, against a mock uart.
+# Host-native unit tests for the bind layer: the handlers that turn a method
+# number into a driver call. The libraries they sit on have their own suites in
+# tmc2209/test and rpc/test; what is exercised here is only what this project
+# adds on top of them.
 #
 #   cmake -S firmware/test/unit -B build-unit && cmake --build build-unit
 #   ctest --test-dir build-unit --output-on-failure
@@ -8,15 +10,17 @@
 # and nothing to fetch. Point UNITY_DIR elsewhere if you have it standalone.
 
 cmake_minimum_required(VERSION 3.16)
-project(tmc2209_unit_tests C)
+project(firmware_unit_tests C)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror -g -O1)
 
-set(TMC2209_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/tmc2209)
-set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/rpc)
+set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(TMC2209_DIR ${ROOT_DIR}/tmc2209)
+set(RPC_DIR ${ROOT_DIR}/rpc)
+set(RPC_API_DIR ${ROOT_DIR}/shared/rpc_api)
 set(RPC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/rpc_bind)
 set(TMC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/tmc2209_bind)
 
@@ -47,8 +51,6 @@ add_library(tmc2209 STATIC
     ${TMC2209_DIR}/tmc2209_uart.c)
 target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
 
-# The framing and the wire format, built here for the same reason: they are the
-# sources the firmware runs and, later, the ones the PC links through cffi.
 add_library(rpc STATIC
     ${RPC_DIR}/cobs.c
     ${RPC_DIR}/crc16.c
@@ -56,27 +58,23 @@ add_library(rpc STATIC
     ${RPC_DIR}/rpc_dispatch.c)
 target_include_directories(rpc PUBLIC ${RPC_DIR}/include)
 
+# The mock uart is the driver library's own test support, borrowed here so the
+# handlers can be driven without inventing a second one.
 add_executable(unit_tests
     main.c
-    mock_tmc2209.c
-    test_frame.c
-    test_reg.c
-    test_device.c
-    test_lines.c
-    test_stepgen.c
-    test_cobs.c
-    test_rpc_frame.c
     test_rpc.c
     fake_devices.c
+    ${TMC2209_DIR}/test/mock_tmc2209.c
 
     ${RPC_BIND_DIR}/rpc_raw.c
     ${RPC_BIND_DIR}/rpc_passthrough.c
     ${RPC_BIND_DIR}/rpc_status.c)
-    
+
 # rpc_status.h is private to rpc_bind, so both of its directories are named.
 # devices.h comes from tmc2209_bind; the tests link a fake for it.
 target_include_directories(unit_tests PRIVATE
-    ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include)
+    ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include
+    ${RPC_API_DIR}/include ${TMC2209_DIR}/test)
 target_link_libraries(unit_tests PRIVATE tmc2209 rpc unity)
 
 enable_testing()

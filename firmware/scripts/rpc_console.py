@@ -36,9 +36,9 @@ except ImportError:
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, "..", "src", "components")
-PROTO_H = os.path.join(SRC, "rpc", "include", "rpc_proto.h")
-API_H = os.path.join(SRC, "rpc_bind", "include", "rpc_api.h")
+ROOT = os.path.join(HERE, "..", "..")
+PROTO_H = os.path.join(ROOT, "rpc", "include", "rpc_proto.h")
+API_H = os.path.join(ROOT, "shared", "rpc_api", "include", "rpc_api.h")
 
 # The method enums are named after their namespace, except this one. `rpc_ns_t`
 # says PASSTHROUGH and the methods say PT.
