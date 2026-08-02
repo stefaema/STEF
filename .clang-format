@@ -15,7 +15,7 @@ AlignEscapedNewlines: Left
 AlignTrailingComments: true
 AlignArrayOfStructures: Left
 SpacesBeforeTrailingComments: 2
-ReflowComments: false
+ReflowComments: Never
 PointerAlignment: Right
 SpaceBeforeParens: ControlStatements
 IndentCaseLabels: false
