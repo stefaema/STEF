@@ -1,0 +1,21 @@
+# Inert: delete DisableFormat to enforce. tmc2209_reg.c already has its guard.
+DisableFormat: true
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+Cpp11BracedListStyle: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: None
+AlignConsecutiveMacros: AcrossComments
+AlignConsecutiveAssignments: AcrossComments
+AlignConsecutiveDeclarations: AcrossComments
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+AlignArrayOfStructures: Left
+SpacesBeforeTrailingComments: 2
+ReflowComments: false
+PointerAlignment: Right
+SpaceBeforeParens: ControlStatements
+IndentCaseLabels: false

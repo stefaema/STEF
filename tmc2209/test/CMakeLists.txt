@@ -1,11 +1,4 @@
-# Host-native unit tests for the driver library. No ESP-IDF, no toolchain, no
-# hardware: the same sources the firmware runs, against a mock uart.
-#
-#   cmake -S tmc2209/test -B build-unit && cmake --build build-unit
-#   ctest --test-dir build-unit --output-on-failure
-#
-# Unity comes from ESP-IDF if IDF_PATH is set, so there is nothing to vendor
-# and nothing to fetch. Point UNITY_DIR elsewhere if you have it standalone.
+# cmake -S tmc2209/test -B build && cmake --build build && ctest --test-dir build
 
 cmake_minimum_required(VERSION 3.16)
 project(tmc2209_unit_tests C)
@@ -18,14 +11,16 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror -g -O1)
 set(TMC2209_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 if(NOT DEFINED UNITY_DIR)
-    if(DEFINED ENV{IDF_PATH} AND EXISTS $ENV{IDF_PATH}/components/unity/unity/src/unity.c)
+    if(DEFINED ENV{UNITY_DIR})
+        set(UNITY_DIR $ENV{UNITY_DIR})
+    elseif(DEFINED ENV{IDF_PATH} AND EXISTS $ENV{IDF_PATH}/components/unity/unity/src/unity.c)
         set(UNITY_DIR $ENV{IDF_PATH}/components/unity/unity/src)
     endif()
 endif()
 
 if(NOT DEFINED UNITY_DIR OR NOT EXISTS ${UNITY_DIR}/unity.c)
     message(FATAL_ERROR
-        "Unity not found. Enter a nix shell so IDF_PATH is set, "
+        "Unity not found. Enter this module's nix shell, which sets UNITY_DIR, "
         "or pass -DUNITY_DIR=/path/to/unity/src")
 endif()
 
@@ -44,7 +39,6 @@ add_library(tmc2209 STATIC
     ${TMC2209_DIR}/tmc2209_uart.c)
 target_include_directories(tmc2209 PUBLIC ${TMC2209_DIR}/include)
 
-# tmc2209_uart_priv.h is private to the library, so its directory is named too.
 target_include_directories(tmc2209 PRIVATE ${TMC2209_DIR})
 
 add_executable(unit_tests

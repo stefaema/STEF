@@ -1,12 +1,4 @@
-# Host-native unit tests for the framing library. No ESP-IDF, no toolchain, no
-# hardware: the same sources the firmware runs and, later, the same ones the PC
-# links through cffi.
-#
-#   cmake -S rpc/test -B build-unit && cmake --build build-unit
-#   ctest --test-dir build-unit --output-on-failure
-#
-# Unity comes from ESP-IDF if IDF_PATH is set, so there is nothing to vendor
-# and nothing to fetch. Point UNITY_DIR elsewhere if you have it standalone.
+# cmake -S rpc/test -B build && cmake --build build && ctest --test-dir build
 
 cmake_minimum_required(VERSION 3.16)
 project(rpc_unit_tests C)
@@ -19,14 +11,16 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror -g -O1)
 set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 if(NOT DEFINED UNITY_DIR)
-    if(DEFINED ENV{IDF_PATH} AND EXISTS $ENV{IDF_PATH}/components/unity/unity/src/unity.c)
+    if(DEFINED ENV{UNITY_DIR})
+        set(UNITY_DIR $ENV{UNITY_DIR})
+    elseif(DEFINED ENV{IDF_PATH} AND EXISTS $ENV{IDF_PATH}/components/unity/unity/src/unity.c)
         set(UNITY_DIR $ENV{IDF_PATH}/components/unity/unity/src)
     endif()
 endif()
 
 if(NOT DEFINED UNITY_DIR OR NOT EXISTS ${UNITY_DIR}/unity.c)
     message(FATAL_ERROR
-        "Unity not found. Enter a nix shell so IDF_PATH is set, "
+        "Unity not found. Enter this module's nix shell, which sets UNITY_DIR, "
         "or pass -DUNITY_DIR=/path/to/unity/src")
 endif()
 

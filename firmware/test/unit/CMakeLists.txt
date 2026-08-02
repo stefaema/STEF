@@ -1,13 +1,5 @@
-# Host-native unit tests for the bind layer: the handlers that turn a method
-# number into a driver call. The libraries they sit on have their own suites in
-# tmc2209/test and rpc/test; what is exercised here is only what this project
-# adds on top of them.
-#
-#   cmake -S firmware/test/unit -B build-unit && cmake --build build-unit
-#   ctest --test-dir build-unit --output-on-failure
-#
-# Unity comes from ESP-IDF if IDF_PATH is set, so there is nothing to vendor
-# and nothing to fetch. Point UNITY_DIR elsewhere if you have it standalone.
+# The bind layer only. tmc2209/test and rpc/test cover the libraries.
+# cmake -S firmware/test/unit -B build && cmake --build build && ctest --test-dir build
 
 cmake_minimum_required(VERSION 3.16)
 project(firmware_unit_tests C)
@@ -58,8 +50,6 @@ add_library(rpc STATIC
     ${RPC_DIR}/rpc_dispatch.c)
 target_include_directories(rpc PUBLIC ${RPC_DIR}/include)
 
-# The mock uart is the driver library's own test support, borrowed here so the
-# handlers can be driven without inventing a second one.
 add_executable(unit_tests
     main.c
     test_rpc.c

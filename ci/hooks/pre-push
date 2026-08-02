@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+
+gate=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    case "$remote_ref" in
+        refs/heads/main)    gate=3 ;;
+        refs/heads/develop) [ "$gate" -lt 2 ] && gate=2 ;;
+    esac
+done
+
+if [ "$gate" -eq 0 ]; then
+    echo "pre-push: subsystem branch, gate deferred to the merge"
+    exit 0
+fi
+
+exec "$ROOT/ci/run.py" gate "$gate"

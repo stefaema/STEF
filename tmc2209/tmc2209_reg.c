@@ -24,6 +24,7 @@ typedef struct {
  * hardware sets its flags. Getting those two backwards is the bug this column
  * exists to prevent.
  */
+/* clang-format off */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W, OWN, "GCONF"        },
     { TMC2209_GSTAT,        R | W, VOL, "GSTAT"        },  /* hardware latches the flags */
@@ -55,6 +56,7 @@ static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_PWM_SCALE,    R,     VOL, "PWM_SCALE"    },
     { TMC2209_PWM_AUTO,     R,     VOL, "PWM_AUTO"     },
 };
+/* clang-format on */
 
 int tmc2209_reg_slot(tmc2209_reg_t reg)
 {
