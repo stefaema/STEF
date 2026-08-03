@@ -48,9 +48,7 @@
     "basedpyright.analysis.diagnosticMode": "openFilesOnly",
     "basedpyright.analysis.autoImportCompletions": true,
     "basedpyright.analysis.extraPaths": [
-        "${workspaceFolder}/boards/src",
         "${workspaceFolder}/ccapi/src",
-        "${workspaceFolder}/driver/src",
         "${workspaceFolder}/gui/src",
         "${workspaceFolder}/orchestrator/src",
         "${workspaceFolder}/rig/src",
@@ -60,38 +58,16 @@
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.pytestArgs": [
-        "boards/tests",
         "ccapi/tests",
-        "driver/tests",
         "gui/tests",
         "orchestrator/tests",
         "rig/tests",
         "vision/tests"
     ],
 
-    // ------------------------------------------------------------------ Typst
-    // Tinymist trae su propio compilador, así que el informe no necesita ni un
-    // typst de sistema ni un devshell. Lo que sí necesita es ver las mismas
-    // fuentes que usa la línea de comandos: están versionadas en el repo, y
-    // systemFonts:false obliga a usar esas y no las de la máquina, para que el
-    // PDF del editor y el de un clon limpio sean el mismo.
-    "tinymist.fontPaths": [
-        "${workspaceFolder}/report/plantilla/fuentes"
-    ],
-    "tinymist.systemFonts": false,
-    // onDocumentHasTitle y no onSave: los archivos de plantilla/ son parciales
-    // que solo tienen sentido importados, y ninguno declara un título de
-    // documento. Con onSave, guardar portada.typ escupía un portada.pdf suelto.
-    "tinymist.exportPdf": "onDocumentHasTitle",
-    // $dir y no $root: la raíz que detecta tinymist es la del workspace, así
-    // que $root dejaba el PDF en la raíz del repo en vez de al lado de la
-    // fuente. $dir es el directorio del archivo que se compila.
-    "tinymist.outputPath": "$dir/build/$name",
-    "tinymist.formatterMode": "typstyle",
-
     // ------------------------------------------------------------- Formatting
-    // C formatting is deliberately off on save: there is no .clang-format yet,
-    // so saving would reflow the existing firmware to clangd's LLVM default.
+    // .clang-format is inert (DisableFormat), so format-on-save would do
+    // nothing here and reflow to clangd's LLVM default anywhere it is enabled.
     "[c]": {
         "editor.defaultFormatter": "kylinideteam.kylin-clangd",
         "editor.formatOnSave": false
@@ -99,14 +75,6 @@
     "[cpp]": {
         "editor.defaultFormatter": "kylinideteam.kylin-clangd",
         "editor.formatOnSave": false
-    },
-    "[typst]": {
-        "editor.defaultFormatter": "myriad-dreamin.tinymist",
-        "editor.formatOnSave": true,
-        "editor.wordWrap": "bounded",
-        "editor.rulers": [
-            80
-        ]
     },
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
