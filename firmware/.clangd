@@ -1,0 +1,31 @@
+# clangd config for the ESP-IDF target build.
+#
+# The compile database under src/build was produced by idf.py, so every command
+# in it invokes xtensa-esp32s3-elf-gcc with GCC-only flags. clangd runs upstream
+# clang, which does not know that driver or those flags, so two things are
+# needed: point it at the cross GCC (settings.json --query-driver) so it can ask
+# where the system headers live, and drop the flags clang would reject below.
+CompileFlags:
+  CompilationDatabase: src/build
+  Remove:
+    - -mlongcalls
+    - -mtext-section-literals
+    - -mdisable-hardware-atomics
+    - -fno-tree-switch-conversion
+    - -fno-inline-small-functions
+    - -fno-inline-functions-called-once
+    - -fstrict-volatile-bitfields
+    - -fno-shrink-wrap
+    - -fmacro-prefix-map=*
+  Add:
+    - -Wno-unknown-attributes
+    - -Wno-ignored-attributes
+    # Keeps host glibc off the search path; <limits.h> was falling through to
+    # /usr/include.
+    - -nostdlibinc
+
+Diagnostics:
+  Includes:
+    IgnoreHeader:
+      # Umbrella: pdMS_TO_TICKS and friends come from projdefs.h.
+      - freertos/FreeRTOS\.h
