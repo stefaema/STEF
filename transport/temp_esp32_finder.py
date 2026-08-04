@@ -6,8 +6,9 @@ Espressif's own native-USB vendor ID, rather than guessing from port names
 (which vary across ttyUSB*/ttyACM*/cu.usbserial* depending on the OS and the
 number of other USB-serial devices attached).
 
-Run inside the firmware devShell (`nix develop`), it needs pyserial, which
-ships as an esptool dependency there.
+Run inside the transport devShell (`nix develop`), which declares pyserial.
+The chip probe additionally shells out to esptool, which that shell does not
+declare; pass --port-only where it is unavailable.
 
 By default also asks the chip who it is (MAC + detected chip type, flash
 manufacturer/size) via esptool, since a board matching known bridge chips
@@ -18,6 +19,7 @@ Pass --wait SECONDS to poll instead of checking once, useful if you only
 have one free data-capable cable/port and need a moment to move it from
 something else to the board.
 """
+
 import argparse
 import subprocess
 import sys
@@ -66,8 +68,12 @@ def wait_for_candidates(timeout):
             print(file=sys.stderr)
             return candidates
 
-        print(f"\rWaiting for an ESP32 device... {remaining:4.1f}s left (plug it in now)",
-              end="", file=sys.stderr, flush=True)
+        print(
+            f"\rWaiting for an ESP32 device... {remaining:4.1f}s left (plug it in now)",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
         time.sleep(0.5)
 
 
@@ -95,7 +101,9 @@ def main():
         for port, match in candidates:
             vidpid = f"{port.vid:04x}:{port.pid:04x}" if port.vid is not None else "?"
             tag = f"  <- {match}" if match else ""
-            print(f"  {port.device}  [{vidpid}]  {port.description}{tag}", file=sys.stderr)
+            print(
+                f"  {port.device}  [{vidpid}]  {port.description}{tag}", file=sys.stderr
+            )
         print(file=sys.stderr)
 
     if not matches:
@@ -121,7 +129,10 @@ def main():
     print(f"Found: {port.device} ({match})", file=sys.stderr)
     print(file=sys.stderr)
 
-    print("--- esptool read_mac (confirms chip type + genuine Espressif MAC) ---", file=sys.stderr)
+    print(
+        "--- esptool read_mac (confirms chip type + genuine Espressif MAC) ---",
+        file=sys.stderr,
+    )
     subprocess.run(["esptool.py", "--port", port.device, "read_mac"], check=False)
 
     print(file=sys.stderr)
