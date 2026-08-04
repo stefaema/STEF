@@ -13,7 +13,14 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          buildInputs = [ pkgs.python3 ];
+          buildInputs = [
+            (pkgs.python3.withPackages (ps: [ ps.libclang ps.pyserial ps.pytest ]))
+            pkgs.gcc
+            pkgs.cmake
+            pkgs.ninja
+          ];
+
+          env.LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
         };
       });
     };
