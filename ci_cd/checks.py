@@ -127,16 +127,16 @@ def check_build(m: Module) -> bool:
 
 def check_test(m: Module) -> bool:
     if not m.ctest_dirs and not m.python_pkg:
-        return skip(f"test {m.name}", "no tests yet")
+        return skip(f"test {m.name}", "no tests found")
     ok = True
     for d in m.ctest_dirs:
         out = BUILD / m.name / d.name
         rc = in_shell(m, f"ctest --test-dir {out} --output-on-failure")
         ok &= report(f"test {m.name}/{d.relative_to(m.path)}", rc == 0, "ctest")
     if m.python_pkg:
-        rc = in_shell(m, f"pytest {m.path} -q")
+        rc = in_shell(m, f"pytest {m.path} -q", quiet_on=(PYTEST_NO_TESTS,))
         if rc == PYTEST_NO_TESTS:
-            ok &= skip(f"test {m.name}", "no tests collected yet")
+            ok &= skip(f"test {m.name}", "no tests found")
         else:
             ok &= report(f"test {m.name}", rc == 0, "pytest")
     return ok

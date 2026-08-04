@@ -52,20 +52,23 @@ def git(*args: str) -> str:
     return p.stdout.strip()
 
 
-def sh(cmd: list[str], cwd: Path = ROOT) -> int:
+def sh(cmd: list[str], cwd: Path = ROOT, quiet_on: tuple[int, ...] = ()) -> int:
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     except FileNotFoundError:
         print(f"{RED}{cmd[0]} not found{OFF}", file=sys.stderr)
         return 127
-    if p.returncode != 0:
+    if p.returncode not in (0, *quiet_on):
         sys.stdout.write(p.stdout)
         sys.stderr.write(p.stderr)
     return p.returncode
 
 
-def in_shell(module: Module, script: str) -> int:
-    return sh(["nix", "develop", f"./{module.name}", "--command", "bash", "-c", script])
+def in_shell(module: Module, script: str, quiet_on: tuple[int, ...] = ()) -> int:
+    return sh(
+        ["nix", "develop", f"./{module.name}", "--command", "bash", "-c", script],
+        quiet_on=quiet_on,
+    )
 
 
 def current_branch() -> str:
