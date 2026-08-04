@@ -2,8 +2,8 @@
   description = "STEF - TMC2209 stepper driver library";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }:

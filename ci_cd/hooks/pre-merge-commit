@@ -8,4 +8,4 @@ case "$(git rev-parse --abbrev-ref HEAD)" in
     *)       echo "pre-merge-commit: not an integration branch, nothing to check"; exit 0 ;;
 esac
 
-exec "$ROOT/ci/run.py" gate "$gate"
+exec "$ROOT/ci_cd/run.py" gate "$gate"

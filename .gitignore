@@ -8,6 +8,7 @@ build/
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 
 #  Out of scope
 meta/

@@ -2,8 +2,8 @@
   description = "STEF - Film transport client, a PC-side driver of the firmware";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }:

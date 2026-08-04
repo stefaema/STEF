@@ -15,4 +15,4 @@ if [ "$gate" -eq 0 ]; then
     exit 0
 fi
 
-exec "$ROOT/ci/run.py" gate "$gate"
+exec "$ROOT/ci_cd/run.py" gate "$gate"

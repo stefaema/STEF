@@ -2,8 +2,8 @@
   description = "STEF - the wire contract both ends compile";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }:

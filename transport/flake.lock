@@ -1,5 +1,19 @@
 {
   "nodes": {
+    "base": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "path": "../dev_base",
+        "type": "path"
+      },
+      "original": {
+        "path": "../dev_base",
+        "type": "path"
+      },
+      "parent": []
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1784796856,
@@ -18,26 +32,12 @@
     },
     "root": {
       "inputs": {
+        "base": "base",
         "nixpkgs": [
-          "root",
+          "base",
           "nixpkgs"
-        ],
-        "root": "root_2"
+        ]
       }
-    },
-    "root_2": {
-      "inputs": {
-        "nixpkgs": "nixpkgs"
-      },
-      "locked": {
-        "path": "..",
-        "type": "path"
-      },
-      "original": {
-        "path": "..",
-        "type": "path"
-      },
-      "parent": []
     }
   },
   "root": "root",

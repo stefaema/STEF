@@ -3,11 +3,11 @@
 One command, its tools pinned by the same flakes that build the code:
 
 ```
-ci/run.py gate 1        format and lint, staged files only
-ci/run.py gate 2        every module builds and its unit tests pass
-ci/run.py gate 3        gate 2, plus what only makes sense across modules
-ci/run.py --list        what was discovered
-ci/run.py test rpc      one check, one module
+ci_cd/run.py gate 1        format and lint, staged files only
+ci_cd/run.py gate 2        every module builds and its unit tests pass
+ci_cd/run.py gate 3        gate 2, plus what only makes sense across modules
+ci_cd/run.py --list        what was discovered
+ci_cd/run.py test rpc      one check, one module
 ```
 
 ## Gates
@@ -33,6 +33,10 @@ is checked:
 - `test/CMakeLists.txt` → a host build, run with `ctest`
 - `pyproject.toml` → a Python package, run with `pytest`
 
+A module with none of these, `dev_base` and `ci_cd` today, is discovered, listed
+as empty and skipped. Its name is still a valid commit scope, which is why the
+scope list below is short.
+
 Nothing enumerates the modules and nothing declares which depends on which. Both
 would be second copies of what the tree already says, wrong the first time
 someone forgot to update them. There is no affected-set calculation either:
@@ -46,6 +50,12 @@ Each check runs inside its own module's `nix develop`, so a module declares what
 it needs and this runner only chains them. `nix develop` and not `nix run`,
 because flakes only see git-tracked files and a hook has to check the work you
 have not committed yet.
+
+`ci_cd` is one of those modules and no more: `ci_cd/flake.nix` declares `ruff`,
+`clang-tools` and the rest, and `run.py` re-execs itself into that shell when
+they are not already on `PATH`. Every flake in the tree, this one included,
+resolves nixpkgs through `dev_base`, so one revision builds the whole
+repository. Bumping it is `nix flake update` in `dev_base`, then in each module.
 
 The one exception is `clang-tidy`, which runs outside any shell against a
 rewritten copy of the firmware's compile database. The original invokes
@@ -61,8 +71,8 @@ that `.clangd` needs for the same reason.
 scope: subject
 ```
 
-`scope` is a module name or one of `ci`, `docs`, `meta`, `repo`, `boards`.
-Subject line at most 72 characters.
+`scope` is a module name or one of `docs`, `meta`, `repo`. Subject line at most
+72 characters.
 
 This is a placeholder convention, chosen because the repository is one directory
 per concern and at least one existing commit already reads `firmware: ...`.
@@ -71,15 +81,17 @@ edit `check_commit_msg` in `run.py` and this section.
 
 ## Hooks
 
-`.git/hooks` is not versioned, so a fresh clone would have none. Entering the
-root shell points git at the tracked directory instead:
+`.git/hooks` is not versioned, so a fresh clone would have none. `run.py` points
+git at the tracked directory on every invocation:
 
 ```
-git config core.hooksPath ci/hooks
+git config core.hooksPath ci_cd/hooks
+git config merge.ff false
 ```
 
-The root `flake.nix` `shellHook` does this on activation, so a clone plus
-`nix develop` is all the setup there is.
+Both are idempotent and cost two `git config` reads, so a clone plus one
+`ci_cd/run.py --list` is all the setup there is. Tying this to a devShell
+instead would make it depend on which directory you happened to enter.
 
 ## Formatting
 

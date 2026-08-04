@@ -2,8 +2,8 @@
   description = "STEF - ESP32 firmware driving the TMC2209 steppers over UART/STEP-DIR";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
     esp-dev.url = "github:mirrexagon/nixpkgs-esp-dev";
   };
 

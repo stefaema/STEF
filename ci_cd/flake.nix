@@ -1,9 +1,9 @@
 {
-  description = "STEF - Frame detection and centering";
+  description = "STEF - repository verification and delivery";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }:
@@ -13,7 +13,7 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          buildInputs = [ pkgs.python3 ];
+          buildInputs = [ pkgs.python3 pkgs.ruff pkgs.clang-tools pkgs.git pkgs.nix ];
         };
       });
     };

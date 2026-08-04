@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Repository verification. See ci/README.md.
+"""Repository verification. See ci_cd/README.md.
 
-ci/run.py gate 1 | gate 2 | gate 3
-ci/run.py build tmc2209
-ci/run.py --list
+ci_cd/run.py gate 1 | gate 2 | gate 3
+ci_cd/run.py build tmc2209
+ci_cd/run.py --list
 """
 
 import argparse
@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / ".ci-build"
 
-EXTRA_SCOPES = {"ci", "docs", "meta", "repo", "boards"}
+EXTRA_SCOPES = {"docs", "meta", "repo"}
 
 GREEN, RED, YELLOW, DIM, OFF = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -32,6 +32,7 @@ class Module:
     idf_project: Path | None
     ctest_dirs: list[Path]
     python_pkg: bool
+    cffi_build: Path | None
 
     @property
     def empty(self) -> bool:
@@ -61,6 +62,7 @@ def discover() -> list[Module]:
                 idf_project=idf,
                 ctest_dirs=sorted(set(ctest)),
                 python_pkg=(path / "pyproject.toml").exists(),
+                cffi_build=next(iter(sorted(path.glob("src/*/_build.py"))), None),
             )
         )
     return mods
@@ -94,13 +96,32 @@ def ensure_tools() -> None:
         [
             "nix",
             "develop",
-            str(ROOT),
+            str(ROOT / "ci_cd"),
             "--command",
             sys.executable,
             str(Path(__file__).resolve()),
             *sys.argv[1:],
         ],
     )
+
+
+HOOKS_PATH = "ci_cd/hooks"
+
+
+def ensure_hooks() -> None:
+    if not (ROOT / ".git").exists():
+        return
+
+    def git(*args: str) -> str:
+        p = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+        return p.stdout.strip()
+
+    wanted = {"core.hooksPath": HOOKS_PATH, "merge.ff": "false"}
+    changed = [k for k, v in wanted.items() if git("config", k) != v]
+    for key in changed:
+        git("config", key, wanted[key])
+    if changed:
+        print(f"{DIM}git config: {', '.join(changed)}{OFF}", file=sys.stderr)
 
 
 def sh(cmd: list[str], cwd: Path = ROOT) -> int:
@@ -285,6 +306,12 @@ def check_build(m: Module) -> bool:
             f"cmake -S {d} -B {out} -G Ninja > /dev/null && cmake --build {out} > /dev/null",
         )
         ok &= report(f"build {m.name}/{d.relative_to(m.path)}", rc == 0, "cmake")
+    # Before the python check, not after: this module's tests import an
+    # extension compiled from another module's C, so it has to exist first.
+    if m.cffi_build:
+        ok &= report(
+            f"build {m.name}", in_shell(m, f"python {m.cffi_build}") == 0, "cffi"
+        )
     if m.python_pkg:
         ok &= report(
             f"build {m.name}", in_shell(m, "python -c 'import sys'") == 0, "python"
@@ -361,6 +388,8 @@ def main() -> int:
             if m.idf_project:
                 bits.append("idf")
             bits += [f"ctest:{d.relative_to(m.path)}" for d in m.ctest_dirs]
+            if m.cffi_build:
+                bits.append("cffi")
             if m.python_pkg:
                 bits.append("python")
             print(f"  {m.name:<14} {' '.join(bits) or DIM + 'empty' + OFF}")
@@ -392,5 +421,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     os.chdir(ROOT)
+    ensure_hooks()
     ensure_tools()
     sys.exit(main())

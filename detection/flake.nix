@@ -1,5 +1,5 @@
 {
-  description = "STEF - Operator GUI, a client of orchestrator";
+  description = "STEF - Frame detection and centering";
 
   inputs = {
     base.url = "path:../dev_base";

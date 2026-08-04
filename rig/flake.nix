@@ -2,8 +2,8 @@
   description = "STEF - Mechanical design (build123d): rollers, enclosures, optical layout";
 
   inputs = {
-    root.url = "path:..";
-    nixpkgs.follows = "root/nixpkgs";
+    base.url = "path:../dev_base";
+    nixpkgs.follows = "base/nixpkgs";
   };
 
   outputs = { self, nixpkgs, ... }:
