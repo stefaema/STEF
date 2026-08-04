@@ -5,7 +5,7 @@
 {
   description = "STEF - shared nixpkgs pin for all module flakes";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/e2587caef70cea85dd97d7daab492899902dbf5d";
 
   outputs = { self, nixpkgs }: { };
 }
