@@ -3,6 +3,7 @@
 const char *tmc2209_strerror(tmc2209_err_t err)
 {
     switch (err) {
+    /* clang-format off */
     case TMC2209_OK:               return "ok";
     case TMC2209_ERR_ARG:          return "bad argument";
     case TMC2209_ERR_TX_TIMEOUT:   return "tx timeout (port took fewer bytes than given)";
@@ -21,6 +22,7 @@ const char *tmc2209_strerror(tmc2209_err_t err)
     case TMC2209_ERR_BUSY:         return "a run is in flight";
     case TMC2209_ERR_IDLE:         return "no run is in flight";
     case TMC2209_ERR_RATE:         return "rate beyond what this stepgen can emit";
+    /* clang-format on */
     }
     return "unknown";
 }

@@ -60,8 +60,7 @@ static rpc_status_t sys_state(const void *args, void *ret)
     return RPC_OK;
 }
 
-static rpc_status_t sys_devices(const void *args, size_t args_len,
-                                void *ret, size_t *ret_len)
+static rpc_status_t sys_devices(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
     (void)args;
     (void)args_len;
@@ -101,6 +100,5 @@ const rpc_method_t rpc_sys_methods[RPC_SYS_COUNT] = {
     [RPC_SYS_VERSION] = RPC_METHOD_GET(sys_version),
     [RPC_SYS_STATE]   = RPC_METHOD_GET(sys_state),
     [RPC_SYS_DEVICES] = RPC_METHOD_VAR_GET(
-        sys_devices,
-        sizeof(rpc_sys_devices_ret) + (RPC_MAX_DEVICES * sizeof(rpc_dev_info_t))),
+        sys_devices, sizeof(rpc_sys_devices_ret) + (RPC_MAX_DEVICES * sizeof(rpc_dev_info_t))),
 };

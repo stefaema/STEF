@@ -102,6 +102,7 @@ tmc2209_class_t tmc2209_reg_class_at(int slot);
  * tmc2209_clear_faults() acknowledges them. Live conditions report what is
  * *true now* and clear themselves when the situation passes.
  */
+/* clang-format off */
 typedef enum {
     /* Latched in GSTAT. Set once, asserted until acknowledged. */
     TMC2209_DRIVER_RESET      = 1U << 0,  /**< GSTAT.reset: the driver restarted, so
@@ -127,6 +128,7 @@ typedef enum {
 #define TMC2209_CONDITIONS_FAULT                                        \
     ((uint32_t)TMC2209_DRIVER_FAULT | (uint32_t)TMC2209_UNDERVOLTAGE |  \
      (uint32_t)TMC2209_OVERTEMP_SHUTDOWN | (uint32_t)TMC2209_SHORT_CIRCUIT)
+/* clang-format on */
 
 /** What tmc2209_poll_load() reports. */
 typedef struct {
@@ -138,9 +140,11 @@ typedef struct {
 
 /** @brief CHOPCONF.mres, named for the microstep count and not the raw code. */
 typedef enum {
+    /* clang-format off */
     TMC2209_MRES_256 = 0, TMC2209_MRES_128, TMC2209_MRES_64, TMC2209_MRES_32,
     TMC2209_MRES_16,      TMC2209_MRES_8,   TMC2209_MRES_4,  TMC2209_MRES_2,
     TMC2209_MRES_FULL,
+    /* clang-format on */
 } tmc2209_mres_t;
 
 /** Microsteps per full step. */

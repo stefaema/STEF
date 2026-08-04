@@ -72,12 +72,10 @@ size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
                           size_t payload_len);
 
 /** @brief Closes a reply frame around a payload of return values. */
-size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
-                          size_t payload_len);
+size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status, size_t payload_len);
 
 /** @brief Closes a log frame around its text, which carries no terminator. */
-size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms,
-                          size_t payload_len);
+size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms, size_t payload_len);
 
 /* ── Reading ────────────────────────────────────────────────────────────── */
 

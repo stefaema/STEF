@@ -17,8 +17,8 @@ uint8_t tmc2209_crc8(const uint8_t *data, size_t len)
     return crc;
 }
 
-void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN],
-                         uint8_t slave_addr, uint8_t reg, uint32_t value)
+void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN], uint8_t slave_addr, uint8_t reg,
+                         uint32_t value)
 {
     /* Write commands need 8 bytes and send back no reply */
 
@@ -32,8 +32,7 @@ void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN],
     out[7] = tmc2209_crc8(out, 7);
 }
 
-void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN],
-                                uint8_t slave_addr, uint8_t reg)
+void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN], uint8_t slave_addr, uint8_t reg)
 {  /* Read requests have only 4 bytes */
     out[0] = TMC2209_SYNC;
     out[1] = (uint8_t)(slave_addr & TMC2209_ADDR_MASK);
@@ -41,8 +40,8 @@ void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN],
     out[3] = tmc2209_crc8(out, 3);
 }
 
-tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
-                                        uint8_t expect_reg, uint32_t *out)
+tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN], uint8_t expect_reg,
+                                        uint32_t *out)
 {
     if (!in || !out) {
         return TMC2209_ERR_ARG;
@@ -62,7 +61,9 @@ tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
     }
 
     /* If all good, return what's important: the read value from the driver */
+    /* clang-format off */
     *out = ((uint32_t)in[3] << 24) | ((uint32_t)in[4] << 16) |
            ((uint32_t)in[5] << 8)  | (uint32_t)in[6];
+    /* clang-format on */
     return TMC2209_OK;
 }

@@ -40,8 +40,7 @@
  * the wire's carries the value first, because the wire's has to keep its
  * uint32_t aligned and the library's answers to nothing but itself.
  */
-static bool ops_arg(const rpc_raw_write_args *in, size_t args_len,
-                    tmc2209_regval_t *ops)
+static bool ops_arg(const rpc_raw_write_args *in, size_t args_len, tmc2209_regval_t *ops)
 {
     if (in->count == 0 || in->count > RPC_MAX_OPS) {
         return false;
@@ -86,8 +85,7 @@ static rpc_status_t raw_poll(const void *args, void *ret)
     return rpc_status_of_err(tmc2209_poll_raw(dev, (tmc2209_reg_t)in->reg, &out->value));
 }
 
-static rpc_status_t raw_write(const void *args, size_t args_len,
-                              void *ret, size_t *ret_len)
+static rpc_status_t raw_write(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
     const rpc_raw_write_args *in  = args;
     rpc_raw_write_ret        *out = ret;
@@ -247,8 +245,7 @@ static rpc_status_t raw_set_current(const void *args, void *ret)
 
 /* ── Bring-up and cache ─────────────────────────────────────────────────── */
 
-static rpc_status_t raw_bringup(const void *args, size_t args_len,
-                                void *ret, size_t *ret_len)
+static rpc_status_t raw_bringup(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
     const rpc_raw_bringup_args *in  = args;
     rpc_raw_bringup_ret        *out = ret;
@@ -264,7 +261,7 @@ static rpc_status_t raw_bringup(const void *args, size_t args_len,
     }
 
     tmc2209_gstat_t at_bringup = { false };
-    tmc2209_err_t   err = tmc2209_bringup(dev, config, in->count, &at_bringup);
+    tmc2209_err_t   err        = tmc2209_bringup(dev, config, in->count, &at_bringup);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
     }
@@ -335,8 +332,7 @@ static rpc_status_t raw_line_write(const void *args, void *ret)
         return RPC_ARG;
     }
 
-    return rpc_status_of_err(
-        tmc2209_line_write(dev, (tmc2209_line_t)in->line, in->level != 0U));
+    return rpc_status_of_err(tmc2209_line_write(dev, (tmc2209_line_t)in->line, in->level != 0U));
 }
 
 static rpc_status_t raw_enable(const void *args, void *ret)

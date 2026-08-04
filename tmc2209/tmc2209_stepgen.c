@@ -36,9 +36,7 @@ static tmc2209_err_t poll_run_state(const tmc2209_t *dev, tmc2209_run_state_t *s
     st->emitted  = 0;
     st->rate_pps = 0;
     st->running  = false;
-    return (dev->stepgen->state(dev->stepgen->ctx, st) < 0)
-        ? TMC2209_ERR_IO
-        : TMC2209_OK;
+    return (dev->stepgen->state(dev->stepgen->ctx, st) < 0) ? TMC2209_ERR_IO : TMC2209_OK;
 }
 
 /* GCONF.shaft inverts the phase order as well as DIR. So a move needs to configure both */
@@ -66,7 +64,7 @@ static tmc2209_err_t ensure_shaft(tmc2209_t *dev, bool shaft)
 /* The VACTUAL register wins over the STEP pin, so a check is needed. */
 static tmc2209_err_t step_pin_is_in_charge(tmc2209_t *dev)
 {
-    uint32_t raw = 0;
+    uint32_t      raw = 0;
     tmc2209_err_t err = tmc2209_read(dev, TMC2209_VACTUAL, &raw);
     if (err == TMC2209_OK && tmc2209_vactual_decode(raw) != 0) {
         return TMC2209_ERR_ACCESS;
@@ -117,7 +115,7 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
        count in a backend nothing points at any more. */
     if (dev->stepgen) {
         tmc2209_run_state_t st;
-        tmc2209_err_t err = poll_run_state(dev, &st);
+        tmc2209_err_t       err = poll_run_state(dev, &st);
         if (err != TMC2209_OK) {
             return err;
         }
@@ -136,7 +134,7 @@ tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running)
         return TMC2209_ERR_ARG;
     }
     tmc2209_run_state_t st;
-    tmc2209_err_t err = poll_run_state(dev, &st);
+    tmc2209_err_t       err = poll_run_state(dev, &st);
     if (err == TMC2209_OK) {
         *running = st.running;
     }
@@ -221,9 +219,8 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps)
     }
 
     /* Calls the backend that supports this operation */
-    return (dev->stepgen->retarget(dev->stepgen->ctx, cruise_pps) < 0)
-        ? TMC2209_ERR_IO
-        : TMC2209_OK;
+    return (dev->stepgen->retarget(dev->stepgen->ctx, cruise_pps) < 0) ? TMC2209_ERR_IO
+                                                                       : TMC2209_OK;
 }
 
 tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate)
@@ -233,9 +230,7 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate)
         return err;
     }
     /* Call backend to halt the movement, gracefully reschedulling the negative ramp to now. */
-    return (dev->stepgen->halt(dev->stepgen->ctx, immediate) < 0)
-        ? TMC2209_ERR_IO
-        : TMC2209_OK;
+    return (dev->stepgen->halt(dev->stepgen->ctx, immediate) < 0) ? TMC2209_ERR_IO : TMC2209_OK;
 }
 
 tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out)
@@ -245,7 +240,7 @@ tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_report_t 
     }
 
     tmc2209_run_state_t st;
-    tmc2209_err_t err = poll_run_state(dev, &st);
+    tmc2209_err_t       err = poll_run_state(dev, &st);
     if (err != TMC2209_OK) {
         return err;
     }

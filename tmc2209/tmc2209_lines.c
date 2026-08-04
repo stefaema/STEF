@@ -5,9 +5,8 @@
 /* DIAG is the only line the driver drives. */
 bool tmc2209_line_is_output(tmc2209_line_t line)
 {
-    return (bool)(line == TMC2209_LINE_ENN
-               || line == TMC2209_LINE_DIR
-               || line == TMC2209_LINE_STEP);
+    return (bool)(line == TMC2209_LINE_ENN || line == TMC2209_LINE_DIR ||
+                  line == TMC2209_LINE_STEP);
 }
 
 bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line)
@@ -85,9 +84,7 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
     }
 
     /* Write pin using backend */
-    return (dev->lines->write(dev->lines->ctx, line, level) < 0)
-        ? TMC2209_ERR_IO
-        : TMC2209_OK;
+    return (dev->lines->write(dev->lines->ctx, line, level) < 0) ? TMC2209_ERR_IO : TMC2209_OK;
 }
 
 /* ── Meaning ────────────────────────────────────────────────────────────── */
@@ -101,8 +98,8 @@ tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on)
 
 tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on)
 {
-    bool level = false;
-    tmc2209_err_t err = tmc2209_line_read(dev, TMC2209_LINE_ENN, &level);
+    bool          level = false;
+    tmc2209_err_t err   = tmc2209_line_read(dev, TMC2209_LINE_ENN, &level);
     if (err == TMC2209_OK) {
         *on = (bool)!level;
     }

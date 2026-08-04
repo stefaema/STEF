@@ -20,9 +20,11 @@
 
 #define RPC_RX_POLL_MS 50U
 
+/* clang-format off */
 #define RPC_TXQ_DEPTH   6
 #define RPC_LOG_MAX     192  /**< one log line, ANSI stripped */
 #define RPC_USB_CHUNK   64   /**< a USB full-speed bulk packet */
+/* clang-format on */
 
 /**
  * A finished frame waiting for the wire, CRC included and COBS not yet applied.
@@ -125,12 +127,14 @@ static uint8_t level_of(const char *line, size_t len)
 {
     for (size_t i = 0; i < len && line[i] != '('; i++) {
         switch (line[i]) {
+        /* clang-format off */
         case 'E': return 1;
         case 'W': return 2;
         case 'I': return 3;
         case 'D': return 4;
         case 'V': return 5;
         default:  break;
+        /* clang-format on */
         }
     }
     return 0;
@@ -163,9 +167,8 @@ static int log_to_link(const char *fmt, va_list ap)
     rpc_buf_t buf;
     memcpy(rpc_payload(&buf), text, len);
 
-    size_t frame_len = rpc_frame_seal_log(&buf, level_of(text, len),
-                                          (uint32_t)(esp_timer_get_time() / 1000),
-                                          len);
+    size_t frame_len =
+        rpc_frame_seal_log(&buf, level_of(text, len), (uint32_t)(esp_timer_get_time() / 1000), len);
     if (frame_len > 0) {
         /* Never wait. A full queue means the PC is not draining, and a log is
          * not worth stalling the task that produced it. */
@@ -197,9 +200,8 @@ static void serve(const rpc_buf_t *frame, size_t len)
      * payloads do not.
      */
     size_t       ret_len = 0;
-    rpc_status_t status  = rpc_dispatch(req->ns, req->method,
-                                        v.payload, v.payload_len,
-                                        rpc_payload(&reply), &ret_len);
+    rpc_status_t status =
+        rpc_dispatch(req->ns, req->method, v.payload, v.payload_len, rpc_payload(&reply), &ret_len);
 
     size_t reply_len = rpc_frame_seal_rep(&reply, req->id, status, ret_len);
     if (reply_len > 0) {
@@ -230,8 +232,7 @@ static void rx_task(void *arg)
     bool   overrun = false;
 
     for (;;) {
-        int got = usb_serial_jtag_read_bytes(chunk, sizeof(chunk),
-                                             pdMS_TO_TICKS(RPC_RX_POLL_MS));
+        int got = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(RPC_RX_POLL_MS));
 
         if (got <= 0) {
             continue;
@@ -248,8 +249,7 @@ static void rx_task(void *arg)
             }
 
             if (!overrun && run_len > 0) {
-                size_t len = cobs_decode(run, run_len, decoded.bytes,
-                                         sizeof(decoded.bytes));
+                size_t len = cobs_decode(run, run_len, decoded.bytes, sizeof(decoded.bytes));
                 if (len > 0) {
                     serve(&decoded, len);
                 }

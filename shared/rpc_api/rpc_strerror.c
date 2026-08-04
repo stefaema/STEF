@@ -3,6 +3,7 @@
 const char *rpc_strerror(rpc_status_t status)
 {
     switch (status) {
+    /* clang-format off */
     case RPC_OK:           return "ok";
 
     case RPC_ARG:          return "bad argument";
@@ -29,5 +30,6 @@ const char *rpc_strerror(rpc_status_t status)
     case RPC_INTERNAL:     return "the responder failed for its own reasons";
 
     default:               return "unknown";
+    /* clang-format on */
     }
 }

@@ -27,6 +27,7 @@
    so neither is a property the library may assume. FACTORY_CONF is given a
    non-zero trim precisely because a real part never reads back zero, which is
    what makes "read it, do not seed it" testable. */
+/* clang-format off */
 #define MOCK_RESET_IOIN         0x21000000U   /* revision byte; the mock picks one, like a part woUld */
 #define MOCK_RESET_GCONF        0x00000101U
 #define MOCK_RESET_GSTAT        0x00000001U   /* reset flag set at power-on */
@@ -68,6 +69,7 @@ typedef struct {
     unsigned truncate_reply;
     size_t   reply_keep;
 } mock_dev_t;
+/* clang-format on */
 
 /* Zeroes the mock, seeds the power-on register values a real part would show,
    and wires the returned backend to it. Leaves timeout_ms and retries at zero:

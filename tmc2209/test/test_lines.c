@@ -11,8 +11,8 @@
  * not tell a correct implementation from an inverted one.
  */
 
-#include "unity.h"
 #include "tmc2209.h"
+#include "unity.h"
 
 #include <string.h>
 
@@ -130,10 +130,10 @@ static void test_attach_rejects_an_incomplete_backend(void)
     setup_board(TMC2209_LINES_ALL);
 
     tmc2209_lines_t half = g_lines;
-    half.write = NULL;
+    half.write           = NULL;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_lines(&g_dev, &half));
 
-    half = g_lines;
+    half      = g_lines;
     half.read = NULL;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_lines(&g_dev, &half));
 }
@@ -260,7 +260,7 @@ static void test_is_enabled_inverts_the_level_back(void)
 {
     setup_board(TMC2209_LINES_ALL);
 
-    bool on = false;
+    bool on                         = false;
     g_board.level[TMC2209_LINE_ENN] = false;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_enabled(&g_dev, &on));
     TEST_ASSERT_TRUE(on);

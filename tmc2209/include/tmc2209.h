@@ -52,6 +52,7 @@ typedef struct {
 } tmc2209_regval_t;
 
 /** @brief One driver, and everything known about what it currently holds. */
+/* clang-format off */
 typedef struct {
     const tmc2209_uart_t *uart;          /**< register datagram channel, NULL until attached */
     const tmc2209_lines_t *lines;        /**< control lines, NULL until attached */
@@ -63,6 +64,7 @@ typedef struct {
     bool     run_dir;                    /**< DIR the last run was started with */
     bool     run_shaft;                  /**< GCONF.shaft the last run was started with */
 } tmc2209_t;
+/* clang-format on */
 
 /**
  * @brief Construction only.
@@ -122,8 +124,7 @@ tmc2209_err_t tmc2209_attach_uart(tmc2209_t *dev, const tmc2209_uart_t *uart);
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the underlying reads and writes
  */
-tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
-                              const tmc2209_regval_t *config, size_t n,
+tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, size_t n,
                               tmc2209_gstat_t *at_bringup);
 
 /* ── Values ─────────────────────────────────────────────────────────────── */
@@ -184,8 +185,7 @@ tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
  * @retval TMC2209_ERR_NO_ACK   IFCNT did not account for the writes issued
  * @return any transport error from the datagrams or their confirmation
  */
-tmc2209_err_t tmc2209_write(tmc2209_t *dev,
-                            const tmc2209_regval_t *ops, size_t n,
+tmc2209_err_t tmc2209_write(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t n,
                             size_t *failed_at);
 
 /* ── Conditions ─────────────────────────────────────────────────────────── */
@@ -706,8 +706,7 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
  *                                 or short. The reply is still collected, so
  *                                 @p rx_got and @p rx remain worth reading
  */
-tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart,
-                                const uint8_t *tx, size_t tx_len,
+tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart, const uint8_t *tx, size_t tx_len,
                                 uint8_t *rx, size_t rx_len, size_t *rx_got);
 
 #endif /* TMC2209_H */

@@ -41,8 +41,7 @@ static bool changes_nothing(const uint8_t *tx, size_t tx_len)
     return (tx[2] & TMC2209_WRITE_FLAG) == 0U;
 }
 
-static rpc_status_t pt_send(const void *args, size_t args_len,
-                            void *ret, size_t *ret_len)
+static rpc_status_t pt_send(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
     const rpc_pt_send_args *in  = args;
     rpc_pt_send_ret        *out = ret;
@@ -53,8 +52,7 @@ static rpc_status_t pt_send(const void *args, size_t args_len,
         return RPC_BAD_FRAME;
     }
 
-    if (in->count == 0 || in->count > RPC_PT_MAX_BYTES ||
-        in->reply_len > RPC_PT_MAX_BYTES) {
+    if (in->count == 0 || in->count > RPC_PT_MAX_BYTES || in->reply_len > RPC_PT_MAX_BYTES) {
         return RPC_ARG;
     }
 
@@ -69,9 +67,8 @@ static rpc_status_t pt_send(const void *args, size_t args_len,
     /* Straight into the reply frame. The library's out-parameter is the reply's
      * own storage, so nothing is staged and nothing is copied afterwards. */
     size_t        rx_got = 0;
-    tmc2209_err_t err    = tmc2209_uart_send(dev->uart, in->tx, in->count,
-                                             (in->reply_len > 0) ? out->rx : NULL,
-                                             in->reply_len, &rx_got);
+    tmc2209_err_t err    = tmc2209_uart_send(
+        dev->uart, in->tx, in->count, (in->reply_len > 0) ? out->rx : NULL, in->reply_len, &rx_got);
 
     if (!changes_nothing(in->tx, in->count)) {
         tmc2209_invalidate_owned(dev);

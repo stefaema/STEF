@@ -1,7 +1,11 @@
 #include "unity.h"
 
-void setUp(void) {}
-void tearDown(void) {}
+void setUp(void)
+{
+}
+void tearDown(void)
+{
+}
 
 void run_frame_tests(void);
 void run_reg_tests(void);

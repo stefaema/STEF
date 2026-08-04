@@ -13,13 +13,13 @@
  */
 static const board_driver_t drivers[] = {
     {
-        .name = CONFIG_STEF_DRV0_NAME,
-        .addr = CONFIG_STEF_DRV0_ADDR,
-        .enn  = CONFIG_STEF_DRV0_ENN_GPIO,
-        .dir  = CONFIG_STEF_DRV0_DIR_GPIO,
-        .step = CONFIG_STEF_DRV0_STEP_GPIO,
-        .diag = CONFIG_STEF_DRV0_DIAG_GPIO,
-    },
+     .name = CONFIG_STEF_DRV0_NAME,
+     .addr = CONFIG_STEF_DRV0_ADDR,
+     .enn  = CONFIG_STEF_DRV0_ENN_GPIO,
+     .dir  = CONFIG_STEF_DRV0_DIR_GPIO,
+     .step = CONFIG_STEF_DRV0_STEP_GPIO,
+     .diag = CONFIG_STEF_DRV0_DIAG_GPIO,
+     },
 };
 
 static const board_t board = {

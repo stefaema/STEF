@@ -27,8 +27,7 @@ static size_t seal(rpc_buf_t *b, size_t payload_len)
  * The header goes on as a whole compound literal, which zeroes its padding
  * members along with the rest. Two identical calls produce two identical CRCs.
  */
-size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
-                          size_t payload_len)
+size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method, size_t payload_len)
 {
     if (b == NULL) {
         return 0;
@@ -44,8 +43,7 @@ size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
     return seal(b, payload_len);
 }
 
-size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
-                          size_t payload_len)
+size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status, size_t payload_len)
 {
     if (b == NULL) {
         return 0;
@@ -60,8 +58,7 @@ size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
     return seal(b, payload_len);
 }
 
-size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms,
-                          size_t payload_len)
+size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms, size_t payload_len)
 {
     if (b == NULL) {
         return 0;

@@ -26,10 +26,10 @@ static void answer_read(mock_dev_t *m, uint8_t reg)
         served = (uint8_t)((reg + 1) & 0x7FU);
     }
 
-    uint32_t v = m->regs[reg & 0x7FU];
-    uint8_t reply[TMC2209_REPLY_LEN] = {
-        TMC2209_SYNC, TMC2209_MASTER_ADDR, served,
-        (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v, 0
+    uint32_t v                        = m->regs[reg & 0x7FU];
+    uint8_t  reply[TMC2209_REPLY_LEN] = {
+        TMC2209_SYNC,       TMC2209_MASTER_ADDR, served,     (uint8_t)(v >> 24),
+        (uint8_t)(v >> 16), (uint8_t)(v >> 8),   (uint8_t)v, 0
     };
     reply[7] = tmc2209_crc8(reply, 7);
 
@@ -58,7 +58,7 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
 
     if (m->echoes) {
         uint8_t echo[MOCK_OUT_CAP];
-        size_t n = (len > MOCK_OUT_CAP) ? MOCK_OUT_CAP : len;
+        size_t  n = (len > MOCK_OUT_CAP) ? MOCK_OUT_CAP : len;
         memcpy(echo, buf, n);
         if (m->corrupt_echo) {
             m->corrupt_echo--;
@@ -75,9 +75,11 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
        shared-bus addressing testable. */
     if (len >= 3 && buf[0] == TMC2209_SYNC && buf[1] == m->addr) {
         if (len == TMC2209_WRITE_LEN && (buf[2] & 0x80U)) {
-            uint8_t  reg = (uint8_t)(buf[2] & 0x7FU);
+            uint8_t reg = (uint8_t)(buf[2] & 0x7FU);
+            /* clang-format off */
             uint32_t val = ((uint32_t)buf[3] << 24) | ((uint32_t)buf[4] << 16) |
                            ((uint32_t)buf[5] << 8)  | (uint32_t)buf[6];
+            /* clang-format on */
             if (reg == TMC2209_GSTAT) {
                 m->regs[reg] &= ~val;   /* write 1 to clear, not store */
             } else {

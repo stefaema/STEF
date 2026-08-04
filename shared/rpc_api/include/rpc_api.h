@@ -507,6 +507,7 @@ typedef enum {
  * below @ref RPC_STATUS_TRANSPORT_BASE, and @ref RPC_STATUS_LAST is what holds
  * them there. Never renumber; append.
  */
+/* clang-format off */
 enum { /* NOLINT(readability-enum-initial-value): RPC_STATUS_LAST must follow, never pin */
     RPC_ARG          = 1,  /**< caller passed something impossible */
     RPC_TX_TIMEOUT   = 2,

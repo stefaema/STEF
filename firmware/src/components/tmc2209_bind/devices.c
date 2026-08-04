@@ -31,8 +31,7 @@ bool devices_init(void)
     const tmc2209_uart_t *uart = backends_uart();
     size_t                n    = board->n_drivers;
     if (n > DEVICES_MAX) {
-        ESP_LOGE(TAG, "board declares %u drivers, %d fit on one wire",
-                 (unsigned)n, DEVICES_MAX);
+        ESP_LOGE(TAG, "board declares %u drivers, %d fit on one wire", (unsigned)n, DEVICES_MAX);
         return false;
     }
 

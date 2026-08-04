@@ -3,6 +3,7 @@
 rpc_status_t rpc_status_of_err(tmc2209_err_t err)
 {
     switch (err) {
+    /* clang-format off */
     case TMC2209_OK:                return RPC_OK;
     case TMC2209_ERR_ARG:           return RPC_ARG;
     case TMC2209_ERR_TX_TIMEOUT:    return RPC_TX_TIMEOUT;
@@ -21,6 +22,7 @@ rpc_status_t rpc_status_of_err(tmc2209_err_t err)
     case TMC2209_ERR_BUSY:          return RPC_BUSY;
     case TMC2209_ERR_IDLE:          return RPC_IDLE;
     case TMC2209_ERR_RATE:          return RPC_RATE;
+    /* clang-format on */
     }
 
     /* No default above, so a new library error is a compile warning here

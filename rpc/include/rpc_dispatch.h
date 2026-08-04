@@ -60,8 +60,7 @@ typedef rpc_status_t (*rpc_fixed_fn)(const void *args, void *ret);
  * @param ret       room for @c ret_len bytes
  * @param ret_len   in: the room available. Out: what was used
  */
-typedef rpc_status_t (*rpc_var_fn)(const void *args, size_t args_len,
-                                   void *ret, size_t *ret_len);
+typedef rpc_status_t (*rpc_var_fn)(const void *args, size_t args_len, void *ret, size_t *ret_len);
 
 /** @brief One method: how to call it, and how long its payloads are. */
 typedef struct {
@@ -89,12 +88,10 @@ typedef struct {
     { { .fixed = (name) }, sizeof(rpc_##name##_args), sizeof(rpc_##name##_ret), false }
 
 /** @brief Takes arguments, answers with the status alone. */
-#define RPC_METHOD_ACK(name) \
-    { { .fixed = (name) }, sizeof(rpc_##name##_args), 0, false }
+#define RPC_METHOD_ACK(name) { { .fixed = (name) }, sizeof(rpc_##name##_args), 0, false }
 
 /** @brief Takes nothing, answers with a struct. */
-#define RPC_METHOD_GET(name) \
-    { { .fixed = (name) }, 0, sizeof(rpc_##name##_ret), false }
+#define RPC_METHOD_GET(name) { { .fixed = (name) }, 0, sizeof(rpc_##name##_ret), false }
 
 /** @brief Variable on one side or both. Lengths are the bounds. */
 #define RPC_METHOD_VAR(name) \
@@ -108,8 +105,7 @@ typedef struct {
  * single element. Give it the full reply: the base struct plus however many
  * elements the handler can produce.
  */
-#define RPC_METHOD_VAR_GET(name, max_len) \
-    { { .var = (name) }, 0, (max_len), true }
+#define RPC_METHOD_VAR_GET(name, max_len) { { .var = (name) }, 0, (max_len), true }
 
 /* ── Registry ───────────────────────────────────────────────────────────── */
 
@@ -144,8 +140,7 @@ void rpc_reset_registry(void);
  * @retval RPC_BAD_FRAME  the payload is not the length this method takes
  * @return whatever the handler returned
  */
-rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method,
-                          const void *args, size_t args_len,
-                          void *ret, size_t *ret_len);
+rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method, const void *args, size_t args_len, void *ret,
+                          size_t *ret_len);
 
 #endif /* RPC_DISPATCH_H */

@@ -17,7 +17,7 @@ static int            s_uart_num;
 static tmc2209_uart_t s_uart_backend;
 
 /* One lines backend per driver, each pointing at its own row of the table. */
-static tmc2209_lines_t      s_lines[BACKENDS_MAX_DRIVERS];
+static tmc2209_lines_t       s_lines[BACKENDS_MAX_DRIVERS];
 static const board_driver_t *s_wiring[BACKENDS_MAX_DRIVERS];
 
 /* ── UART ───────────────────────────────────────────────────────────── */
@@ -77,8 +77,7 @@ static void uart_trace(void *ctx, bool outbound, const uint8_t *buf, size_t len)
     }
     hex[n] = '\0';
 
-    ESP_LOGI(TAG, "%s %u: %s", outbound ? "tx" : "rx", (unsigned)len,
-             (len > 0) ? hex : "(-)");
+    ESP_LOGI(TAG, "%s %u: %s", outbound ? "tx" : "rx", (unsigned)len, (len > 0) ? hex : "(-)");
 }
 #endif
 
@@ -88,11 +87,13 @@ static void uart_trace(void *ctx, bool outbound, const uint8_t *buf, size_t len)
 static int pin_of(const board_driver_t *d, tmc2209_line_t line)
 {
     switch (line) {
+    /* clang-format off */
     case TMC2209_LINE_ENN:  return d->enn;
     case TMC2209_LINE_DIR:  return d->dir;
     case TMC2209_LINE_STEP: return d->step;
     case TMC2209_LINE_DIAG: return d->diag;
     default:                return BOARD_PIN_NONE;
+    /* clang-format on */
     }
 }
 
@@ -205,11 +206,11 @@ static esp_err_t configure_driver_pins(const board_driver_t *d)
 static esp_err_t configure_uart(const board_t *board)
 {
     uart_config_t cfg = {
-        .baud_rate = (int)board->baud,
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .baud_rate  = (int)board->baud,
+        .data_bits  = UART_DATA_8_BITS,
+        .parity     = UART_PARITY_DISABLE,
+        .stop_bits  = UART_STOP_BITS_1,
+        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
 
@@ -223,8 +224,8 @@ static esp_err_t configure_uart(const board_t *board)
         return err;
     }
 
-    return uart_set_pin(board->uart_num, board->uart_tx, board->uart_rx,
-                        UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    return uart_set_pin(board->uart_num, board->uart_tx, board->uart_rx, UART_PIN_NO_CHANGE,
+                        UART_PIN_NO_CHANGE);
 }
 
 esp_err_t backends_init(const board_t *board)
@@ -232,8 +233,7 @@ esp_err_t backends_init(const board_t *board)
     if (s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (board == NULL || board->n_drivers == 0 ||
-        board->n_drivers > BACKENDS_MAX_DRIVERS) {
+    if (board == NULL || board->n_drivers == 0 || board->n_drivers > BACKENDS_MAX_DRIVERS) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -250,11 +250,11 @@ esp_err_t backends_init(const board_t *board)
         .rx       = uart_rx,
         .purge_rx = uart_purge_rx,
 #if CONFIG_STEF_TMC_UART_TRACE
-        .trace    = uart_trace,
+        .trace = uart_trace,
 #endif
-        .ctx      = NULL,
+        .ctx    = NULL,
         /* TX and RX meet at PDN_UART, so every byte we send comes back. */
-        .echoes   = true,
+        .echoes = true,
 
         /* Library policy rather than peripheral fact, and the board table's to
            choose: how long a driver gets to answer, and how many times a
@@ -274,10 +274,10 @@ esp_err_t backends_init(const board_t *board)
 
         s_wiring[i] = d;
         s_lines[i]  = (tmc2209_lines_t){
-            .read  = lines_read,
-            .write = lines_write,
-            .ctx   = (void *)d,
-            .wired = wired_mask(d),
+             .read  = lines_read,
+             .write = lines_write,
+             .ctx   = (void *)d,
+             .wired = wired_mask(d),
         };
     }
 

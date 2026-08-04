@@ -11,6 +11,7 @@
 #define TMC2209_ERR_H
 
 /** @brief Every way a call in this library can fail. */
+/* clang-format off */
 typedef enum {
     TMC2209_OK = 0,
     TMC2209_ERR_ARG,          /**< caller passed something impossible */
@@ -31,6 +32,7 @@ typedef enum {
     TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
     TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. */
 } tmc2209_err_t;
+/* clang-format on */
 
 /**
  * @brief Names a error code, for a log line or an operator.

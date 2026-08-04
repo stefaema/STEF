@@ -25,6 +25,7 @@
 
 /* ── Fields ─────────────────────────────────────────────────────────────── */
 
+/* clang-format off */
 /** Opens every datagram in either direction. */
 #define TMC2209_SYNC          0x05U
 /** Sync is the low nibble only; the reserved high nibble in a reply is masked out but still CRC'd. */
@@ -43,6 +44,7 @@
 #define TMC2209_WRITE_LEN     8U  /**< sync, addr, reg|write flag, 4 data, crc */
 #define TMC2209_READ_REQ_LEN  4U  /**< sync, addr, reg, crc */
 #define TMC2209_REPLY_LEN     8U  /**< sync, master addr, reg, 4 data, crc */
+/* clang-format on */
 
 /* ── Datagrams ──────────────────────────────────────────────────────────── */
 
@@ -70,8 +72,8 @@ uint8_t tmc2209_crc8(const uint8_t *data, size_t len);
  * @param reg         register index; the write flag is added here
  * @param value       32 bits, most significant byte first
  */
-void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN],
-                         uint8_t slave_addr, uint8_t reg, uint32_t value);
+void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN], uint8_t slave_addr, uint8_t reg,
+                         uint32_t value);
 
 /**
  * @brief Lays out a read request, CRC included.
@@ -80,8 +82,7 @@ void tmc2209_frame_write(uint8_t out[TMC2209_WRITE_LEN],
  * @param slave_addr  0..3, masked to the two bits the bus carries
  * @param reg         register index; the write flag is stripped here
  */
-void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN],
-                                uint8_t slave_addr, uint8_t reg);
+void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN], uint8_t slave_addr, uint8_t reg);
 
 /**
  * @brief Validates preamble, register and CRC before yielding a value.
@@ -98,7 +99,7 @@ void tmc2209_frame_read_request(uint8_t out[TMC2209_READ_REQ_LEN],
  * @retval TMC2209_ERR_REG       an intact reply about a register we did not ask
  *                               about, so the reply stream has slipped
  */
-tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN],
-                                        uint8_t expect_reg, uint32_t *out);
+tmc2209_err_t tmc2209_frame_parse_reply(const uint8_t in[TMC2209_REPLY_LEN], uint8_t expect_reg,
+                                        uint32_t *out);
 
 #endif /* TMC2209_FRAME_H */

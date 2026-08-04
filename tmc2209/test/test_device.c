@@ -8,8 +8,8 @@
  * is the defect the old reset-value seeding shipped.
  */
 
-#include "unity.h"
 #include "mock_tmc2209.h"
+#include "unity.h"
 
 #include <string.h>
 
@@ -23,16 +23,16 @@ static tmc2209_t      g_dev;
 #define CFG_GCONF 0x000000C0U
 
 static const tmc2209_regval_t k_config[] = {
-    { TMC2209_GCONF,      CFG_GCONF    },
-    { TMC2209_SLAVECONF,  0x00000200U  },
-    { TMC2209_IHOLD_IRUN, 0x00081810U  },
-    { TMC2209_TPOWERDOWN, 0x00000014U  },
-    { TMC2209_TPWMTHRS,   0x000001F4U  },
-    { TMC2209_TCOOLTHRS,  0x000003E8U  },
-    { TMC2209_VACTUAL,    0x00000000U  },
-    { TMC2209_SGTHRS,     0x00000050U  },
-    { TMC2209_COOLCONF,   0x00010203U  },
-    { TMC2209_CHOPCONF,   0x14010053U  },
+    { TMC2209_GCONF,      CFG_GCONF   },
+    { TMC2209_SLAVECONF,  0x00000200U },
+    { TMC2209_IHOLD_IRUN, 0x00081810U },
+    { TMC2209_TPOWERDOWN, 0x00000014U },
+    { TMC2209_TPWMTHRS,   0x000001F4U },
+    { TMC2209_TCOOLTHRS,  0x000003E8U },
+    { TMC2209_VACTUAL,    0x00000000U },
+    { TMC2209_SGTHRS,     0x00000050U },
+    { TMC2209_COOLCONF,   0x00010203U },
+    { TMC2209_CHOPCONF,   0x14010053U },
 };
 
 static void setup_uart(uint8_t addr, bool echoes, uint8_t retries)
@@ -47,8 +47,7 @@ static void setup_uart(uint8_t addr, bool echoes, uint8_t retries)
 static void setup_ready(void)
 {
     setup_uart(0, true, 1);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
 
 static tmc2209_err_t write_one(tmc2209_reg_t reg, uint32_t value)
@@ -100,7 +99,7 @@ static void test_attach_uart_rejects_an_incomplete_backend(void)
     half.tx = NULL;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 
-    half = g_uart;
+    half    = g_uart;
     half.rx = NULL;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 }
@@ -112,7 +111,7 @@ static void test_a_rejected_uart_does_not_displace_the_attached_one(void)
     setup_ready();
 
     tmc2209_uart_t half = g_uart;
-    half.tx = NULL;
+    half.tx             = NULL;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, write_one(TMC2209_VACTUAL, 0x1234U));
@@ -125,12 +124,12 @@ static void test_a_device_without_a_uart_refuses_every_transaction(void)
 {
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
-    uint32_t v = 0;
+    uint32_t               v  = 0;
     const tmc2209_regval_t op = { TMC2209_VACTUAL, 0 };
     tmc2209_ihold_irun_t   c  = { 0, 0, 0 };
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_write(&g_dev, &op, 1, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_health(&g_dev, &v));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_poll_raw(&g_dev, TMC2209_IOIN, &v));
@@ -178,8 +177,7 @@ static void test_two_devices_share_one_uart(void)
     TEST_ASSERT_EQUAL_UINT8(0, g_dev.addr);
     TEST_ASSERT_EQUAL_UINT8(1, second.addr);
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&second));
 }
@@ -190,8 +188,7 @@ static void test_bringup_writes_the_whole_configuration(void)
 {
     setup_ready();
     for (size_t i = 0; i < TMC2209_NELEM(k_config); i++) {
-        TEST_ASSERT_EQUAL_HEX32(k_config[i].value,
-                                mock_reg(&g_mock, k_config[i].reg));
+        TEST_ASSERT_EQUAL_HEX32(k_config[i].value, mock_reg(&g_mock, k_config[i].reg));
     }
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
@@ -205,8 +202,8 @@ static void test_bringup_never_writes_a_value_the_caller_did_not_supply(void)
 {
     setup_ready();
 
-    uint32_t gconf = mock_reg(&g_mock, TMC2209_GCONF);
-    tmc2209_gconf_t g = tmc2209_gconf_decode(gconf);
+    uint32_t        gconf = mock_reg(&g_mock, TMC2209_GCONF);
+    tmc2209_gconf_t g     = tmc2209_gconf_decode(gconf);
     TEST_ASSERT_TRUE(g.mstep_reg_select);
     TEST_ASSERT_TRUE(g.pdn_disable);
     TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, gconf);
@@ -218,7 +215,7 @@ static void test_bringup_rejects_a_configuration_with_a_gap(void)
 {
     setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config) - 1, NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config) - 1, NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
@@ -226,11 +223,11 @@ static void test_bringup_rejects_a_register_it_does_not_own(void)
 {
     const tmc2209_regval_t sneaky[] = {
         { TMC2209_GCONF,        CFG_GCONF },
-        { TMC2209_FACTORY_CONF, 0         },   /* would detune the oscillator */
+        { TMC2209_FACTORY_CONF, 0         }, /* would detune the oscillator */
     };
     setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS,
-        tmc2209_bringup(&g_dev, sneaky, TMC2209_NELEM(sneaky), NULL));
+                      tmc2209_bringup(&g_dev, sneaky, TMC2209_NELEM(sneaky), NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
@@ -249,7 +246,7 @@ static void test_bringup_refuses_a_configuration_that_asks_for_motion(void)
 
     setup_uart(0, true, 1);
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_bringup(&g_dev, moving, TMC2209_NELEM(moving), NULL));
+                      tmc2209_bringup(&g_dev, moving, TMC2209_NELEM(moving), NULL));
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
@@ -282,8 +279,7 @@ static void test_bringup_clears_latched_gstat(void)
     setup_uart(0, true, 1);
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x5U);   /* reset | uv_cp */
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_EQUAL_HEX32(0, mock_reg(&g_mock, TMC2209_GSTAT));
 }
 
@@ -294,7 +290,7 @@ static void test_bringup_reports_the_flags_it_clears(void)
 
     tmc2209_gstat_t at_bringup = { false };
     TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), &at_bringup));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), &at_bringup));
 
     TEST_ASSERT_TRUE(at_bringup.reset);
     TEST_ASSERT_FALSE(at_bringup.drv_err);
@@ -307,15 +303,14 @@ static void test_bringup_fails_when_the_addressed_driver_is_absent(void)
     g_mock.addr = 2;                  /* only address 2 answers */
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
 static void test_addressing_reaches_the_right_driver(void)
 {
     setup_uart(2, true, 1);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     TEST_ASSERT_EQUAL_HEX8(2, g_mock.tx_log[1]);   /* slave address byte */
 }
@@ -409,8 +404,7 @@ static void test_write_skips_ops_that_change_nothing(void)
     setup_ready();
     unsigned writes_before = g_mock.writes_seen;
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
@@ -452,7 +446,7 @@ static void test_write_rejects_a_register_it_does_not_own(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, write_one(TMC2209_DRV_STATUS, 0));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, write_one(TMC2209_FACTORY_CONF, 0));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, write_one(TMC2209_GSTAT, 1));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,    write_one((tmc2209_reg_t)0x04, 0));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, write_one((tmc2209_reg_t)0x04, 0));
 }
 
 /* Validation happens before any byte goes out, so a batch cannot be half sent
@@ -464,10 +458,9 @@ static void test_write_validates_the_whole_batch_before_sending(void)
 
     const tmc2209_regval_t ops[] = {
         { TMC2209_SGTHRS,     0x11U },
-        { TMC2209_DRV_STATUS, 0x22U },   /* not writable */
+        { TMC2209_DRV_STATUS, 0x22U }, /* not writable */
     };
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS,
-        tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), NULL));
 
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
 }
@@ -494,9 +487,8 @@ static void test_a_failed_batch_invalidates_every_slot_in_it(void)
     };
 
     g_mock.corrupt_echo = 2;   /* both attempts at op 0 fail */
-    size_t failed_at = 999;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), &failed_at));
+    size_t failed_at    = 999;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO, tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), &failed_at));
 
     uint32_t v = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_SGTHRS, &v));
@@ -534,7 +526,7 @@ static void test_failed_at_is_n_when_the_batch_check_fails(void)
 
     size_t failed_at = 999;
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_ACK,
-        tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), &failed_at));
+                      tmc2209_write(&g_dev, ops, TMC2209_NELEM(ops), &failed_at));
     TEST_ASSERT_EQUAL_size_t(TMC2209_NELEM(ops), failed_at);
 }
 
@@ -584,8 +576,7 @@ static void test_driver_reset_invalidates_every_owned_slot(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 
     /* Re-sending the configuration makes the owned slots valid again. */
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
@@ -601,8 +592,7 @@ static void test_latched_conditions_survive_reconfiguration(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
     TEST_ASSERT_BITS_HIGH((uint32_t)TMC2209_DRIVER_RESET, conditions);
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     /* Still latched: rewriting the config does not clear a driver flag. */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
@@ -610,8 +600,7 @@ static void test_latched_conditions_survive_reconfiguration(void)
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, conditions));
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &conditions));
     TEST_ASSERT_EQUAL_HEX32(0, conditions);
@@ -624,7 +613,7 @@ static void test_poll_health_is_repeatable(void)
     setup_ready();
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x4U);   /* uv_cp */
 
-    uint32_t first = 0;
+    uint32_t first  = 0;
     uint32_t second = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &first));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_health(&g_dev, &second));
@@ -670,9 +659,8 @@ static void test_clear_faults_ignores_live_conditions(void)
     setup_ready();
     unsigned writes_before = g_mock.writes_seen;
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_clear_faults(&g_dev, (uint32_t)TMC2209_OVERTEMP_SHUTDOWN |
-                                     (uint32_t)TMC2209_STANDSTILL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, (uint32_t)TMC2209_OVERTEMP_SHUTDOWN |
+                                                                   (uint32_t)TMC2209_STANDSTILL));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, 0));
 
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
@@ -740,7 +728,7 @@ static void test_poll_raw_reaches_the_diagnostic_registers(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_raw(&g_dev, TMC2209_MSCURACT, &v));
 
     tmc2209_mscuract_t m = tmc2209_mscuract_decode(v);
-    TEST_ASSERT_EQUAL_INT16(255,  m.cur_a);
+    TEST_ASSERT_EQUAL_INT16(255, m.cur_a);
     TEST_ASSERT_EQUAL_INT16(-255, m.cur_b);
 }
 
@@ -793,8 +781,8 @@ static void test_poll_version_and_poll_pins_read_the_same_register(void)
     setup_ready();
     mock_set_reg(&g_mock, TMC2209_IOIN, (0x5AU << 24) | (1U << 6));
 
-    uint8_t version = 0;
-    tmc2209_ioin_t pins = { false };
+    uint8_t        version = 0;
+    tmc2209_ioin_t pins    = { false };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_pins(&g_dev, &pins));
 
@@ -828,8 +816,7 @@ static void test_set_velocity_writes_and_is_recallable(void)
 {
     setup_ready();
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, -1000));
-    TEST_ASSERT_EQUAL_HEX32(tmc2209_vactual_encode(-1000),
-                            mock_reg(&g_mock, TMC2209_VACTUAL));
+    TEST_ASSERT_EQUAL_HEX32(tmc2209_vactual_encode(-1000), mock_reg(&g_mock, TMC2209_VACTUAL));
 
     /* VACTUAL cannot be read back from the driver, so the cache is the only place
        the coordinated-motion precondition can be checked. */
@@ -848,11 +835,10 @@ static void test_set_current_writes_ihold_irun(void)
     const tmc2209_ihold_irun_t c = { .ihold = 4, .irun = 20, .iholddelay = 6 };
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_current(&g_dev, &c));
 
-    tmc2209_ihold_irun_t back =
-        tmc2209_ihold_irun_decode(mock_reg(&g_mock, TMC2209_IHOLD_IRUN));
-    TEST_ASSERT_EQUAL_UINT8(4,  back.ihold);
+    tmc2209_ihold_irun_t back = tmc2209_ihold_irun_decode(mock_reg(&g_mock, TMC2209_IHOLD_IRUN));
+    TEST_ASSERT_EQUAL_UINT8(4, back.ihold);
     TEST_ASSERT_EQUAL_UINT8(20, back.irun);
-    TEST_ASSERT_EQUAL_UINT8(6,  back.iholddelay);
+    TEST_ASSERT_EQUAL_UINT8(6, back.iholddelay);
 }
 
 /* ── Fault injection ────────────────────────────────────────────────────── */
@@ -860,8 +846,7 @@ static void test_set_current_writes_ihold_irun(void)
 static void test_crc_failure_recovers_on_retry(void)
 {
     setup_uart(0, true, 1);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     g_mock.fail_crc = 1;
     mock_set_reg(&g_mock, TMC2209_SG_RESULT, 77U);
@@ -874,11 +859,10 @@ static void test_crc_failure_recovers_on_retry(void)
 static void test_crc_failure_beyond_retries_is_reported(void)
 {
     setup_uart(0, true, 1);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     g_mock.fail_crc = 5;
-    uint32_t v = 0;
+    uint32_t v      = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_CRC, tmc2209_poll_raw(&g_dev, TMC2209_MSCNT, &v));
 }
 
@@ -890,7 +874,7 @@ static void test_echo_mismatch_is_detected(void)
     g_mock.corrupt_echo = 1;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
 
 static void test_silence_from_the_driver_times_out(void)
@@ -899,7 +883,7 @@ static void test_silence_from_the_driver_times_out(void)
     g_mock.drop_reply = 1;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
 
 /* An intact reply naming a register nobody asked for: the reply stream has
@@ -907,11 +891,11 @@ static void test_silence_from_the_driver_times_out(void)
 static void test_wrong_register_reply_fails_without_retrying(void)
 {
     setup_uart(0, true, 3);
-    g_mock.wrong_reg = 1;
+    g_mock.wrong_reg      = 1;
     unsigned reads_before = g_mock.reads_seen;
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_REG,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_EQUAL_UINT(1, g_mock.reads_seen - reads_before);
 }
 
@@ -919,8 +903,7 @@ static void test_wrong_register_reply_fails_without_retrying(void)
 static void test_non_echoing_backend_works(void)
 {
     setup_uart(0, false, 1);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
@@ -935,14 +918,13 @@ static void test_passthrough_moves_bytes_verbatim(void)
     tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
-    size_t got = 0;
+    size_t  got                      = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
+                      tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_frame_parse_reply(reply, (uint8_t)TMC2209_MSCNT, &v));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_frame_parse_reply(reply, (uint8_t)TMC2209_MSCNT, &v));
     TEST_ASSERT_EQUAL_HEX32(0x1234U, v);
 }
 
@@ -957,9 +939,9 @@ static void test_passthrough_reports_silence_as_zero_bytes(void)
     tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
-    size_t got = 99;
+    size_t  got                      = 99;
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
+                      tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(0, got);
 }
 
@@ -973,9 +955,9 @@ static void test_passthrough_reports_a_partial_reply(void)
     tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
-    size_t got = 0;
+    size_t  got                      = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_RX_TIMEOUT,
-        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
+                      tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(5, got);
 
     /* The bytes that did arrive are the real ones, which is what makes them
@@ -997,7 +979,7 @@ static void test_passthrough_short_echo_is_not_a_driver_timeout(void)
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, NULL));
+                      tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, NULL));
 }
 
 /* A collision does not gag the driver, so the answer is still collected. */
@@ -1011,14 +993,13 @@ static void test_passthrough_echo_mismatch_still_collects_the_reply(void)
     tmc2209_frame_read_request(req, 0, (uint8_t)TMC2209_MSCNT);
 
     uint8_t reply[TMC2209_REPLY_LEN] = { 0 };
-    size_t got = 0;
+    size_t  got                      = 0;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ECHO,
-        tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
+                      tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(sizeof reply, got);
 
     uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_frame_parse_reply(reply, (uint8_t)TMC2209_MSCNT, &v));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_frame_parse_reply(reply, (uint8_t)TMC2209_MSCNT, &v));
     TEST_ASSERT_EQUAL_HEX32(0x1234U, v);
 }
 
@@ -1030,16 +1011,14 @@ static void test_passthrough_write_desyncs_until_invalidated(void)
 
     uint8_t dg[TMC2209_WRITE_LEN];
     tmc2209_frame_write(dg, 0, (uint8_t)TMC2209_SGTHRS, 0x99U);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_uart_send(&g_uart, dg, sizeof dg, NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_uart_send(&g_uart, dg, sizeof dg, NULL, 0, NULL));
 
     tmc2209_invalidate_owned(&g_dev);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
     /* The next batch re-seeds the IFCNT baseline, or it would fail against a
        counter that moved without it. */
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-        tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
     TEST_ASSERT_EQUAL_HEX32(0x00000050U, mock_reg(&g_mock, TMC2209_SGTHRS));
 }
@@ -1048,10 +1027,8 @@ static void test_passthrough_rejects_oversized_frames(void)
 {
     setup_ready();
     uint8_t big[64] = { 0 };
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_uart_send(&g_uart, big, sizeof big, NULL, 0, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG,
-        tmc2209_uart_send(&g_uart, big, 0, NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_uart_send(&g_uart, big, sizeof big, NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_uart_send(&g_uart, big, 0, NULL, 0, NULL));
 }
 
 void run_device_tests(void)

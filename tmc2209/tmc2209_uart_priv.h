@@ -29,8 +29,8 @@ void tmc2209_uart_unlock(const tmc2209_uart_t *uart);
  * is not retried: TMC2209_ERR_REG and TMC2209_ERR_ARG come straight back,
  * because a second identical attempt would fail identically.
  */
-tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr,
-                                    tmc2209_reg_t reg, uint32_t *out);
+tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                                    uint32_t *out);
 
 /**
  * @brief Writes one register, retrying up to @p uart->retries times.
@@ -40,8 +40,7 @@ tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr,
  * attempt so the caller can check the counter against a range rather than an
  * exact delta. It is never reset here: a batch accumulates across calls.
  */
-tmc2209_err_t tmc2209_uart_write_reg(const tmc2209_uart_t *uart, uint8_t addr,
-                                     tmc2209_reg_t reg, uint32_t value,
-                                     unsigned *issued);
+tmc2209_err_t tmc2209_uart_write_reg(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                                     uint32_t value, unsigned *issued);
 
 #endif /* TMC2209_UART_PRIV_H */

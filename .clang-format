@@ -1,6 +1,4 @@
-# Inert: delete DisableFormat to enforce. tmc2209_reg.c already has its guard.
-DisableFormat: true
-
+# Enforced by `ci_cd/run.py fmt`. Deliberate tables carry `clang-format off`.
 BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 100
@@ -12,7 +10,8 @@ AlignConsecutiveMacros: AcrossComments
 AlignConsecutiveAssignments: AcrossComments
 AlignConsecutiveDeclarations: AcrossComments
 AlignEscapedNewlines: Left
-AlignTrailingComments: true
+AlignTrailingComments:
+  Kind: Leave
 AlignArrayOfStructures: Left
 SpacesBeforeTrailingComments: 2
 ReflowComments: Never

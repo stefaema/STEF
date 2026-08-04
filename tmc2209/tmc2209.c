@@ -38,19 +38,17 @@ static void mark_valid(tmc2209_t *dev, int slot, uint32_t value)
 /* Writes get no reply, so IFCNT is the only acknowledgement that exists.
    A range, not an exact delta: a retried write may have been counted twice.
    Reads do not advance IFCNT, so retrying this read cannot skew what it checks. */
-static tmc2209_err_t confirm_writes(tmc2209_t *dev,
-                                    unsigned registers_written,
+static tmc2209_err_t confirm_writes(tmc2209_t *dev, unsigned registers_written,
                                     unsigned datagrams_sent)
 {
-    uint32_t raw = 0;
-    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr,
-                                              TMC2209_IFCNT, &raw);
+    uint32_t      raw = 0;
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
     uint8_t  now   = tmc2209_ifcnt_decode(raw);
     unsigned delta = (uint8_t)(now - dev->ifcnt);   /* unsigned 8-bit subtraction wraps */
-    dev->ifcnt = now;
+    dev->ifcnt     = now;
 
     if (delta < registers_written || delta > datagrams_sent) {
         return TMC2209_ERR_NO_ACK;
@@ -65,10 +63,9 @@ static tmc2209_err_t clear_gstat(tmc2209_t *dev, uint32_t mask)
     if (mask == 0) {
         return TMC2209_OK;
     }
-    unsigned datagrams_sent = 0;
-    tmc2209_err_t err = tmc2209_uart_write_reg(dev->uart, dev->addr,
-                                               TMC2209_GSTAT, mask,
-                                               &datagrams_sent);
+    unsigned      datagrams_sent = 0;
+    tmc2209_err_t err =
+        tmc2209_uart_write_reg(dev->uart, dev->addr, TMC2209_GSTAT, mask, &datagrams_sent);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -125,8 +122,7 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr)
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_bringup(tmc2209_t *dev,
-                              const tmc2209_regval_t *config, size_t n,
+tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, size_t n,
                               tmc2209_gstat_t *at_bringup)
 {
     if (!dev || !config || n == 0) {
@@ -216,8 +212,7 @@ tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_write(tmc2209_t *dev,
-                            const tmc2209_regval_t *ops, size_t n,
+tmc2209_err_t tmc2209_write(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t n,
                             size_t *failed_at)
 {
     if (!dev || !ops || n == 0) {
@@ -237,14 +232,14 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
     /* An invalid cache means a stale IFCNT baseline too (passthrough bumps it). Re-seed. */
     if (!tmc2209_all_owned_valid(dev)) {
         uint32_t raw = 0;
-        err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);
+        err          = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);
         if (err == TMC2209_OK) {
             dev->ifcnt = tmc2209_ifcnt_decode(raw);
         }
     }
 
-    unsigned registers_written = 0;   /* lower bound on the IFCNT delta */
-    unsigned datagrams_sent    = 0;   /* upper bound; retries inflate it */
+    unsigned registers_written = 0; /* lower bound on the IFCNT delta */
+    unsigned datagrams_sent    = 0; /* upper bound; retries inflate it */
     size_t   stopped           = n;
 
     for (size_t i = 0; i < n && err == TMC2209_OK; i++) {
@@ -259,9 +254,8 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev,
             continue;
         }
 
-        err = tmc2209_uart_write_reg(dev->uart, dev->addr,
-                                     ops[i].reg, ops[i].value,
-                                     &datagrams_sent);
+        err =
+            tmc2209_uart_write_reg(dev->uart, dev->addr, ops[i].reg, ops[i].value, &datagrams_sent);
         if (err != TMC2209_OK) {
             stopped = i;
             break;
@@ -302,7 +296,7 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
         return TMC2209_ERR_NO_BACKEND;
     }
 
-    uint32_t raw = 0;
+    uint32_t      raw = 0;
     /* Two registers tell driver health: GSTAT and DRV. */
     tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_GSTAT, &raw);
     if (err != TMC2209_OK) {
@@ -311,9 +305,15 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
     tmc2209_gstat_t g = tmc2209_gstat_decode(raw);
 
     uint32_t found = 0;
-    if (g.reset)   { found |= (uint32_t)TMC2209_DRIVER_RESET;  }
-    if (g.drv_err) { found |= (uint32_t)TMC2209_DRIVER_FAULT; }
-    if (g.uv_cp)   { found |= (uint32_t)TMC2209_UNDERVOLTAGE; }
+    if (g.reset) {
+        found |= (uint32_t)TMC2209_DRIVER_RESET;
+    }
+    if (g.drv_err) {
+        found |= (uint32_t)TMC2209_DRIVER_FAULT;
+    }
+    if (g.uv_cp) {
+        found |= (uint32_t)TMC2209_UNDERVOLTAGE;
+    }
 
     err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_DRV_STATUS, &raw);
     if (err != TMC2209_OK) {
@@ -321,9 +321,15 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions)
     }
     tmc2209_drv_status_t s = tmc2209_drv_status_decode(raw);
 
-    if (s.otpw) { found |= (uint32_t)TMC2209_OVERTEMP_WARNING;  }
-    if (s.ot)   { found |= (uint32_t)TMC2209_OVERTEMP_SHUTDOWN; }
-    if (s.stst) { found |= (uint32_t)TMC2209_STANDSTILL;        }
+    if (s.otpw) {
+        found |= (uint32_t)TMC2209_OVERTEMP_WARNING;
+    }
+    if (s.ot) {
+        found |= (uint32_t)TMC2209_OVERTEMP_SHUTDOWN;
+    }
+    if (s.stst) {
+        found |= (uint32_t)TMC2209_STANDSTILL;
+    }
     if (s.s2ga || s.s2gb || s.s2vsa || s.s2vsb) {
         found |= (uint32_t)TMC2209_SHORT_CIRCUIT;
     }
@@ -357,9 +363,15 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
     }
 
     uint32_t mask = 0;
-    if (ack & (uint32_t)TMC2209_DRIVER_RESET)  { mask |= 1U << 0; }
-    if (ack & (uint32_t)TMC2209_DRIVER_FAULT)  { mask |= 1U << 1; }
-    if (ack & (uint32_t)TMC2209_UNDERVOLTAGE)  { mask |= 1U << 2; }
+    if (ack & (uint32_t)TMC2209_DRIVER_RESET) {
+        mask |= 1U << 0;
+    }
+    if (ack & (uint32_t)TMC2209_DRIVER_FAULT) {
+        mask |= 1U << 1;
+    }
+    if (ack & (uint32_t)TMC2209_UNDERVOLTAGE) {
+        mask |= 1U << 2;
+    }
 
     tmc2209_uart_lock(dev->uart);
     tmc2209_err_t err = clear_gstat(dev, mask);
@@ -378,9 +390,8 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
         return TMC2209_ERR_NO_BACKEND;
     }
 
-    uint32_t raw = 0;
-    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr,
-                                              TMC2209_SG_RESULT, &raw);
+    uint32_t      raw = 0;
+    tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_SG_RESULT, &raw);
     if (err != TMC2209_OK) {
         return err;
     }
@@ -393,7 +404,7 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out)
         armed = (tcoolthrs != 0);
     }
 
-    out->value = (uint16_t)(raw & 0x03FFU);
+    out->value  = (uint16_t)(raw & 0x03FFU);
     out->usable = armed;
     return TMC2209_OK;
 }
@@ -406,7 +417,7 @@ tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out)
     if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
-    uint32_t raw = 0;
+    uint32_t      raw = 0;
     tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IOIN, &raw);
     if (err != TMC2209_OK) {
         return err;
@@ -423,7 +434,7 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version)
     if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
-    uint32_t raw = 0;
+    uint32_t      raw = 0;
     tmc2209_err_t err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IOIN, &raw);
     if (err != TMC2209_OK) {
         return err;
@@ -445,7 +456,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
         return TMC2209_ERR_ARG;
     }
     if (!(access & TMC2209_ACCESS_READ)) {
-        return TMC2209_ERR_ACCESS;   /* write-only driver-side; nothing to read */
+        return TMC2209_ERR_ACCESS; /* write-only driver-side; nothing to read */
     }
 
     tmc2209_uart_lock(dev->uart);
@@ -467,19 +478,18 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
         return TMC2209_ERR_NO_BACKEND;
     }
 
-    uint32_t bad = 0;
+    uint32_t      bad = 0;
     tmc2209_err_t err = TMC2209_OK;
 
     tmc2209_uart_lock(dev->uart);
     for (int slot = 0; slot < TMC2209_REG_COUNT && err == TMC2209_OK; slot++) {
         /* Only owned registers the driver answers for; the other eight are W-O. */
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_OWNED ||
-            !(tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ)    ||
-            !(dev->valid & (1U << slot))) {
+            !(tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ) || !(dev->valid & (1U << slot))) {
             continue;
         }
         uint32_t raw = 0;
-        err = tmc2209_uart_read_reg(dev->uart, dev->addr, tmc2209_reg_at(slot), &raw);
+        err          = tmc2209_uart_read_reg(dev->uart, dev->addr, tmc2209_reg_at(slot), &raw);
         if (err == TMC2209_OK && raw != dev->cache[slot]) {
             bad |= (1U << slot);
         }
@@ -529,4 +539,3 @@ void tmc2209_invalidate_owned(tmc2209_t *dev)
         dev->valid &= ~owned_mask();
     }
 }
-

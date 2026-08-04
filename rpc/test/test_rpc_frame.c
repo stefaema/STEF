@@ -19,9 +19,9 @@
    means, so neither does this test. Any numbers will do, and using the ones
    this image happens to serve would be the coupling rpc_proto.h was split to
    avoid. */
-#define A_NAMESPACE  2U
-#define A_METHOD     7U
-#define A_STATUS     10U
+#define A_NAMESPACE 2U
+#define A_METHOD    7U
+#define A_STATUS    10U
 #include "unity.h"
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
@@ -56,9 +56,8 @@ void test_frame_request_header_is_where_it_says(void)
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + RPC_CRC_LEN, len);
 
     const uint8_t want[RPC_HDR_LEN] = {
-        RPC_FRAME_REQ, A_NAMESPACE, A_METHOD, 0x00,
-        0x34, 0x12, /* id, low byte first */
-        0x00, 0x00,
+        RPC_FRAME_REQ, A_NAMESPACE, A_METHOD, 0x00, 0x34, 0x12, /* id, low byte first */
+        0x00,          0x00,
     };
     TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
 }
@@ -72,9 +71,7 @@ void test_frame_reply_header_is_where_it_says(void)
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + RPC_CRC_LEN, len);
 
     const uint8_t want[RPC_HDR_LEN] = {
-        RPC_FRAME_REP, A_STATUS, 0x00, 0x00,
-        0x09, 0x07,
-        0x00, 0x00,
+        RPC_FRAME_REP, A_STATUS, 0x00, 0x00, 0x09, 0x07, 0x00, 0x00,
     };
     TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
 }
@@ -88,8 +85,7 @@ void test_frame_log_header_is_where_it_says(void)
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + RPC_CRC_LEN, len);
 
     const uint8_t want[RPC_HDR_LEN] = {
-        RPC_FRAME_LOG, 0x03, 0x00, 0x00,
-        0x44, 0x33, 0x22, 0x11,
+        RPC_FRAME_LOG, 0x03, 0x00, 0x00, 0x44, 0x33, 0x22, 0x11,
     };
     TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
 }
@@ -215,7 +211,7 @@ void test_frame_rejects_unknown_frame_type(void)
 
     b.bytes[0] = 0x7F;
 
-    uint16_t crc = crc16_ccitt(b.bytes, body);
+    uint16_t crc      = crc16_ccitt(b.bytes, body);
     b.bytes[body]     = (uint8_t)(crc & 0xFFU);
     b.bytes[body + 1] = (uint8_t)((crc >> 8) & 0xFFU);
 

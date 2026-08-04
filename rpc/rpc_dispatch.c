@@ -29,8 +29,7 @@ bool rpc_register(uint8_t ns, const rpc_method_t *methods, size_t count)
      * first call that happens to use it.
      */
     for (size_t i = 0; i < count; i++) {
-        if (methods[i].args_len > RPC_MAX_PAYLOAD ||
-            methods[i].ret_len > RPC_MAX_PAYLOAD) {
+        if (methods[i].args_len > RPC_MAX_PAYLOAD || methods[i].ret_len > RPC_MAX_PAYLOAD) {
             return false;
         }
     }
@@ -58,9 +57,8 @@ static bool implemented(const rpc_method_t *m)
     return m->fn.fixed != NULL;
 }
 
-rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method,
-                          const void *args, size_t args_len,
-                          void *ret, size_t *ret_len)
+rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method, const void *args, size_t args_len, void *ret,
+                          size_t *ret_len)
 {
     if (ret_len == NULL || (ret == NULL && args == NULL)) {
         return RPC_INTERNAL;

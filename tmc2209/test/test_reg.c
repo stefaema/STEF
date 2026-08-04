@@ -7,8 +7,8 @@
  * what kept PWMCONF uncacheable when nothing writes it at all.
  */
 
-#include "unity.h"
 #include "tmc2209_reg.h"
+#include "unity.h"
 
 static int count_class(tmc2209_class_t cls)
 {
@@ -49,7 +49,7 @@ static void test_class_counts_are_ten_ten_three(void)
 {
     TEST_ASSERT_EQUAL_INT(10, count_class(TMC2209_CLASS_VOLATILE));
     TEST_ASSERT_EQUAL_INT(10, count_class(TMC2209_CLASS_OWNED));
-    TEST_ASSERT_EQUAL_INT(3,  count_class(TMC2209_CLASS_CONSTANT));
+    TEST_ASSERT_EQUAL_INT(3, count_class(TMC2209_CLASS_CONSTANT));
     TEST_ASSERT_EQUAL_INT(TMC2209_OWNED_COUNT, count_class(TMC2209_CLASS_OWNED));
 }
 
@@ -103,7 +103,9 @@ static void test_vactual_is_owned_despite_being_write_only(void)
 static void test_constant_registers_are_the_ones_nobody_writes(void)
 {
     const tmc2209_reg_t never_written[] = {
-        TMC2209_FACTORY_CONF, TMC2209_OTP_READ, TMC2209_PWMCONF,
+        TMC2209_FACTORY_CONF,
+        TMC2209_OTP_READ,
+        TMC2209_PWMCONF,
     };
     for (size_t i = 0; i < sizeof never_written / sizeof never_written[0]; i++) {
         TEST_ASSERT_EQUAL(TMC2209_CLASS_CONSTANT, tmc2209_reg_class(never_written[i]));
@@ -147,9 +149,8 @@ static void test_nothing_unowned_is_writable_except_gstat(void)
 static void test_write_only_registers_are_not_readable(void)
 {
     const tmc2209_reg_t write_only[] = {
-        TMC2209_SLAVECONF, TMC2209_IHOLD_IRUN, TMC2209_TPOWERDOWN,
-        TMC2209_TPWMTHRS,  TMC2209_TCOOLTHRS,  TMC2209_VACTUAL,
-        TMC2209_SGTHRS,    TMC2209_COOLCONF,
+        TMC2209_SLAVECONF, TMC2209_IHOLD_IRUN, TMC2209_TPOWERDOWN, TMC2209_TPWMTHRS,
+        TMC2209_TCOOLTHRS, TMC2209_VACTUAL,    TMC2209_SGTHRS,     TMC2209_COOLCONF,
     };
     for (size_t i = 0; i < sizeof write_only / sizeof write_only[0]; i++) {
         uint8_t access = tmc2209_reg_access(write_only[i]);
@@ -198,18 +199,20 @@ static void test_chopconf_reset_decodes_to_256_microsteps_interpolated(void)
 static void test_ihold_irun_reset_decodes(void)
 {
     tmc2209_ihold_irun_t i = tmc2209_ihold_irun_decode(0x00071703U);
-    TEST_ASSERT_EQUAL_UINT8(3,  i.ihold);
+    TEST_ASSERT_EQUAL_UINT8(3, i.ihold);
     TEST_ASSERT_EQUAL_UINT8(23, i.irun);
-    TEST_ASSERT_EQUAL_UINT8(7,  i.iholddelay);
+    TEST_ASSERT_EQUAL_UINT8(7, i.iholddelay);
 }
 
 static void test_gconf_round_trips(void)
 {
     tmc2209_gconf_t g = {
-        .pdn_disable = true, .mstep_reg_select = true,
-        .multistep_filt = true, .shaft = true,
+        .pdn_disable      = true,
+        .mstep_reg_select = true,
+        .multistep_filt   = true,
+        .shaft            = true,
     };
-    uint32_t raw = tmc2209_gconf_encode(&g);
+    uint32_t        raw  = tmc2209_gconf_encode(&g);
     tmc2209_gconf_t back = tmc2209_gconf_decode(raw);
 
     TEST_ASSERT_TRUE(back.pdn_disable);
@@ -224,8 +227,14 @@ static void test_gconf_round_trips(void)
 static void test_chopconf_round_trips(void)
 {
     tmc2209_chopconf_t c = {
-        .toff = 5, .hstrt = 4, .hend = 1, .tbl = TMC2209_TBL_24,
-        .vsense = true, .mres = TMC2209_MRES_16, .intpol = true, .diss2vs = true,
+        .toff    = 5,
+        .hstrt   = 4,
+        .hend    = 1,
+        .tbl     = TMC2209_TBL_24,
+        .vsense  = true,
+        .mres    = TMC2209_MRES_16,
+        .intpol  = true,
+        .diss2vs = true,
     };
     tmc2209_chopconf_t back = tmc2209_chopconf_decode(tmc2209_chopconf_encode(&c));
 
@@ -242,15 +251,18 @@ static void test_chopconf_round_trips(void)
 
 static void test_ihold_irun_and_coolconf_round_trip(void)
 {
-    tmc2209_ihold_irun_t i = { .ihold = 8, .irun = 31, .iholddelay = 15 };
+    tmc2209_ihold_irun_t i  = { .ihold = 8, .irun = 31, .iholddelay = 15 };
     tmc2209_ihold_irun_t bi = tmc2209_ihold_irun_decode(tmc2209_ihold_irun_encode(&i));
-    TEST_ASSERT_EQUAL_UINT8(8,  bi.ihold);
+    TEST_ASSERT_EQUAL_UINT8(8, bi.ihold);
     TEST_ASSERT_EQUAL_UINT8(31, bi.irun);
     TEST_ASSERT_EQUAL_UINT8(15, bi.iholddelay);
 
     tmc2209_coolconf_t c = {
-        .semin = 5, .seup = TMC2209_SEUP_4, .semax = 2,
-        .sedn = TMC2209_SEDN_2, .seimin = true,
+        .semin  = 5,
+        .seup   = TMC2209_SEUP_4,
+        .semax  = 2,
+        .sedn   = TMC2209_SEDN_2,
+        .seimin = true,
     };
     tmc2209_coolconf_t bc = tmc2209_coolconf_decode(tmc2209_coolconf_encode(&c));
     TEST_ASSERT_EQUAL_UINT8(5, bc.semin);
@@ -263,8 +275,8 @@ static void test_ihold_irun_and_coolconf_round_trip(void)
 static void test_mres_maps_to_microsteps(void)
 {
     TEST_ASSERT_EQUAL_UINT16(256, tmc2209_mres_microsteps(TMC2209_MRES_256));
-    TEST_ASSERT_EQUAL_UINT16(16,  tmc2209_mres_microsteps(TMC2209_MRES_16));
-    TEST_ASSERT_EQUAL_UINT16(1,   tmc2209_mres_microsteps(TMC2209_MRES_FULL));
+    TEST_ASSERT_EQUAL_UINT16(16, tmc2209_mres_microsteps(TMC2209_MRES_16));
+    TEST_ASSERT_EQUAL_UINT16(1, tmc2209_mres_microsteps(TMC2209_MRES_FULL));
 }
 
 static void test_drv_status_decodes_fields(void)
@@ -288,9 +300,9 @@ static void test_ioin_decodes_version(void)
 
 static void test_vactual_round_trips_signed(void)
 {
-    TEST_ASSERT_EQUAL_INT32(0,     tmc2209_vactual_decode(tmc2209_vactual_encode(0)));
-    TEST_ASSERT_EQUAL_INT32(1000,  tmc2209_vactual_decode(tmc2209_vactual_encode(1000)));
-    TEST_ASSERT_EQUAL_INT32(-1,    tmc2209_vactual_decode(tmc2209_vactual_encode(-1)));
+    TEST_ASSERT_EQUAL_INT32(0, tmc2209_vactual_decode(tmc2209_vactual_encode(0)));
+    TEST_ASSERT_EQUAL_INT32(1000, tmc2209_vactual_decode(tmc2209_vactual_encode(1000)));
+    TEST_ASSERT_EQUAL_INT32(-1, tmc2209_vactual_decode(tmc2209_vactual_encode(-1)));
     TEST_ASSERT_EQUAL_INT32(-1000, tmc2209_vactual_decode(tmc2209_vactual_encode(-1000)));
 
     /* The field is 24 bits, so encode must not leak sign bits into 31..24. */
@@ -307,12 +319,12 @@ static void test_mscuract_sign_extends_both_phases(void)
 
     /* Peak positive on A (+255), peak negative on B (-255). */
     m = tmc2209_mscuract_decode(0x00FFU | (0x101U << 16));
-    TEST_ASSERT_EQUAL_INT16(255,  m.cur_a);
+    TEST_ASSERT_EQUAL_INT16(255, m.cur_a);
     TEST_ASSERT_EQUAL_INT16(-255, m.cur_b);
 
     /* Quarter cycle apart: A at zero crossing, B at -1. */
     m = tmc2209_mscuract_decode(0x0000U | (0x1FFU << 16));
-    TEST_ASSERT_EQUAL_INT16(0,  m.cur_a);
+    TEST_ASSERT_EQUAL_INT16(0, m.cur_a);
     TEST_ASSERT_EQUAL_INT16(-1, m.cur_b);
 }
 

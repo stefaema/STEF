@@ -95,8 +95,7 @@ static void advance_rate(stepgen_t *g, uint32_t index)
     } else if (g->pulses != 0U) {
         const uint64_t excess = (g->v_sq > g->pullin_sq) ? (g->v_sq - g->pullin_sq) : 0U;
         const uint64_t brake  = excess / step;
-        goal_sq = ((uint64_t)(g->pulses - index) <= brake) ? g->pullin_sq
-                                                          : squared(g->target_pps);
+        goal_sq = ((uint64_t)(g->pulses - index) <= brake) ? g->pullin_sq : squared(g->target_pps);
     } else {
         goal_sq = squared(g->target_pps);
     }
@@ -120,9 +119,8 @@ static void advance_rate(stepgen_t *g, uint32_t index)
  * dropped. Each period is then off by at most one tick and the mean rate is
  * the rate asked for, which is the difference between jitter and drift.
  */
-static size_t encode_run(const void *data, size_t data_size,
-                         size_t symbols_written, size_t symbols_free,
-                         rmt_symbol_word_t *symbols, bool *done, void *arg)
+static size_t encode_run(const void *data, size_t data_size, size_t symbols_written,
+                         size_t symbols_free, rmt_symbol_word_t *symbols, bool *done, void *arg)
 {
     (void)data;
     (void)data_size;
@@ -137,15 +135,15 @@ static size_t encode_run(const void *data, size_t data_size,
         }
     }
 
-    size_t   n       = 0;
-    bool     braked  = false;
+    size_t n      = 0;
+    bool   braked = false;
 
     while (n < budget) {
         advance_rate(g, (uint32_t)(symbols_written + n));
 
         const uint32_t num    = STEPGEN_RESOLUTION_HZ + g->rem;
         uint32_t       period = num / g->v;
-        g->rem = num - (period * g->v);
+        g->rem                = num - (period * g->v);
 
         if (period <= STEPGEN_PULSE_TICKS) {
             period = STEPGEN_PULSE_TICKS + 1U;
@@ -169,15 +167,14 @@ static size_t encode_run(const void *data, size_t data_size,
     return n;
 }
 
-static bool on_run_done(rmt_channel_handle_t chan,
-                        const rmt_tx_done_event_data_t *edata, void *arg)
+static bool on_run_done(rmt_channel_handle_t chan, const rmt_tx_done_event_data_t *edata, void *arg)
 {
     (void)chan;
     (void)edata;
 
     stepgen_t *g = (stepgen_t *)arg;
-    g->running = false;
-    g->cur_pps = 0U;
+    g->running   = false;
+    g->cur_pps   = 0U;
 
     return false;
 }
@@ -216,7 +213,7 @@ static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
 
     const rmt_transmit_config_t cfg = {
         .loop_count = 0,
-        .flags = { .eot_level = 0, .queue_nonblocking = true },
+        .flags      = { .eot_level = 0, .queue_nonblocking = true },
     };
 
     if (rmt_transmit(g->chan, g->encoder, g, sizeof *g, &cfg) != ESP_OK) {
@@ -281,8 +278,8 @@ static int gen_state(void *ctx, tmc2209_run_state_t *out)
 {
     stepgen_t *g = (stepgen_t *)ctx;
 
-    const bool running = g->running;
-    const uint32_t rate = g->cur_pps;
+    const bool     running = g->running;
+    const uint32_t rate    = g->cur_pps;
 
     int count = 0;
     if (pcnt_unit_get_count(g->pcnt, &count) != ESP_OK) {
@@ -308,7 +305,7 @@ static esp_err_t configure_counter(stepgen_t *g, int step_pin)
     const pcnt_unit_config_t unit_cfg = {
         .low_limit  = STEPGEN_PCNT_LOW,
         .high_limit = STEPGEN_PCNT_HIGH,
-        .flags = { .accum_count = 1 },
+        .flags      = { .accum_count = 1 },
     };
 
     esp_err_t err = pcnt_new_unit(&unit_cfg, &g->pcnt);
@@ -327,11 +324,11 @@ static esp_err_t configure_counter(stepgen_t *g, int step_pin)
     const pcnt_chan_config_t chan_cfg = {
         .edge_gpio_num  = step_pin,
         .level_gpio_num = -1,
-        .flags = { .virt_level_io_level = 1 },
+        .flags          = { .virt_level_io_level = 1 },
     };
 
     pcnt_channel_handle_t chan = NULL;
-    err = pcnt_new_channel(g->pcnt, &chan_cfg, &chan);
+    err                        = pcnt_new_channel(g->pcnt, &chan_cfg, &chan);
     if (err != ESP_OK) {
         return err;
     }
@@ -369,7 +366,7 @@ static esp_err_t configure_channel(stepgen_t *g, int step_pin)
         .resolution_hz     = STEPGEN_RESOLUTION_HZ,
         .mem_block_symbols = STEPGEN_MEM_SYMBOLS,
         .trans_queue_depth = 1,
-        .flags = { .io_loop_back = 1, .init_level = 0 },
+        .flags             = { .io_loop_back = 1, .init_level = 0 },
     };
 
     esp_err_t err = rmt_new_tx_channel(&chan_cfg, &g->chan);
@@ -389,7 +386,7 @@ static esp_err_t configure_channel(stepgen_t *g, int step_pin)
     }
 
     const rmt_tx_event_callbacks_t cbs = { .on_trans_done = on_run_done };
-    err = rmt_tx_register_event_callbacks(g->chan, &cbs, g);
+    err                                = rmt_tx_register_event_callbacks(g->chan, &cbs, g);
     if (err != ESP_OK) {
         return err;
     }
@@ -424,8 +421,7 @@ esp_err_t backends_stepgen_init(const board_t *board)
             /* The chip has four of each and the bench image spends one channel
                on the status LED, so running out is a real outcome and not a
                theoretical one. Say which resource, because the fix differs. */
-            ESP_LOGE(TAG, "%s step on gpio%d: %s", d->name, d->step,
-                     esp_err_to_name(err));
+            ESP_LOGE(TAG, "%s step on gpio%d: %s", d->name, d->step, esp_err_to_name(err));
             return err;
         }
 
@@ -440,8 +436,8 @@ esp_err_t backends_stepgen_init(const board_t *board)
         };
         s_present[i] = true;
 
-        ESP_LOGI(TAG, "%s step on gpio%d, %u..%u pps", d->name, d->step,
-                 (unsigned)STEPGEN_MIN_PPS, (unsigned)STEPGEN_MAX_PPS);
+        ESP_LOGI(TAG, "%s step on gpio%d, %u..%u pps", d->name, d->step, (unsigned)STEPGEN_MIN_PPS,
+                 (unsigned)STEPGEN_MAX_PPS);
     }
 
     s_ready = true;

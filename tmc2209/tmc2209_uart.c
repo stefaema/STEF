@@ -56,8 +56,7 @@ static tmc2209_err_t uart_tx(const tmc2209_uart_t *uart, const uint8_t *buf, siz
 }
 
 /* @p got reports how many bytes actually arrived. */
-static tmc2209_err_t uart_rx(const tmc2209_uart_t *uart, uint8_t *buf, size_t len,
-                             size_t *got)
+static tmc2209_err_t uart_rx(const tmc2209_uart_t *uart, uint8_t *buf, size_t len, size_t *got)
 {
     if (got) {
         *got = 0;
@@ -74,8 +73,7 @@ static tmc2209_err_t uart_rx(const tmc2209_uart_t *uart, uint8_t *buf, size_t le
 }
 
 /* Echo is evidence, not litter. Short and altered are both "not what we sent". */
-static tmc2209_err_t verify_echo(const tmc2209_uart_t *uart,
-                                 const uint8_t *sent, size_t len)
+static tmc2209_err_t verify_echo(const tmc2209_uart_t *uart, const uint8_t *sent, size_t len)
 {
     if (!uart->echoes) {
         return TMC2209_OK;
@@ -83,7 +81,7 @@ static tmc2209_err_t verify_echo(const tmc2209_uart_t *uart,
     if (len > TMC2209_MAX_TRANSFER) {
         return TMC2209_ERR_ARG;
     }
-    uint8_t echo[TMC2209_MAX_TRANSFER];
+    uint8_t       echo[TMC2209_MAX_TRANSFER];
     tmc2209_err_t err = uart_rx(uart, echo, len, NULL);
     if (err == TMC2209_ERR_RX_TIMEOUT) {
         return TMC2209_ERR_ECHO;
@@ -96,8 +94,8 @@ static tmc2209_err_t verify_echo(const tmc2209_uart_t *uart,
 
 /* ── Single transactions, one attempt each ──────────────────────────────── */
 
-static tmc2209_err_t read_once(const tmc2209_uart_t *uart, uint8_t addr,
-                               tmc2209_reg_t reg, uint32_t *out)
+static tmc2209_err_t read_once(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                               uint32_t *out)
 {
     uint8_t req[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(req, addr, (uint8_t)reg);
@@ -121,8 +119,8 @@ static tmc2209_err_t read_once(const tmc2209_uart_t *uart, uint8_t addr,
     return tmc2209_frame_parse_reply(reply, (uint8_t)reg, out);
 }
 
-static tmc2209_err_t write_once(const tmc2209_uart_t *uart, uint8_t addr,
-                                tmc2209_reg_t reg, uint32_t value)
+static tmc2209_err_t write_once(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                                uint32_t value)
 {
     uint8_t dg[TMC2209_WRITE_LEN];
     tmc2209_frame_write(dg, addr, (uint8_t)reg, value);
@@ -138,8 +136,8 @@ static tmc2209_err_t write_once(const tmc2209_uart_t *uart, uint8_t addr,
 
 /* ── Single transactions, multiple attempts ──────────────────────────────── */
 
-tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr,
-                                    tmc2209_reg_t reg, uint32_t *out)
+tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                                    uint32_t *out)
 {
     tmc2209_err_t err = TMC2209_ERR_IO;
     for (unsigned attempt = 0; attempt <= uart->retries; attempt++) {
@@ -156,9 +154,8 @@ tmc2209_err_t tmc2209_uart_read_reg(const tmc2209_uart_t *uart, uint8_t addr,
     return err;
 }
 
-tmc2209_err_t tmc2209_uart_write_reg(const tmc2209_uart_t *uart, uint8_t addr,
-                                     tmc2209_reg_t reg, uint32_t value,
-                                     unsigned *issued)
+tmc2209_err_t tmc2209_uart_write_reg(const tmc2209_uart_t *uart, uint8_t addr, tmc2209_reg_t reg,
+                                     uint32_t value, unsigned *issued)
 {
     tmc2209_err_t err = TMC2209_ERR_IO;
     for (unsigned attempt = 0; attempt <= uart->retries; attempt++) {
@@ -186,8 +183,7 @@ tmc2209_err_t tmc2209_attach_uart(tmc2209_t *dev, const tmc2209_uart_t *uart)
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart,
-                                const uint8_t *tx, size_t tx_len,
+tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart, const uint8_t *tx, size_t tx_len,
                                 uint8_t *rx, size_t rx_len, size_t *rx_got)
 {
     if (rx_got) {
@@ -210,7 +206,7 @@ tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart,
 
     /* The reply is collected even after a bad echo.*/
     if ((err == TMC2209_OK || err == TMC2209_ERR_ECHO) && rx_len > 0) {
-        size_t got = 0;
+        size_t        got       = 0;
         tmc2209_err_t reply_err = uart_rx(uart, rx, rx_len, &got);
         if (rx_got) {
             *rx_got = got;

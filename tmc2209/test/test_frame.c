@@ -7,14 +7,15 @@
  * merely agreeing with ourselves.
  */
 
-#include "unity.h"
 #include "tmc2209_frame.h"
 #include "tmc2209_reg.h"
+#include "unity.h"
 
 #include <string.h>
 
 static void test_crc8_reference_vectors(void)
 {
+    /* clang-format off */
     const uint8_t read_gconf_a0[]   = { 0x05, 0x00, 0x00 };
     const uint8_t read_chopconf[]   = { 0x05, 0x00, 0x6C };
     const uint8_t read_gconf_a2[]   = { 0x05, 0x02, 0x00 };
@@ -22,6 +23,7 @@ static void test_crc8_reference_vectors(void)
     const uint8_t write_chopconf[]  = { 0x05, 0x00, 0xEC, 0x10, 0x00, 0x00, 0x53 };
     const uint8_t reply_gconf[]     = { 0x05, 0xFF, 0x00, 0x00, 0x00, 0x01, 0x01 };
     const uint8_t just_ff[]         = { 0xFF };
+    /* clang-format on */
 
     TEST_ASSERT_EQUAL_HEX8(0x48, tmc2209_crc8(read_gconf_a0, sizeof read_gconf_a0));
     TEST_ASSERT_EQUAL_HEX8(0xCA, tmc2209_crc8(read_chopconf, sizeof read_chopconf));
@@ -107,7 +109,8 @@ static void test_parse_reply_rejects_bad_sync(void)
     reply[7] = tmc2209_crc8(reply, 7);   /* keep CRC valid so sync is what fails */
 
     uint32_t value = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE,
+                      tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
 static void test_parse_reply_rejects_non_master_address(void)
@@ -118,7 +121,8 @@ static void test_parse_reply_rejects_non_master_address(void)
     reply[7] = tmc2209_crc8(reply, 7);
 
     uint32_t value = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE, tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_PREAMBLE,
+                      tmc2209_frame_parse_reply(reply, TMC2209_GCONF, &value));
 }
 
 /* An intact reply naming a register we did not ask about: the reply stream has
@@ -193,9 +197,8 @@ static void test_parse_reply_detects_every_single_bit_corruption(void)
                every one reports as corruption rather than as a field being
                wrong. That is the whole ordering invariant in one loop. */
             uint32_t value = 0;
-            TEST_ASSERT_EQUAL(
-                TMC2209_ERR_CRC,
-                tmc2209_frame_parse_reply(corrupt, TMC2209_DRV_STATUS, &value));
+            TEST_ASSERT_EQUAL(TMC2209_ERR_CRC,
+                              tmc2209_frame_parse_reply(corrupt, TMC2209_DRV_STATUS, &value));
         }
     }
 }

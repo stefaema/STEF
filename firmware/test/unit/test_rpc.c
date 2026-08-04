@@ -108,8 +108,7 @@ static size_t      g_ret_len;
  * on a bench, and it exercises dispatch's length check rather than stepping
  * around it.
  */
-static rpc_status_t call(uint8_t ns, uint8_t method,
-                         const void *args, size_t args_len)
+static rpc_status_t call(uint8_t ns, uint8_t method, const void *args, size_t args_len)
 {
     g_ret     = NULL;
     g_ret_len = 0;
@@ -128,8 +127,7 @@ static rpc_status_t call(uint8_t ns, uint8_t method,
     const rpc_req_hdr_t *req = rv.hdr;
 
     size_t       ret_len = 0;
-    rpc_status_t status  = rpc_dispatch(req->ns, req->method,
-                                        rv.payload, rv.payload_len,
+    rpc_status_t status  = rpc_dispatch(req->ns, req->method, rv.payload, rv.payload_len,
                                         rpc_payload(&g_rep), &ret_len);
 
     size_t rep_len = rpc_frame_seal_rep(&g_rep, req->id, status, ret_len);
@@ -189,12 +187,9 @@ void test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame(void)
 
     rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
-                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) - 1U));
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
-                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) + 1U));
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME,
-                      call(RPC_NS_RAW, RPC_RAW_POLL, &a, 0));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) - 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) + 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, 0));
 }
 
 /* A failing status carries nothing, so a client never reads return values that
@@ -231,8 +226,7 @@ void test_rpc_read_serves_the_cache_and_refuses_an_empty_slot(void)
     /* Nothing has been written, so nothing may be reported. */
     TEST_ASSERT_EQUAL(RPC_INVALID_SLOT, call(RPC_NS_RAW, RPC_RAW_READ, &a, sizeof(a)));
 
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_READ, &a, sizeof(a)));
     TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, RET(rpc_raw_read_ret)->value);
@@ -261,8 +255,7 @@ static size_t write_args(write_args_t *a, uint8_t idx, const rpc_op_t *ops, uint
 void test_rpc_write_batch_lands_on_the_device(void)
 {
     rpc_setup(false);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     const rpc_op_t ops[] = {
         { .reg = TMC2209_SGTHRS,     .value = 0x33U },
@@ -284,7 +277,9 @@ void test_rpc_a_batch_that_lies_about_its_count_is_a_bad_frame(void)
 {
     rpc_setup(false);
 
-    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x33U } };
+    const rpc_op_t ops[] = {
+        { .reg = TMC2209_SGTHRS, .value = 0x33U }
+    };
 
     write_args_t a;
     size_t       n = write_args(&a, 0, ops, 1);
@@ -308,15 +303,13 @@ void test_rpc_poll_health_reports_the_conditions(void)
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL_HEALTH, &a, sizeof(a)));
 
     /* The mock powers on with GSTAT.reset set, as a real part does. */
-    TEST_ASSERT_BITS_HIGH(TMC2209_DRIVER_RESET,
-                          RET(rpc_raw_poll_health_ret)->conditions);
+    TEST_ASSERT_BITS_HIGH(TMC2209_DRIVER_RESET, RET(rpc_raw_poll_health_ret)->conditions);
 }
 
 void test_rpc_verify_config_reports_agreement_as_a_value(void)
 {
     rpc_setup(false);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 
     rpc_dev_args a = dev_args(0);
 
@@ -362,7 +355,9 @@ void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)
     rpc_setup(false);
     g_mock.freeze_ifcnt = 1;
 
-    const rpc_op_t ops[] = { { .reg = TMC2209_SGTHRS, .value = 0x55U } };
+    const rpc_op_t ops[] = {
+        { .reg = TMC2209_SGTHRS, .value = 0x55U }
+    };
 
     write_args_t a;
     size_t       n = write_args(&a, 0, ops, 1);
@@ -438,8 +433,8 @@ typedef union {
     uint8_t          bytes[sizeof(rpc_pt_send_args) + RPC_PT_MAX_BYTES];
 } pt_args_t;
 
-static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len,
-                      const uint8_t *tx, uint8_t count)
+static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len, const uint8_t *tx,
+                      uint8_t count)
 {
     memset(a, 0, sizeof(*a));
     a->s.idx       = idx;
@@ -450,8 +445,8 @@ static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len,
     return sizeof(rpc_pt_send_args) + count;
 }
 
-static size_t read_request(pt_args_t *a, uint8_t dev_idx, uint8_t reply_len,
-                           uint8_t addr, tmc2209_reg_t reg)
+static size_t read_request(pt_args_t *a, uint8_t dev_idx, uint8_t reply_len, uint8_t addr,
+                           tmc2209_reg_t reg)
 {
     uint8_t datagram[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(datagram, addr, (uint8_t)reg);
@@ -473,8 +468,7 @@ void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
     const rpc_pt_send_ret *out = g_ret;
     TEST_ASSERT_EQUAL_UINT8(RPC_OK, out->outcome);
     TEST_ASSERT_EQUAL_UINT8(TMC2209_REPLY_LEN, out->count);
-    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx) + TMC2209_REPLY_LEN,
-                             g_ret_len);
+    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx) + TMC2209_REPLY_LEN, g_ret_len);
 
     /* Undecoded, so the test decodes it the way the PC will. */
     uint32_t      value = 0;
@@ -513,8 +507,7 @@ void test_rpc_passthrough_reports_silence_without_failing_the_call(void)
 void test_rpc_passthrough_writes_void_the_cache_and_reads_do_not(void)
 {
     rpc_setup(false);
-    TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
     pt_args_t a;
@@ -555,13 +548,12 @@ void test_rpc_passthrough_refuses_an_oversized_datagram(void)
  * rather than quietly emptied.
  */
 
-#define VAR_NS   RPC_NS_FILM  /* an index this build registers nothing else on */
-#define VAR_MAX  16U
+#define VAR_NS  RPC_NS_FILM  /* an index this build registers nothing else on */
+#define VAR_MAX 16U
 
 static size_t g_var_claim;   /* how much the fake handler says it wrote */
 
-static rpc_status_t var_handler(const void *args, size_t args_len,
-                                void *ret, size_t *ret_len)
+static rpc_status_t var_handler(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
     (void)args;
     (void)args_len;

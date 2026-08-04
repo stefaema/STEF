@@ -78,8 +78,8 @@ void test_cobs_decode_rejects_malformed(void)
 
     /* A delimiter inside the run: whatever this is, it is not one frame. */
     const uint8_t embedded_zero[] = { 0x02, 0x41, 0x00, 0x01 };
-    TEST_ASSERT_EQUAL_size_t(0, cobs_decode(embedded_zero, sizeof(embedded_zero),
-                                            out, sizeof(out)));
+    TEST_ASSERT_EQUAL_size_t(0,
+                             cobs_decode(embedded_zero, sizeof(embedded_zero), out, sizeof(out)));
 
     /* A group that claims more bytes than the run holds. */
     const uint8_t overruns[] = { 0x05, 0x41 };

@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+/* clang-format off */
 #define R  TMC2209_ACCESS_READ
 #define W  TMC2209_ACCESS_WRITE
 
@@ -24,7 +25,6 @@ typedef struct {
  * hardware sets its flags. Getting those two backwards is the bug this column
  * exists to prevent.
  */
-/* clang-format off */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W, OWN, "GCONF"        },
     { TMC2209_GSTAT,        R | W, VOL, "GSTAT"        },  /* hardware latches the flags */
@@ -86,6 +86,7 @@ const char *tmc2209_reg_name(tmc2209_reg_t reg)
     return (slot < 0) ? "?" : k_regs[slot].name;
 }
 
+/* clang-format off */
 uint8_t         tmc2209_reg_access_at(int slot) { return k_regs[slot].access; }
 tmc2209_class_t tmc2209_reg_class_at(int slot)  { return k_regs[slot].cls; }
 tmc2209_reg_t   tmc2209_reg_at(int slot)        { return k_regs[slot].reg; }
