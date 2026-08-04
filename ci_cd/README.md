@@ -3,26 +3,95 @@
 One command, its tools pinned by the same flakes that build the code:
 
 ```
-ci_cd/run.py gate 1        format and lint, staged files only
-ci_cd/run.py gate 2        every module builds and its unit tests pass
-ci_cd/run.py gate 3        gate 2, plus what only makes sense across modules
+ci_cd/run.py lint          format and lint every tracked file
+ci_cd/run.py lint --staged the same, restricted to the index
+ci_cd/run.py test          every module builds and its unit tests pass
+ci_cd/run.py integration   test, plus what only makes sense across modules
 ci_cd/run.py --list        what was discovered
 ci_cd/run.py test rpc      one check, one module
 ```
 
-## Gates
+## Stages
 
-The three correspond to the points where work moves, per 4.2.2 of the report.
+The three correspond to the points where work moves.
 
-| gate | when | what | cost |
-|------|------|------|------|
-| 1 | every commit | `fmt`, `lint` on staged files, commit message | under a second |
-| 2 | push to `develop` | build and unit tests, all modules | ~30 s |
-| 3 | push to `main` | gate 2 plus cross-module and derived docs | ~30 s today |
+| stage | when | what | cost |
+|-------|------|------|------|
+| `lint` | every commit | `fmt` and `lint` | under a second |
+| `test` | reaching `develop` | `lint`, then build and unit tests, all modules | ~30 s |
+| `integration` | reaching `main` | `test` plus cross-module and derived docs | ~30 s today |
 
-Git has no usable pre-merge hook, so `pre-push` picks the gate from where the
-work is going. Pushing a subsystem branch runs nothing: the point of a subsystem
-branch is that the rest of the system may not exist yet.
+Each stage runs the one below it, so reaching `main` is the only claim that
+covers everything. That containment is what lets a commit made with
+`--no-verify` still be caught: `pre-commit` was skipped, but the push to
+`develop` lints anyway.
+
+The one thing that varies is what `lint` inspects. Run from `pre-commit` it
+takes the index, which is the only place a not-yet-committed change exists. Run
+from `test` there is no index worth reading, so it takes every tracked file.
+`run.py lint` gives you the second, `run.py lint --staged` the first.
+
+Which stage applies is decided by where the work is going, not by where you are
+standing. `BRANCH_STAGE` in `stages.py` holds that table. A branch absent from
+it is a subsystem branch and runs nothing: the point of a subsystem branch is
+that the rest of the system may not exist yet.
+
+## Layout
+
+Each file answers one question. Read them in this order.
+
+| file | the question it answers | key names |
+|------|------------------------|-----------|
+| `paths.py` | where is everything | `ROOT`, `BUILD`, `RUNNER` |
+| `ui.py` | how does a result get printed | `heading`, `report`, `skip` |
+| `discovery.py` | what counts as a module, and what is in it | `Module`, `discover` |
+| `environment.py` | how does anything get run at all | `sh`, `in_shell`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
+| `tidy_db.py` | how is the firmware compile database made readable to clang | `rewritten_for_clang` |
+| `checks.py` | what does one check do to one thing | `check_fmt`, `check_lint`, `check_build`, `check_test`, `check_commit_msg` |
+| `stages.py` | which checks make up a stage, and which branch demands which stage | `lint`, `test`, `integration`, `BRANCH_STAGE`, `for_destinations` |
+| `run.py` | what did the user or the hook ask for | the argument parser, and nothing else of substance |
+
+The dependency direction is strictly down that list: `stages.py` imports from
+`checks.py` and never the reverse, and only `run.py` imports `stages.py`. A new
+check is one function in `checks.py` plus one line in `stages.py`. A new stage
+is one function and one entry in `ORDER`. A new branch policy is one entry in
+`BRANCH_STAGE` and nothing else.
+
+## Hooks
+
+Four hooks, each a single `exec` into `run.py`. They hold no policy, only the
+translation from git's calling convention to a command:
+
+| hook | runs |
+|------|------|
+| `pre-commit` | `run.py lint --staged` |
+| `commit-msg` | `run.py commit-msg <file>` |
+| `pre-merge-commit` | `run.py stage-for <current branch>` |
+| `pre-push` | `run.py stage-for <destination refs>` |
+
+`pre-merge-commit` fires only when git creates the merge commit itself, so
+`merge.ff false` is set to stop integration merges fast-forwarding past it. Two
+paths still slip by it: a merge that stops for conflicts finishes through
+`git commit`, which runs `pre-commit` instead, and a merge made on another
+clone never runs it at all. `pre-push` is the backstop for both, which is why it
+asks about the destination ref rather than the current branch.
+
+`pre-push` drains the ref lines from stdin in shell and passes them as
+arguments. `run.py` re-execs itself into `nix develop` when the pinned tools are
+missing, and a re-exec after reading stdin would hand the replacement process an
+empty one, meaning zero refs, meaning a push waved through.
+
+`.git/hooks` is not versioned, so a fresh clone would have none. `run.py` points
+git at the tracked directory on every invocation:
+
+```
+git config core.hooksPath ci_cd/hooks
+git config merge.ff false
+```
+
+Both are idempotent and cost two `git config` reads, so a clone plus one
+`ci_cd/run.py --list` is all the setup there is. Tying this to a devShell
+instead would make it depend on which directory you happened to enter.
 
 ## Modules are discovered, not listed
 
@@ -40,7 +109,7 @@ scope list below is short.
 Nothing enumerates the modules and nothing declares which depends on which. Both
 would be second copies of what the tree already says, wrong the first time
 someone forgot to update them. There is no affected-set calculation either:
-gate 2 across every module takes about thirty seconds, which is not worth a
+`test` across every module takes about thirty seconds, which is not worth a
 dependency graph to optimise. If that changes, the graph is already written by
 the compiler and readable with `ninja -t deps`.
 
@@ -58,12 +127,25 @@ resolves nixpkgs through `dev_base`, so one revision builds the whole
 repository. Bumping it is `nix flake update` in `dev_base`, then in each module.
 
 The one exception is `clang-tidy`, which runs outside any shell against a
-rewritten copy of the firmware's compile database. The original invokes
-`xtensa-esp32s3-elf-gcc`, whose flags upstream clang rejects and whose system
-headers it would otherwise take from the host glibc. `tidy_db()` in `run.py`
-drops the GCC-only flags and asks the cross compiler where its own headers live,
-which is the command-line counterpart of the `Remove` list and `--query-driver`
-that `.clangd` needs for the same reason.
+merged, rewritten copy of every compile database in the tree: the host builds
+under `.ci-build`, plus the firmware's. `rewritten_for_clang()` in `tidy_db.py`
+drops the GCC-only flags and asks each driver where its own headers live, which
+is the command-line counterpart of the `Remove` list and `--query-driver` that
+`.clangd` needs for the same reason.
+
+The firmware half needs one thing more. Its database invokes
+`xtensa-esp32s3-elf-gcc`, and upstream clang has no Xtensa backend, so it cannot
+be told the target and never predefines `__XTENSA__`. ESP-IDF's
+`xtensa/config/core.h` branches on exactly that macro, taking a fallback include
+path meant for non-Xtensa hosts, which does not resolve from where the header
+sits. `tidy_db.py` therefore defines `__XTENSA__` for entries whose driver is
+the cross compiler. Everything else about the target stays wrong, so what this
+buys is a parse that reaches the repository's own code, not a faithful model of
+the chip.
+
+A C file in no database is skipped rather than guessed at, and the count says
+so. `clang-tidy` given an unknown file falls back to a bare command with no
+include paths, which fails on the first project header and says nothing useful.
 
 ## Commit messages
 
@@ -77,25 +159,26 @@ scope: subject
 This is a placeholder convention, chosen because the repository is one directory
 per concern and at least one existing commit already reads `firmware: ...`.
 Commits written before this check exists will not pass it. To change the rule,
-edit `check_commit_msg` in `run.py` and this section.
-
-## Hooks
-
-`.git/hooks` is not versioned, so a fresh clone would have none. `run.py` points
-git at the tracked directory on every invocation:
-
-```
-git config core.hooksPath ci_cd/hooks
-git config merge.ff false
-```
-
-Both are idempotent and cost two `git config` reads, so a clone plus one
-`ci_cd/run.py --list` is all the setup there is. Tying this to a devShell
-instead would make it depend on which directory you happened to enter.
+edit `check_commit_msg` in `checks.py` and this section.
 
 ## Formatting
 
-C is not formatted. `.clang-format` at the repository root holds the style this
-codebase would adopt, with `DisableFormat: true` so it stays inert, and the
-reasoning is in that file. `fmt` therefore covers Python only. C is held to
-`.clang-tidy` instead, which catches defects rather than whitespace.
+Python through `ruff format`, C through `clang-format` against `.clang-format`
+at the repository root. Both are checked, neither is applied: `fmt` reports and
+`clang-format -i` is what fixes.
+
+`fmt (c)` needs no compile database, unlike `lint (c)`, so it covers every
+tracked C file whether or not that file has been built.
+
+Some things in this codebase are tables that happen to be written in C: the
+`switch` that maps an error to its string, the register table with its access
+and class columns, the bit ladders in the register codecs, the enums whose
+values are pinned by the wire. Their alignment carries the meaning that a
+column is a column, and no formatter setting expresses that, so each is wrapped
+in `/* clang-format off */`. There are eighteen such regions; `grep -rn
+"clang-format off"` lists them.
+
+`AlignTrailingComments: Kind: Leave` for the same reason one level down. The
+alternative, `Always`, realigns each run of consecutive trailing comments
+separately, so a member without a comment splits one hand-made column into two
+ragged ones.

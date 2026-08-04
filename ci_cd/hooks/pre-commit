@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec "$(git rev-parse --show-toplevel)/ci_cd/run.py" gate 1
+exec "$(git rev-parse --show-toplevel)/ci_cd/run.py" lint --staged
