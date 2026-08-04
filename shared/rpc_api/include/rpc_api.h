@@ -541,4 +541,19 @@ enum { /* NOLINT(readability-enum-initial-value): RPC_STATUS_LAST must follow, n
 static_assert(RPC_STATUS_LAST <= RPC_STATUS_TRANSPORT_BASE,
               "handler statuses have grown into the transport's band");
 
+/**
+ * @brief Names a status, for a log line or an operator.
+ *
+ * Both bands in one call. @ref rpc_proto.h keeps the transport's statuses and
+ * the caller's apart on purpose and neither is entitled to list the other, but
+ * this file already names both, so the strings cost no coupling that the
+ * numbering has not already paid for.
+ *
+ *
+ * @param status  any value, named here or not
+ *
+ * @return a static string, never NULL, so it drops straight into a %s
+ */
+const char *rpc_strerror(rpc_status_t status);
+
 #endif /* RPC_API_H */
