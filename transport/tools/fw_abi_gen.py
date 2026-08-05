@@ -1,3 +1,5 @@
+"""Turns the firmware headers into fw_abi.py, the PC's view of the same ABI."""
+
 import argparse
 import os
 import subprocess
@@ -73,11 +75,13 @@ PRIMITIVES = {
 
 
 class GeneratorError(Exception):
-    pass
+    """Anything that makes the headers unreadable or the output untrustworthy."""
 
 
 @dataclass
 class Record:
+    """One struct or union, its fields already rendered as ctypes source."""
+
     name: str
     kind: str
     fields: list[tuple[str, str]]
@@ -87,12 +91,16 @@ class Record:
 
 @dataclass
 class Enum:
+    """One named C enum and the value of each enumerator."""
+
     name: str
     members: list[tuple[str, int]]
 
 
 @dataclass
 class Function:
+    """One exported function, as the argtypes and restype ctypes needs."""
+
     name: str
     restype: str | None
     argtypes: list[str]
@@ -100,6 +108,8 @@ class Function:
 
 @dataclass
 class Api:
+    """Everything worth emitting, in the order it will be written."""
+
     constants: list[tuple[str, int]] = field(default_factory=list)
     enums: list[Enum] = field(default_factory=list)
     records: list[Record] = field(default_factory=list)
@@ -109,6 +119,7 @@ class Api:
 
 
 def from_environment(name: str) -> Path:
+    """Return the directory the named variable points at, or refuse to continue."""
     value = os.environ.get(name)
     if not value:
         raise GeneratorError(f"{name} is unset, run this inside `nix develop`")
@@ -119,6 +130,7 @@ def from_environment(name: str) -> Path:
 
 
 def builtin_includes() -> Path:
+    """Return the pinned clang's own header directory, the one holding stdint.h."""
     libclang = from_environment("LIBCLANG_PATH")
     for candidate in sorted(libclang.glob("clang/*/include")):
         if (candidate / "stdint.h").is_file():
@@ -127,6 +139,7 @@ def builtin_includes() -> Path:
 
 
 def clang_args() -> list[str]:
+    """Return the parse flags that keep this build off the system's headers."""
     return [
         "-std=c17",
         "-nostdinc",
@@ -137,12 +150,14 @@ def clang_args() -> list[str]:
 
 
 def not_none(value: T | None, what: str) -> T:
+    """Return the value, or say which thing clang declined to report."""
     if value is None:
         raise GeneratorError(f"clang did not report {what}")
     return value
 
 
 def parse(source: str, name: str = "fw_abi_gen.c") -> cindex.Cursor:
+    """Return the translation unit for the source, refusing anything with errors."""
     tu = cindex.Index.create().parse(
         name,
         args=clang_args(),
@@ -156,10 +171,12 @@ def parse(source: str, name: str = "fw_abi_gen.c") -> cindex.Cursor:
 
 
 def includes() -> str:
+    """Return the #include lines naming every header being read."""
     return "".join(f'#include "{Path(h).name}"\n' for h, _ in HEADERS)
 
 
 def is_function_like(cursor: cindex.Cursor) -> bool:
+    """Whether the macro takes arguments, which no constant does."""
     tokens = list(cursor.get_tokens())
     return (
         len(tokens) > 1
@@ -169,10 +186,12 @@ def is_function_like(cursor: cindex.Cursor) -> bool:
 
 
 def is_unnamed(cursor: cindex.Cursor) -> bool:
+    """Whether the cursor names nothing clang can emit under."""
     return not cursor.spelling or "(unnamed" in cursor.spelling
 
 
 def macro_names(root: cindex.Cursor, owned: dict[str, bool]) -> list[str]:
+    """Return every object-like macro defined by the headers being read."""
     names: list[str] = []
     for cursor in root.get_children():
         if cursor.kind != CursorKind.MACRO_DEFINITION or not cursor.location.file:
@@ -186,6 +205,7 @@ def macro_names(root: cindex.Cursor, owned: dict[str, bool]) -> list[str]:
 
 
 def macro_values(names: list[str]) -> list[tuple[str, int]]:
+    """Return each macro's value, obtained by having clang evaluate it."""
     if not names:
         return []
     probes = "\n".join(f"enum {{ probe_{n} = ({n}) }};" for n in names)
@@ -207,6 +227,7 @@ def macro_values(names: list[str]) -> list[tuple[str, int]]:
 
 
 def ctype_of(type_: cindex.Type, records: set[str]) -> str:
+    """Return the ctypes expression for a C type as it appears in a struct."""
     bare = type_.spelling.removeprefix("const ")
     if bare in STDINT:
         return STDINT[bare]
@@ -246,12 +267,14 @@ def ctype_of(type_: cindex.Type, records: set[str]) -> str:
 
 
 def argtype_of(type_: cindex.Type, records: set[str]) -> str:
+    """Return the ctypes expression for a C type as it appears in a parameter."""
     if type_.kind == TypeKind.CONSTANTARRAY:
         return f"ctypes.POINTER({ctype_of(type_.element_type, records)})"
     return ctype_of(type_, records)
 
 
 def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
+    """Return the struct or union, with any flexible member set aside."""
     name = cursor.spelling
     fields: list[tuple[str, str]] = []
     flex = None
@@ -284,6 +307,7 @@ def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
 
 
 def collect() -> Api:
+    """Return everything the headers declare that the PC is entitled to see."""
     owned = {Path(h).name: emits_types for h, emits_types in HEADERS}
     root = parse(includes())
     api = Api()
@@ -351,12 +375,14 @@ def collect() -> Api:
 
 
 def exception_name(status: str) -> str:
+    """Return the class name a status enumerator is raised as."""
     return "Rpc" + "".join(
         p.capitalize() for p in status.removeprefix("RPC_").split("_")
     )
 
 
 def render(api: Api) -> str:
+    """Return the module source, ready for the formatter."""
     out: list[str] = []
     w = out.append
 
@@ -455,6 +481,7 @@ def render(api: Api) -> str:
 
 
 def formatted(text: str, filename: Path) -> str:
+    """Return the text as ruff would commit it."""
     try:
         done = subprocess.run(
             ["ruff", "format", "--stdin-filename", str(filename), "-"],
@@ -472,6 +499,7 @@ def formatted(text: str, filename: Path) -> str:
 
 
 def main() -> int:
+    """Write the module, or report that the committed one no longer matches."""
     ap = argparse.ArgumentParser(
         description="Generate transport/fw_abi.py from the firmware headers"
     )
