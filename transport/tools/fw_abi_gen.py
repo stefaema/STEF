@@ -107,7 +107,7 @@ class Function:
 
 
 @dataclass
-class Api:
+class Abi:
     """Everything worth emitting, in the order it will be written."""
 
     constants: list[tuple[str, int]] = field(default_factory=list)
@@ -306,14 +306,14 @@ def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
     )
 
 
-def collect() -> Api:
+def collect() -> Abi:
     """Return everything the headers declare that the PC is entitled to see."""
     owned = {Path(h).name: emits_types for h, emits_types in HEADERS}
     root = parse(includes())
-    api = Api()
+    abi = Abi()
     records: set[str] = set()
 
-    api.constants.extend(macro_values(macro_names(root, owned)))
+    abi.constants.extend(macro_values(macro_names(root, owned)))
 
     for cursor in root.get_children():
         if not cursor.location.file:
@@ -326,15 +326,15 @@ def collect() -> Api:
         if cursor.kind == CursorKind.ENUM_DECL:
             members = [(c.spelling, c.enum_value) for c in cursor.get_children()]
             if is_unnamed(cursor):
-                api.constants.extend(members)
+                abi.constants.extend(members)
                 if header in STATUS_HEADERS:
-                    api.statuses.extend(members)
+                    abi.statuses.extend(members)
             else:
-                api.enums.append(Enum(cursor.spelling, members))
+                abi.enums.append(Enum(cursor.spelling, members))
 
         elif cursor.kind in (CursorKind.STRUCT_DECL, CursorKind.UNION_DECL):
             if emits_types and cursor.is_definition():
-                api.records.append(record_of(cursor, records))
+                abi.records.append(record_of(cursor, records))
                 records.add(cursor.spelling)
 
         elif cursor.kind == CursorKind.TYPEDEF_DECL and emits_types:
@@ -343,15 +343,15 @@ def collect() -> Api:
             if canonical.kind in (TypeKind.RECORD, TypeKind.ENUM):
                 target = canonical.get_declaration().spelling
                 if target != cursor.spelling and target in records:
-                    api.aliases.append((cursor.spelling, target))
+                    abi.aliases.append((cursor.spelling, target))
                     records.add(cursor.spelling)
             else:
-                api.aliases.append((cursor.spelling, ctype_of(under, records)))
+                abi.aliases.append((cursor.spelling, ctype_of(under, records)))
 
         elif cursor.kind == CursorKind.FUNCTION_DECL:
             if not emits_types or cursor.is_definition():
                 continue
-            api.functions.append(
+            abi.functions.append(
                 Function(
                     name=cursor.spelling,
                     restype=(
@@ -369,9 +369,9 @@ def collect() -> Api:
                 )
             )
 
-    if not api.statuses:
+    if not abi.statuses:
         raise GeneratorError("no status enumerators found")
-    return api
+    return abi
 
 
 def exception_name(status: str) -> str:
@@ -381,7 +381,7 @@ def exception_name(status: str) -> str:
     )
 
 
-def render(api: Api) -> str:
+def render(abi: Abi) -> str:
     """Return the module source, ready for the formatter."""
     out: list[str] = []
     w = out.append
@@ -395,10 +395,10 @@ def render(api: Api) -> str:
     w("")
     w('_lib = ctypes.CDLL(str(pathlib.Path(__file__).with_name("librpc.so")))')
     w("")
-    for name, value in api.constants:
+    for name, value in abi.constants:
         w(f"{name} = {value}")
 
-    for item in api.enums:
+    for item in abi.enums:
         w("")
         w("")
         w(f"class {item.name}(enum.IntEnum):")
@@ -408,7 +408,7 @@ def render(api: Api) -> str:
         for member, _ in item.members:
             w(f"{member} = {item.name}.{member}")
 
-    for record in api.records:
+    for record in abi.records:
         w("")
         w("")
         w(f"class {record.name}(ctypes.{record.kind}):")
@@ -419,12 +419,12 @@ def render(api: Api) -> str:
 
     w("")
     w("")
-    for name, target in api.aliases:
+    for name, target in abi.aliases:
         w(f"{name} = {target}")
 
     w("")
     w("SIZEOF = {")
-    for record in api.records:
+    for record in abi.records:
         w(f'    "{record.name}": {record.size},')
     w("}")
 
@@ -437,7 +437,7 @@ def render(api: Api) -> str:
     w("")
     w("")
     w("FLEX = {")
-    for record in api.records:
+    for record in abi.records:
         if record.flex:
             member, count, elem = record.flex
             w(f'    {record.name}: Flex("{member}", "{count}", {elem}),')
@@ -450,7 +450,7 @@ def render(api: Api) -> str:
     w("        self.status = status")
     w('        super().__init__(f"{rpc_strerror(status).decode()} ({status})")')
 
-    raised = [(n, v) for n, v in api.statuses if n not in STATUS_NOT_A_VALUE]
+    raised = [(n, v) for n, v in abi.statuses if n not in STATUS_NOT_A_VALUE]
     for name, _ in raised:
         w("")
         w("")
@@ -471,7 +471,7 @@ def render(api: Api) -> str:
     w("        raise STATUS_EXCEPTION.get(status, RpcError)(status)")
     w("")
 
-    for function in api.functions:
+    for function in abi.functions:
         w("")
         w(f"{function.name} = _lib.{function.name}")
         w(f"{function.name}.restype = {function.restype}")
