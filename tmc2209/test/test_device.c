@@ -2,10 +2,10 @@
  * test_device.c: the transaction and cache layer, against the mock device.
  *
  * Two themes. The library must never present a value it cannot justify: a
- * write it could not confirm, a driver that reset underneath it, or a
- * passthrough datagram it did not build all have to end with the cache
- * refusing to answer. And it must never write a value nobody asked for, which
- * is the defect the old reset-value seeding shipped.
+ * write it could not confirm, a driver that reset underneath it, or a datagram
+ * it did not frame all have to end with the cache refusing to answer. And it
+ * must never write a value nobody asked for, which is the defect the old
+ * reset-value seeding shipped.
  */
 
 #include "mock_tmc2209.h"
@@ -718,7 +718,7 @@ static void test_poll_pins_decodes_live_state(void)
 }
 
 /* The diagnostic registers carry no condition worth naming, so they are
-   reachable raw rather than wrapped, and a PC-side dump needs no passthrough. */
+   reachable raw rather than wrapped, and a PC-side dump needs no hand-framing. */
 static void test_poll_raw_reaches_the_diagnostic_registers(void)
 {
     setup_ready();
@@ -907,9 +907,9 @@ static void test_non_echoing_backend_works(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* ── Passthrough ────────────────────────────────────────────────────────── */
+/* ── Externally framed sends ────────────────────────────────────────────── */
 
-static void test_passthrough_moves_bytes_verbatim(void)
+static void test_uart_send_moves_bytes_verbatim(void)
 {
     setup_ready();
     mock_set_reg(&g_mock, TMC2209_MSCNT, 0x1234U);
@@ -930,7 +930,7 @@ static void test_passthrough_moves_bytes_verbatim(void)
 
 /* Silence and a severed reply are different faults at different ends of the
    cable, and the count is the only thing that tells them apart. */
-static void test_passthrough_reports_silence_as_zero_bytes(void)
+static void test_uart_send_reports_silence_as_zero_bytes(void)
 {
     setup_ready();
     g_mock.drop_reply = 1;
@@ -945,7 +945,7 @@ static void test_passthrough_reports_silence_as_zero_bytes(void)
     TEST_ASSERT_EQUAL_size_t(0, got);
 }
 
-static void test_passthrough_reports_a_partial_reply(void)
+static void test_uart_send_reports_a_partial_reply(void)
 {
     setup_ready();
     g_mock.truncate_reply = 1;
@@ -968,7 +968,7 @@ static void test_passthrough_reports_a_partial_reply(void)
 
 /* Our own bytes failing to return is a fault on the transmit side. Reporting it
    as a timeout would send someone to the far end of the cable. */
-static void test_passthrough_short_echo_is_not_a_driver_timeout(void)
+static void test_uart_send_short_echo_is_not_a_driver_timeout(void)
 {
     setup_ready();
     g_mock.truncate_echo = 1;
@@ -983,7 +983,7 @@ static void test_passthrough_short_echo_is_not_a_driver_timeout(void)
 }
 
 /* A collision does not gag the driver, so the answer is still collected. */
-static void test_passthrough_echo_mismatch_still_collects_the_reply(void)
+static void test_uart_send_echo_mismatch_still_collects_the_reply(void)
 {
     setup_ready();
     mock_set_reg(&g_mock, TMC2209_MSCNT, 0x1234U);
@@ -1005,7 +1005,7 @@ static void test_passthrough_echo_mismatch_still_collects_the_reply(void)
 
 /* Bytes the library did not build are bytes it cannot account for, including
    the IFCNT they advanced. */
-static void test_passthrough_write_desyncs_until_invalidated(void)
+static void test_uart_send_write_desyncs_until_invalidated(void)
 {
     setup_ready();
 
@@ -1023,7 +1023,7 @@ static void test_passthrough_write_desyncs_until_invalidated(void)
     TEST_ASSERT_EQUAL_HEX32(0x00000050U, mock_reg(&g_mock, TMC2209_SGTHRS));
 }
 
-static void test_passthrough_rejects_oversized_frames(void)
+static void test_uart_send_rejects_oversized_frames(void)
 {
     setup_ready();
     uint8_t big[64] = { 0 };
@@ -1104,11 +1104,11 @@ void run_device_tests(void)
     RUN_TEST(test_wrong_register_reply_fails_without_retrying);
     RUN_TEST(test_non_echoing_backend_works);
 
-    RUN_TEST(test_passthrough_moves_bytes_verbatim);
-    RUN_TEST(test_passthrough_reports_silence_as_zero_bytes);
-    RUN_TEST(test_passthrough_reports_a_partial_reply);
-    RUN_TEST(test_passthrough_short_echo_is_not_a_driver_timeout);
-    RUN_TEST(test_passthrough_echo_mismatch_still_collects_the_reply);
-    RUN_TEST(test_passthrough_write_desyncs_until_invalidated);
-    RUN_TEST(test_passthrough_rejects_oversized_frames);
+    RUN_TEST(test_uart_send_moves_bytes_verbatim);
+    RUN_TEST(test_uart_send_reports_silence_as_zero_bytes);
+    RUN_TEST(test_uart_send_reports_a_partial_reply);
+    RUN_TEST(test_uart_send_short_echo_is_not_a_driver_timeout);
+    RUN_TEST(test_uart_send_echo_mismatch_still_collects_the_reply);
+    RUN_TEST(test_uart_send_write_desyncs_until_invalidated);
+    RUN_TEST(test_uart_send_rejects_oversized_frames);
 }

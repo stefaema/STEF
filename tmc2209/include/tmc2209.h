@@ -669,13 +669,14 @@ bool tmc2209_all_owned_valid(const tmc2209_t *dev);
  */
 void tmc2209_invalidate_owned(tmc2209_t *dev);
 
-/* ── Passthrough ────────────────────────────────────────────────────────── */
+/* ── Externally framed sends ────────────────────────────────────────────── */
 
 /**
  * @brief Sends raw bytes and optionally collects a fixed-length reply.
  *
- * Bytes in, bytes out, no interpretation. Keeps the lock and the echo
- * discipline, skips framing and the cache entirely.
+ * Bytes in, bytes out, no interpretation. The caller framed the datagram, so
+ * this keeps the lock and the echo discipline and skips framing and the cache
+ * entirely.
  *
  * Nothing about the reply is judged. A wrong CRC, a reply for a register that
  * was not asked about, and outright nonsense all come back as bytes, because

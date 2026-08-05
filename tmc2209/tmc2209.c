@@ -229,7 +229,8 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t 
 
     tmc2209_uart_lock(dev->uart);
 
-    /* An invalid cache means a stale IFCNT baseline too (passthrough bumps it). Re-seed. */
+    /* An invalid cache means a stale IFCNT baseline too (tmc2209_uart_send() bumps it).
+       Re-seed. */
     if (!tmc2209_all_owned_valid(dev)) {
         uint32_t raw = 0;
         err          = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_IFCNT, &raw);

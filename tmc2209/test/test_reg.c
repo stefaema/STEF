@@ -53,8 +53,8 @@ static void test_class_counts_are_ten_ten_three(void)
     TEST_ASSERT_EQUAL_INT(TMC2209_OWNED_COUNT, count_class(TMC2209_CLASS_OWNED));
 }
 
-/* OTP_PROG burns one-time fuses. Hand-assembling a passthrough datagram is the
-   right amount of friction for something irreversible. */
+/* OTP_PROG burns one-time fuses. Hand-framing a datagram for tmc2209_uart_send()
+   is the right amount of friction for something irreversible. */
 static void test_otp_prog_stays_unreachable(void)
 {
     TEST_ASSERT_EQUAL_INT(-1, tmc2209_reg_slot((tmc2209_reg_t)0x04));
