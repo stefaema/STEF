@@ -7,7 +7,7 @@ from ci_cd.checks import (
     check_types,
 )
 from ci_cd.discovery import Module, discover
-from ci_cd.environment import staged_files, tracked_files
+from ci_cd.environment import get_staged_files, get_tracked_files
 from ci_cd.ui import heading, skip
 
 ORDER = ("lint", "test", "integration")
@@ -16,7 +16,8 @@ BRANCH_ACTION = {"main": "integration", "develop": "test"}
 
 
 def lint(staged: bool = False) -> bool:
-    files = staged_files() if staged else tracked_files()
+    """Report format, lint, and type verdicts over the staged or the tracked files."""
+    files = get_staged_files() if staged else get_tracked_files()
     where = "staged" if staged else "tracked"
     heading(f"lint: {len(files)} {where} files")
     if not files:
@@ -25,6 +26,7 @@ def lint(staged: bool = False) -> bool:
 
 
 def test(mods: list[Module]) -> bool:
+    """Run lint, then build and unit test every module."""
     ok = lint()
     heading("test: build and unit tests, every module")
     for m in mods:
@@ -34,6 +36,7 @@ def test(mods: list[Module]) -> bool:
 
 
 def integration(mods: list[Module]) -> bool:
+    """Run test, then the checks that only make sense across modules."""
     ok = test(mods)
     heading("integration: across modules")
     ok &= check_generated(mods)
@@ -43,6 +46,7 @@ def integration(mods: list[Module]) -> bool:
 
 
 def run(name: str, mods: list[Module]) -> bool:
+    """Run the named action, raising when no action carries that name."""
     if name == "lint":
         return lint()
     if name == "test":
@@ -53,6 +57,7 @@ def run(name: str, mods: list[Module]) -> bool:
 
 
 def required_for(names: list[str]) -> str | None:
+    """Return the strongest action the destinations demand, None if they demand none."""
     named = [
         s
         for n in names

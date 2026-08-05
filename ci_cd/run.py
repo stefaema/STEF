@@ -13,12 +13,18 @@ from pathlib import Path
 from ci_cd import actions
 from ci_cd.checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
 from ci_cd.discovery import Module, discover
-from ci_cd.environment import ensure_hooks, ensure_tools, staged_files, tracked_files
+from ci_cd.environment import (
+    ensure_ci_shell,
+    ensure_git_hooks,
+    get_staged_files,
+    get_tracked_files,
+)
 from ci_cd.paths import ROOT
 from ci_cd.ui import DIM, OFF
 
 
 def list_modules(mods: list[Module]) -> int:
+    """Print each module with the targets found in it, returning the exit code."""
     for m in mods:
         bits = []
         if m.idf_project:
@@ -31,6 +37,7 @@ def list_modules(mods: list[Module]) -> int:
 
 
 def one_module(name: str, mods: list[Module]) -> Module | None:
+    """Return the named module, reporting to stderr when the repo holds no such name."""
     m = next((m for m in mods if m.name == name), None)
     if m is None:
         print(f"no module named {name!r}", file=sys.stderr)
@@ -38,6 +45,7 @@ def one_module(name: str, mods: list[Module]) -> Module | None:
 
 
 def parser() -> argparse.ArgumentParser:
+    """Return the parser holding every subcommand and its flags."""
     ap = argparse.ArgumentParser(
         prog="python -m ci_cd.run",
         description=__doc__.strip().splitlines()[0] if __doc__ else None,
@@ -74,6 +82,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Run the subcommand the arguments name and return its exit code."""
     ap = parser()
     a = ap.parse_args()
     mods = discover()
@@ -89,7 +98,7 @@ def main() -> int:
         return 0 if actions.lint(staged=a.staged) else 1
 
     if a.cmd == "fmt":
-        files = staged_files() if a.staged else tracked_files()
+        files = get_staged_files() if a.staged else get_tracked_files()
         run_fmt = apply_fmt if a.fix else check_fmt
         return 0 if run_fmt(files) else 1
 
@@ -128,6 +137,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     os.chdir(ROOT)
-    ensure_hooks()
-    ensure_tools()
+    ensure_git_hooks()
+    ensure_ci_shell()
     sys.exit(main())

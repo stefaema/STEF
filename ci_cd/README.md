@@ -41,7 +41,7 @@ Each file answers one question. Read them in this order.
 | `paths.py` | where is everything | `ROOT`, `CICD_BUILD`, `CICD_RUNNER`, `HOOKS_PATH` |
 | `ui.py` | how does a result get printed | `heading`, `report`, `skip` |
 | `discovery.py` | what counts as a module, and what is in it | `Module`, `discover` |
-| `environment.py` | python to command line, and the shell each command needs | `sh`, `in_shell`, `shell_output`, `git`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
+| `environment.py` | python to command line, and the shell each command needs | `run_command`, `run_in_module_shell`, `get_module_shell_output`, `get_git_output`, `ensure_ci_shell`, `ensure_git_hooks`, `get_staged_files`, `get_tracked_files` |
 | `tidy_db.py` | how is the firmware compile database made readable to clang | `rewritten_for_clang` |
 | `checks.py` | what does one check do to one thing | `check_fmt`, `check_lint`, `check_types`, `check_build`, `check_test`, `check_generated`, `check_commit_msg` |
 | `actions.py` | which checks make up an action, and which branch demands which action | `lint`, `test`, `integration`, `BRANCH_ACTION`, `required_for` |
