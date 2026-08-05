@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-import stages
+import actions
 from checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
 from discovery import Module, discover
 from environment import ensure_hooks, ensure_tools, staged_files, tracked_files
@@ -25,8 +25,6 @@ def list_modules(mods: list[Module]) -> int:
         if m.idf_project:
             bits.append("idf")
         bits += [f"ctest:{d.relative_to(m.path)}" for d in m.ctest_dirs]
-        if m.cffi_build:
-            bits.append("cffi")
         if m.python_pkg:
             bits.append("python")
         print(f"  {m.name:<14} {' '.join(bits) or DIM + 'empty' + OFF}")
@@ -70,7 +68,7 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("commit-msg", help="check one commit message file")
     p.add_argument("file")
 
-    p = sub.add_parser("stage-for", help="run the stage a destination branch demands")
+    p = sub.add_parser("verify-for", help="run what a destination branch demands")
     p.add_argument("destination", nargs="*", help="branch names or refs/heads/... refs")
 
     return ap
@@ -89,7 +87,7 @@ def main() -> int:
         return 0
 
     if a.cmd == "lint":
-        return 0 if stages.lint(staged=a.staged) else 1
+        return 0 if actions.lint(staged=a.staged) else 1
 
     if a.cmd == "fmt":
         files = staged_files() if a.staged else tracked_files()
@@ -97,22 +95,22 @@ def main() -> int:
         return 0 if run_fmt(files) else 1
 
     if a.cmd == "integration":
-        return 0 if stages.integration(mods) else 1
+        return 0 if actions.integration(mods) else 1
 
     if a.cmd == "commit-msg":
         return 0 if check_commit_msg(Path(a.file)) else 1
 
-    if a.cmd == "stage-for":
-        stage = stages.for_destinations(a.destination)
-        if stage is None:
+    if a.cmd == "verify-for":
+        action = actions.required_for(a.destination)
+        if action is None:
             where = ", ".join(a.destination) or "nowhere"
             print(f"{where}: not an integration branch, nothing to check")
             return 0
-        return 0 if stages.run(stage, mods) else 1
+        return 0 if actions.run(action, mods) else 1
 
     if a.cmd == "test":
         if a.module is None:
-            return 0 if stages.test(mods) else 1
+            return 0 if actions.test(mods) else 1
         m = one_module(a.module, mods)
         return 2 if m is None else (0 if check_test(m) else 1)
 

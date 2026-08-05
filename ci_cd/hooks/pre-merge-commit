@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="$(git rev-parse --show-toplevel)"  # absolute, so the hook works from any cwd
 
-exec "$ROOT/ci_cd/run.py" stage-for "$(git rev-parse --abbrev-ref HEAD)"
+exec "$ROOT/ci_cd/run.py" verify-for "$(git rev-parse --abbrev-ref HEAD)"

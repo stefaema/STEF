@@ -5,7 +5,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from paths import BUILD, ROOT
+from paths import CICD_BUILD, ROOT
 
 GCC_ONLY = {
     "-mlongcalls",
@@ -42,7 +42,7 @@ def system_includes(driver: str) -> tuple[str, ...]:
 
 
 def sources() -> list[Path]:
-    dirs = [p.parent for p in sorted(BUILD.glob("*/*/compile_commands.json"))]
+    dirs = [p.parent for p in sorted(CICD_BUILD.glob("*/*/compile_commands.json"))]
     firmware = ROOT / "firmware" / "src" / "build"
     if (firmware / "compile_commands.json").exists():
         dirs.append(firmware)
@@ -80,7 +80,7 @@ def rewritten_for_clang(dbs: list[Path]) -> tuple[Path, set[str]] | None:
     if not merged:
         return None
 
-    dst = BUILD / "tidy"
+    dst = CICD_BUILD / "tidy"
     dst.mkdir(parents=True, exist_ok=True)
     (dst / "compile_commands.json").write_text(
         json.dumps(list(merged.values()), indent=2)

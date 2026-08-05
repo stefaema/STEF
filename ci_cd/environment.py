@@ -5,11 +5,10 @@ import sys
 from pathlib import Path
 
 from discovery import Module
-from paths import ROOT, RUNNER
+from paths import CICD_RUNNER, HOOKS_PATH, ROOT
 from ui import DIM, OFF, RED
 
 TOOLS = ("ruff", "clang-tidy")
-HOOKS_PATH = "ci_cd/hooks"
 
 
 def ensure_tools() -> None:
@@ -30,7 +29,7 @@ def ensure_tools() -> None:
             str(ROOT / "ci_cd"),
             "--command",
             sys.executable,
-            str(RUNNER),
+            str(CICD_RUNNER),
             *sys.argv[1:],
         ],
     )

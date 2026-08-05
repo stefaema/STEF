@@ -4,7 +4,7 @@ from pathlib import Path
 import tidy_db
 from discovery import Module, discover
 from environment import in_shell, sh
-from paths import BUILD, ROOT
+from paths import CICD_BUILD, ROOT
 from ui import hint, report, skip
 
 EXTRA_SCOPES = {"docs", "meta", "repo"}
@@ -132,19 +132,13 @@ def check_build(m: Module) -> bool:
             "idf.py",
         )
     for d in m.ctest_dirs:
-        out = BUILD / m.name / d.name
+        out = CICD_BUILD / m.name / d.name
         rc = in_shell(
             m,
             f"cmake -S {d} -B {out} -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON > /dev/null"
             f" && cmake --build {out} > /dev/null",
         )
         ok &= report(f"build {m.name}/{d.relative_to(m.path)}", rc == 0, "cmake")
-    # Before the python check, not after: this module's tests import an
-    # extension compiled from another module's C, so it has to exist first.
-    if m.cffi_build:
-        ok &= report(
-            f"build {m.name}", in_shell(m, f"python {m.cffi_build}") == 0, "cffi"
-        )
     if m.python_pkg:
         ok &= report(
             f"build {m.name}", in_shell(m, "python -c 'import sys'") == 0, "python"
@@ -157,7 +151,7 @@ def check_test(m: Module) -> bool:
         return skip(f"test {m.name}", "no tests found")
     ok = True
     for d in m.ctest_dirs:
-        out = BUILD / m.name / d.name
+        out = CICD_BUILD / m.name / d.name
         rc = in_shell(m, f"ctest --test-dir {out} --output-on-failure")
         ok &= report(f"test {m.name}/{d.relative_to(m.path)}", rc == 0, "ctest")
     if m.python_pkg:

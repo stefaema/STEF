@@ -11,7 +11,6 @@ class Module:
     idf_project: Path | None
     ctest_dirs: list[Path]
     python_pkg: bool
-    cffi_build: Path | None
 
     @property
     def empty(self) -> bool:
@@ -41,7 +40,6 @@ def discover() -> list[Module]:
                 idf_project=idf,
                 ctest_dirs=sorted(set(ctest)),
                 python_pkg=(path / "pyproject.toml").exists(),
-                cffi_build=next(iter(sorted(path.glob("src/*/_build.py"))), None),
             )
         )
     return mods

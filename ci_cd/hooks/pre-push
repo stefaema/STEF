@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="$(git rev-parse --show-toplevel)"  # absolute, so the hook works from any cwd
 
 refs=()
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
     refs+=("$remote_ref")
 done
 
-exec "$ROOT/ci_cd/run.py" stage-for ${refs[@]+"${refs[@]}"}
+exec "$ROOT/ci_cd/run.py" verify-for ${refs[@]+"${refs[@]}"}

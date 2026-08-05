@@ -1,40 +1,30 @@
-# Verification
-
-One command, its tools pinned by the same flakes that build the code:
-
+# CI/CD
 ```
 ci_cd/run.py lint          format and lint every tracked file
-ci_cd/run.py lint --staged the same, restricted to the index
+ci_cd/run.py lint --staged the same, restricted to what is staged
 ci_cd/run.py test          every module builds and its unit tests pass
 ci_cd/run.py integration   test, plus what only makes sense across modules
 ci_cd/run.py --list        what was discovered
 ci_cd/run.py test rpc      one check, one module
 ```
 
-## Stages
+## Actions
 
 The three correspond to the points where work moves.
 
-| stage | when | what | cost |
-|-------|------|------|------|
-| `lint` | every commit | `fmt` and `lint` | under a second |
-| `test` | reaching `develop` | `lint`, then build and unit tests, all modules | ~30 s |
-| `integration` | reaching `main` | `test` plus cross-module and derived docs | ~30 s today |
+| action | when | what |
+|--------|------|------|
+| `lint` | every commit | `fmt` and `lint` |
+| `test` | reaching `develop` | `lint`, then build and unit tests, all modules |
+| `integration` | reaching `main` | `test` plus cross-module and derived docs |
 
-Each stage runs the one below it, so reaching `main` is the only claim that
-covers everything. That containment is what lets a commit made with
-`--no-verify` still be caught: `pre-commit` was skipped, but the push to
-`develop` lints anyway.
+- Each action runs the one below it. Reaching `main` covers everything.
 
-The one thing that varies is what `lint` inspects. Run from `pre-commit` it
-takes the index, which is the only place a not-yet-committed change exists. Run
-from `test` there is no index worth reading, so it takes every tracked file.
-`run.py lint` gives you the second, `run.py lint --staged` the first.
+- That containment catches a commit made with `--no-verify` when merges to `develop`.
 
-Which stage applies is decided by where the work is going, not by where you are
-standing. `BRANCH_STAGE` in `stages.py` holds that table. A branch absent from
-it is a subsystem branch and runs nothing: the point of a subsystem branch is
-that the rest of the system may not exist yet.
+- `lint` from `pre-commit` takes the staged files. From `test` it takes every tracked file.
+
+- Which action applies is decided by where the work is going. `BRANCH_ACTION` in `actions.py` holds that table.
 
 ## Layout
 
@@ -42,20 +32,20 @@ Each file answers one question. Read them in this order.
 
 | file | the question it answers | key names |
 |------|------------------------|-----------|
-| `paths.py` | where is everything | `ROOT`, `BUILD`, `RUNNER` |
+| `paths.py` | where is everything | `ROOT`, `CICD_BUILD`, `CICD_RUNNER`, `HOOKS_PATH` |
 | `ui.py` | how does a result get printed | `heading`, `report`, `skip` |
 | `discovery.py` | what counts as a module, and what is in it | `Module`, `discover` |
-| `environment.py` | how does anything get run at all | `sh`, `in_shell`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
+| `environment.py` | python to command line, and the shell each command needs | `sh`, `in_shell`, `git`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
 | `tidy_db.py` | how is the firmware compile database made readable to clang | `rewritten_for_clang` |
 | `checks.py` | what does one check do to one thing | `check_fmt`, `check_lint`, `check_build`, `check_test`, `check_commit_msg` |
-| `stages.py` | which checks make up a stage, and which branch demands which stage | `lint`, `test`, `integration`, `BRANCH_STAGE`, `for_destinations` |
-| `run.py` | what did the user or the hook ask for | the argument parser, and nothing else of substance |
+| `actions.py` | which checks make up an action, and which branch demands which action | `lint`, `test`, `integration`, `BRANCH_ACTION`, `required_for` |
+| `run.py` | entry point: what you or a hook ask of the `ci_cd` module | the argument parser, and nothing else of substance |
 
-The dependency direction is strictly down that list: `stages.py` imports from
-`checks.py` and never the reverse, and only `run.py` imports `stages.py`. A new
-check is one function in `checks.py` plus one line in `stages.py`. A new stage
+The dependency direction is strictly down that list: `actions.py` imports from
+`checks.py` and never the reverse, and only `run.py` imports `actions.py`. A new
+check is one function in `checks.py` plus one line in `actions.py`. A new action
 is one function and one entry in `ORDER`. A new branch policy is one entry in
-`BRANCH_STAGE` and nothing else.
+`BRANCH_ACTION` and nothing else.
 
 ## Hooks
 
@@ -66,8 +56,8 @@ translation from git's calling convention to a command:
 |------|------|
 | `pre-commit` | `run.py lint --staged` |
 | `commit-msg` | `run.py commit-msg <file>` |
-| `pre-merge-commit` | `run.py stage-for <current branch>` |
-| `pre-push` | `run.py stage-for <destination refs>` |
+| `pre-merge-commit` | `run.py verify-for <current branch>` |
+| `pre-push` | `run.py verify-for <destination refs>` |
 
 `pre-merge-commit` fires only when git creates the merge commit itself, so
 `merge.ff false` is set to stop integration merges fast-forwarding past it. Two

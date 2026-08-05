@@ -5,7 +5,7 @@ from ui import heading, skip
 
 ORDER = ("lint", "test", "integration")
 
-BRANCH_STAGE = {"main": "integration", "develop": "test"}
+BRANCH_ACTION = {"main": "integration", "develop": "test"}
 
 
 def lint(staged: bool = False) -> bool:
@@ -41,13 +41,13 @@ def run(name: str, mods: list[Module]) -> bool:
         return test(mods)
     if name == "integration":
         return integration(mods)
-    raise ValueError(f"unknown stage {name!r}")
+    raise ValueError(f"unknown action {name!r}")
 
 
-def for_destinations(names: list[str]) -> str | None:
+def required_for(names: list[str]) -> str | None:
     named = [
         s
         for n in names
-        if (s := BRANCH_STAGE.get(n.removeprefix("refs/heads/"))) is not None
+        if (s := BRANCH_ACTION.get(n.removeprefix("refs/heads/"))) is not None
     ]
     return max(named, key=ORDER.index, default=None)
