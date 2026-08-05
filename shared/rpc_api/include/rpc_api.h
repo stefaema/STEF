@@ -48,11 +48,11 @@
 
 /** @brief Namespaces, by who assembles the bytes. See docs/README.md. */
 typedef enum {
-    RPC_NS_SYS         = 0, /**< about the firmware, not about a driver */
-    RPC_NS_PASSTHROUGH = 1, /**< the PC assembles the datagram */
-    RPC_NS_RAW         = 2, /**< the firmware assembles it, from a register you name */
-    RPC_NS_FILM        = 3, /**< the firmware assembles it, from an outcome you name */
-    RPC_NS_COUNT       = 4,
+    RPC_NS_SYS   = 0, /**< about the firmware, not about a driver */
+    RPC_NS_RELAY = 1, /**< the PC assembles the datagram */
+    RPC_NS_RAW   = 2, /**< the firmware assembles it, from a register you name */
+    RPC_NS_FILM  = 3, /**< the firmware assembles it, from an outcome you name */
+    RPC_NS_COUNT = 4,
 } rpc_ns_t;
 
 /* ── Bounds ─────────────────────────────────────────────────────────────── */
@@ -66,7 +66,7 @@ typedef enum {
 #define RPC_MAX_OPS 32
 
 /** @brief The part's longest datagram, both directions. */
-#define RPC_PT_MAX_BYTES 32
+#define RPC_RELAY_MAX_BYTES 32
 
 /** @brief Most drivers one board can declare, since four addresses fit a wire. */
 #define RPC_MAX_DEVICES 4
@@ -180,18 +180,18 @@ typedef struct {
 } rpc_sys_devices_ret;
 RPC_WIRE_SIZE(rpc_sys_devices_ret, 4);
 
-/* ── passthrough ────────────────────────────────────────────────────────── */
+/* ── relay ──────────────────────────────────────────────────────────────── */
 
 /**
- * @brief `passthrough` methods.
+ * @brief `relay` methods.
  *
  * One, and there will only ever be one. The namespace exists to put bytes on
  * the wire unaltered, and a second method would be a second opinion.
  */
 typedef enum {
-    RPC_PT_SEND  = 0,
-    RPC_PT_COUNT = 1,
-} rpc_pt_method_t;
+    RPC_RELAY_SEND  = 0,
+    RPC_RELAY_COUNT = 1,
+} rpc_relay_method_t;
 
 /** @brief The datagram to send, assembled by the caller and not examined. */
 typedef struct {
@@ -200,8 +200,8 @@ typedef struct {
     uint8_t count;     /**< how many of @c tx follow */
     uint8_t _pad;
     uint8_t tx[];
-} rpc_pt_send_args;
-RPC_WIRE_SIZE(rpc_pt_send_args, 4);
+} rpc_relay_send_args;
+RPC_WIRE_SIZE(rpc_relay_send_args, 4);
 
 /**
  * @brief What came back, and what the wire made of the attempt.
@@ -220,9 +220,9 @@ typedef struct {
     uint8_t outcome; /**< @ref rpc_status_t of the transaction, not of the call */
     uint8_t count;
     uint8_t _pad[2];
-    uint8_t rx[RPC_PT_MAX_BYTES];
-} rpc_pt_send_ret;
-RPC_WIRE_SIZE(rpc_pt_send_ret, 36);
+    uint8_t rx[RPC_RELAY_MAX_BYTES];
+} rpc_relay_send_ret;
+RPC_WIRE_SIZE(rpc_relay_send_ret, 36);
 
 /* ── raw ────────────────────────────────────────────────────────────────── */
 
@@ -352,7 +352,7 @@ typedef rpc_dev_args rpc_raw_verify_config_args;
  * A disagreement is a result rather than a transport failure, and the caller
  * wants to know *which* slots disagree. A failing status would have the mask
  * discarded with the frame, so what the call found travels as a value. Same
- * shape as passthrough's outcome, for the same reason.
+ * shape as relay's outcome, for the same reason.
  */
 typedef struct {
     uint32_t mismatched; /**< one bit per register slot */
@@ -487,8 +487,8 @@ RPC_WIRE_SIZE(rpc_raw_motion_ret, 12);
 
 /** @brief What the firmware is doing. Reported by `sys.state`, never set. */
 typedef enum {
-    RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and passthrough are permitted */
-    RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and passthrough are refused */
+    RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and relay are permitted */
+    RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and relay are refused */
     RPC_MODE_FAULT    = 2, /**< construction failed, so no device can be addressed */
 } rpc_mode_t;
 

@@ -4,7 +4,7 @@
 #
 # tmc2209 and tmc2209_bind are private: no header exported here names either,
 # so a caller registering these tables does not inherit the driver library.
-idf_component_register(SRCS "rpc_status.c" "rpc_sys.c" "rpc_raw.c" "rpc_passthrough.c" "rpc_link.c"
+idf_component_register(SRCS "rpc_status.c" "rpc_sys.c" "rpc_raw.c" "rpc_relay.c" "rpc_link.c"
                        INCLUDE_DIRS "include"
                        PRIV_INCLUDE_DIRS "."
                        REQUIRES rpc rpc_api

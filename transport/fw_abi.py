@@ -15,7 +15,7 @@ RPC_NS_MAX = 8
 RPC_STATUS_TRANSPORT_BASE = 240
 RPC_PROTOCOL_VERSION = 1
 RPC_MAX_OPS = 32
-RPC_PT_MAX_BYTES = 32
+RPC_RELAY_MAX_BYTES = 32
 RPC_MAX_DEVICES = 4
 RPC_NAME_MAX = 16
 RPC_STR_MAX = 32
@@ -75,14 +75,14 @@ RPC_FRAME_LOG = rpc_frame_t.RPC_FRAME_LOG
 
 class rpc_ns_t(enum.IntEnum):
     RPC_NS_SYS = 0
-    RPC_NS_PASSTHROUGH = 1
+    RPC_NS_RELAY = 1
     RPC_NS_RAW = 2
     RPC_NS_FILM = 3
     RPC_NS_COUNT = 4
 
 
 RPC_NS_SYS = rpc_ns_t.RPC_NS_SYS
-RPC_NS_PASSTHROUGH = rpc_ns_t.RPC_NS_PASSTHROUGH
+RPC_NS_RELAY = rpc_ns_t.RPC_NS_RELAY
 RPC_NS_RAW = rpc_ns_t.RPC_NS_RAW
 RPC_NS_FILM = rpc_ns_t.RPC_NS_FILM
 RPC_NS_COUNT = rpc_ns_t.RPC_NS_COUNT
@@ -101,13 +101,13 @@ RPC_SYS_DEVICES = rpc_sys_method_t.RPC_SYS_DEVICES
 RPC_SYS_COUNT = rpc_sys_method_t.RPC_SYS_COUNT
 
 
-class rpc_pt_method_t(enum.IntEnum):
-    RPC_PT_SEND = 0
-    RPC_PT_COUNT = 1
+class rpc_relay_method_t(enum.IntEnum):
+    RPC_RELAY_SEND = 0
+    RPC_RELAY_COUNT = 1
 
 
-RPC_PT_SEND = rpc_pt_method_t.RPC_PT_SEND
-RPC_PT_COUNT = rpc_pt_method_t.RPC_PT_COUNT
+RPC_RELAY_SEND = rpc_relay_method_t.RPC_RELAY_SEND
+RPC_RELAY_COUNT = rpc_relay_method_t.RPC_RELAY_COUNT
 
 
 class rpc_raw_method_t(enum.IntEnum):
@@ -474,7 +474,7 @@ class rpc_sys_devices_ret(ctypes.Structure):
     ]
 
 
-class rpc_pt_send_args(ctypes.Structure):
+class rpc_relay_send_args(ctypes.Structure):
     _fields_ = [
         ("idx", ctypes.c_uint8),
         ("reply_len", ctypes.c_uint8),
@@ -483,7 +483,7 @@ class rpc_pt_send_args(ctypes.Structure):
     ]
 
 
-class rpc_pt_send_ret(ctypes.Structure):
+class rpc_relay_send_ret(ctypes.Structure):
     _fields_ = [
         ("outcome", ctypes.c_uint8),
         ("count", ctypes.c_uint8),
@@ -817,8 +817,8 @@ SIZEOF = {
     "rpc_sys_state_ret": 8,
     "rpc_dev_info_t": 20,
     "rpc_sys_devices_ret": 4,
-    "rpc_pt_send_args": 4,
-    "rpc_pt_send_ret": 36,
+    "rpc_relay_send_args": 4,
+    "rpc_relay_send_ret": 36,
     "rpc_raw_read_args": 4,
     "rpc_raw_read_ret": 4,
     "rpc_raw_write_args": 8,
@@ -864,7 +864,7 @@ class Flex(typing.NamedTuple):
 
 FLEX = {
     rpc_sys_devices_ret: Flex("devs", "count", rpc_dev_info_t),
-    rpc_pt_send_args: Flex("tx", "count", ctypes.c_uint8),
+    rpc_relay_send_args: Flex("tx", "count", ctypes.c_uint8),
     rpc_raw_write_args: Flex("ops", "count", rpc_op_t),
 }
 

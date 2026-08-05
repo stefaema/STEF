@@ -40,7 +40,7 @@ void app_main(void)
      * offers a capability. This chooses.
      */
     rpc_register(RPC_NS_SYS, rpc_sys_methods, RPC_SYS_COUNT);
-    rpc_register(RPC_NS_PASSTHROUGH, rpc_passthrough_methods, RPC_PT_COUNT);
+    rpc_register(RPC_NS_RELAY, rpc_relay_methods, RPC_RELAY_COUNT);
     rpc_register(RPC_NS_RAW, rpc_raw_methods, RPC_RAW_COUNT);
 
     esp_err_t err = rpc_link_start();

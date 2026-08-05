@@ -1,5 +1,5 @@
 /**
- * @file rpc_passthrough.c
+ * @file rpc_relay.c
  * @brief The PC assembles the datagram; this only puts it on the wire.
  *
  * A bridge, so it knows both libraries and nothing about ESP-IDF. That is what
@@ -11,7 +11,7 @@
  * thing under suspicion. What comes back is bytes and a count.
  *
  * Why the transaction's outcome travels as a field rather than as the frame's
- * status is written down beside @ref rpc_pt_send_ret, where the shape it
+ * status is written down beside @ref rpc_relay_send_ret, where the shape it
  * explains actually lives.
  */
 
@@ -41,10 +41,10 @@ static bool changes_nothing(const uint8_t *tx, size_t tx_len)
     return (tx[2] & TMC2209_WRITE_FLAG) == 0U;
 }
 
-static rpc_status_t pt_send(const void *args, size_t args_len, void *ret, size_t *ret_len)
+static rpc_status_t relay_send(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
-    const rpc_pt_send_args *in  = args;
-    rpc_pt_send_ret        *out = ret;
+    const rpc_relay_send_args *in  = args;
+    rpc_relay_send_ret        *out = ret;
 
     /* The count is inside the payload, so dispatch could only check that a
      * head arrived. This is the exact length, and the one line it costs. */
@@ -52,7 +52,7 @@ static rpc_status_t pt_send(const void *args, size_t args_len, void *ret, size_t
         return RPC_BAD_FRAME;
     }
 
-    if (in->count == 0 || in->count > RPC_PT_MAX_BYTES || in->reply_len > RPC_PT_MAX_BYTES) {
+    if (in->count == 0 || in->count > RPC_RELAY_MAX_BYTES || in->reply_len > RPC_RELAY_MAX_BYTES) {
         return RPC_ARG;
     }
 
@@ -78,10 +78,10 @@ static rpc_status_t pt_send(const void *args, size_t args_len, void *ret, size_t
     out->outcome = (uint8_t)rpc_status_of_err(err);
     out->count   = (uint8_t)rx_got;
 
-    *ret_len = offsetof(rpc_pt_send_ret, rx) + rx_got;
+    *ret_len = offsetof(rpc_relay_send_ret, rx) + rx_got;
     return RPC_OK;
 }
 
-const rpc_method_t rpc_passthrough_methods[RPC_PT_COUNT] = {
-    [RPC_PT_SEND] = RPC_METHOD_VAR(pt_send),
+const rpc_method_t rpc_relay_methods[RPC_RELAY_COUNT] = {
+    [RPC_RELAY_SEND] = RPC_METHOD_VAR(relay_send),
 };

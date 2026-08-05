@@ -57,7 +57,7 @@ add_executable(unit_tests
     ${TMC2209_DIR}/test/mock_tmc2209.c
 
     ${RPC_BIND_DIR}/rpc_raw.c
-    ${RPC_BIND_DIR}/rpc_passthrough.c
+    ${RPC_BIND_DIR}/rpc_relay.c
     ${RPC_BIND_DIR}/rpc_status.c)
 
 # rpc_status.h is private to rpc_bind, so both of its directories are named.

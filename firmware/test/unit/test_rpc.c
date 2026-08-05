@@ -90,7 +90,7 @@ static void rpc_setup(bool with_lines)
 
     rpc_reset_registry();
     rpc_register(RPC_NS_RAW, rpc_raw_methods, RPC_RAW_COUNT);
-    rpc_register(RPC_NS_PASSTHROUGH, rpc_passthrough_methods, RPC_PT_COUNT);
+    rpc_register(RPC_NS_RELAY, rpc_relay_methods, RPC_RELAY_COUNT);
 }
 
 /* ── Driving a call the way the link does ───────────────────────────────── */
@@ -426,15 +426,15 @@ void test_rpc_an_unwired_line_is_refused_not_guessed(void)
     TEST_ASSERT_EQUAL(RPC_UNWIRED, call(RPC_NS_RAW, RPC_RAW_LINE_READ, &r, sizeof(r)));
 }
 
-/* ── Passthrough ────────────────────────────────────────────────────────── */
+/* ── Relay ──────────────────────────────────────────────────────────────── */
 
 typedef union {
-    rpc_pt_send_args s;
-    uint8_t          bytes[sizeof(rpc_pt_send_args) + RPC_PT_MAX_BYTES];
-} pt_args_t;
+    rpc_relay_send_args s;
+    uint8_t             bytes[sizeof(rpc_relay_send_args) + RPC_RELAY_MAX_BYTES];
+} relay_args_t;
 
-static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len, const uint8_t *tx,
-                      uint8_t count)
+static size_t relay_args(relay_args_t *a, uint8_t idx, uint8_t reply_len, const uint8_t *tx,
+                         uint8_t count)
 {
     memset(a, 0, sizeof(*a));
     a->s.idx       = idx;
@@ -442,33 +442,33 @@ static size_t pt_args(pt_args_t *a, uint8_t idx, uint8_t reply_len, const uint8_
     a->s.count     = count;
     memcpy(a->s.tx, tx, count);
 
-    return sizeof(rpc_pt_send_args) + count;
+    return sizeof(rpc_relay_send_args) + count;
 }
 
-static size_t read_request(pt_args_t *a, uint8_t dev_idx, uint8_t reply_len, uint8_t addr,
+static size_t read_request(relay_args_t *a, uint8_t dev_idx, uint8_t reply_len, uint8_t addr,
                            tmc2209_reg_t reg)
 {
     uint8_t datagram[TMC2209_READ_REQ_LEN];
     tmc2209_frame_read_request(datagram, addr, (uint8_t)reg);
 
-    return pt_args(a, dev_idx, reply_len, datagram, sizeof(datagram));
+    return relay_args(a, dev_idx, reply_len, datagram, sizeof(datagram));
 }
 
-void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
+void test_rpc_relay_hands_back_the_reply_undecoded(void)
 {
     rpc_setup(false);
     mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041U);
 
-    pt_args_t a;
-    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    relay_args_t a;
+    size_t       n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RELAY, RPC_RELAY_SEND, &a, n));
 
     /* The frame succeeded; what the wire did is a value. */
-    const rpc_pt_send_ret *out = g_ret;
+    const rpc_relay_send_ret *out = g_ret;
     TEST_ASSERT_EQUAL_UINT8(RPC_OK, out->outcome);
     TEST_ASSERT_EQUAL_UINT8(TMC2209_REPLY_LEN, out->count);
-    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx) + TMC2209_REPLY_LEN, g_ret_len);
+    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_relay_send_ret, rx) + TMC2209_REPLY_LEN, g_ret_len);
 
     /* Undecoded, so the test decodes it the way the PC will. */
     uint32_t      value = 0;
@@ -482,20 +482,20 @@ void test_rpc_passthrough_hands_back_the_reply_undecoded(void)
  * shape a client expects, so a diagnostic can tell "nothing came back" from
  * "the call was malformed" without a special case.
  */
-void test_rpc_passthrough_reports_silence_without_failing_the_call(void)
+void test_rpc_relay_reports_silence_without_failing_the_call(void)
 {
     rpc_setup(false);
     g_mock.drop_reply = 1;
 
-    pt_args_t a;
-    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    relay_args_t a;
+    size_t       n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RELAY, RPC_RELAY_SEND, &a, n));
 
-    const rpc_pt_send_ret *out = g_ret;
+    const rpc_relay_send_ret *out = g_ret;
     TEST_ASSERT_EQUAL_UINT8(RPC_RX_TIMEOUT, out->outcome);
     TEST_ASSERT_EQUAL_UINT8(0, out->count);
-    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_pt_send_ret, rx), g_ret_len);
+    TEST_ASSERT_EQUAL_size_t(offsetof(rpc_relay_send_ret, rx), g_ret_len);
 }
 
 /*
@@ -504,38 +504,38 @@ void test_rpc_passthrough_reports_silence_without_failing_the_call(void)
  * being believable. A four-byte read request is the exception, because it
  * cannot have changed the driver.
  */
-void test_rpc_passthrough_writes_void_the_cache_and_reads_do_not(void)
+void test_rpc_relay_writes_void_the_cache_and_reads_do_not(void)
 {
     rpc_setup(false);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
-    pt_args_t a;
-    size_t    n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
+    relay_args_t a;
+    size_t       n = read_request(&a, 0, TMC2209_REPLY_LEN, 0, TMC2209_IOIN);
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RELAY, RPC_RELAY_SEND, &a, n));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 
     uint8_t datagram[TMC2209_WRITE_LEN];
     tmc2209_frame_write(datagram, 0, TMC2209_SGTHRS, 0x11U);
 
-    n = pt_args(&a, 0, 0, datagram, sizeof(datagram)); /* a write has no reply */
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
+    n = relay_args(&a, 0, 0, datagram, sizeof(datagram)); /* a write has no reply */
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RELAY, RPC_RELAY_SEND, &a, n));
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
-void test_rpc_passthrough_refuses_an_oversized_datagram(void)
+void test_rpc_relay_refuses_an_oversized_datagram(void)
 {
     rpc_setup(false);
 
     /* Claims more than the part's longest datagram, and sends that much, so
        what is refused is the size and not a length that disagrees with it. */
-    pt_args_t a;
+    relay_args_t a;
     memset(&a, 0, sizeof(a));
     a.s.idx   = 0;
-    a.s.count = RPC_PT_MAX_BYTES + 1U;
+    a.s.count = RPC_RELAY_MAX_BYTES + 1U;
 
-    size_t n = sizeof(rpc_pt_send_args) + RPC_PT_MAX_BYTES + 1U;
-    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_PASSTHROUGH, RPC_PT_SEND, &a, n));
+    size_t n = sizeof(rpc_relay_send_args) + RPC_RELAY_MAX_BYTES + 1U;
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RELAY, RPC_RELAY_SEND, &a, n));
 }
 
 /* ── Variable-length replies ────────────────────────────────────────────── */
@@ -619,10 +619,10 @@ void run_rpc_tests(void)
     RUN_TEST(test_rpc_lines_drive_and_read_back);
     RUN_TEST(test_rpc_enable_applies_the_parts_polarity);
     RUN_TEST(test_rpc_an_unwired_line_is_refused_not_guessed);
-    RUN_TEST(test_rpc_passthrough_hands_back_the_reply_undecoded);
-    RUN_TEST(test_rpc_passthrough_reports_silence_without_failing_the_call);
-    RUN_TEST(test_rpc_passthrough_writes_void_the_cache_and_reads_do_not);
-    RUN_TEST(test_rpc_passthrough_refuses_an_oversized_datagram);
+    RUN_TEST(test_rpc_relay_hands_back_the_reply_undecoded);
+    RUN_TEST(test_rpc_relay_reports_silence_without_failing_the_call);
+    RUN_TEST(test_rpc_relay_writes_void_the_cache_and_reads_do_not);
+    RUN_TEST(test_rpc_relay_refuses_an_oversized_datagram);
 
     RUN_TEST(test_rpc_a_variable_reply_travels_at_its_real_length);
     RUN_TEST(test_rpc_a_handler_that_overruns_its_bound_is_not_a_success);

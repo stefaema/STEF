@@ -10,7 +10,7 @@
  * receives integers and still names no type of ours.
  *
  * Split by namespace and not by file for a reason: `sys` reaches into ESP-IDF
- * for the app descriptor and the uptime, while `raw` and `passthrough` reach
+ * for the app descriptor and the uptime, while `raw` and `relay` reach
  * only into `tmc2209.h`. That is what lets the second pair be compiled on the
  * host by `test/unit` and the first not.
  */
@@ -24,8 +24,8 @@
 /** @brief `sys` methods, indexed by @ref rpc_sys_method_t. */
 extern const rpc_method_t rpc_sys_methods[RPC_SYS_COUNT];
 
-/** @brief `passthrough` methods, indexed by @ref rpc_pt_method_t. */
-extern const rpc_method_t rpc_passthrough_methods[RPC_PT_COUNT];
+/** @brief `relay` methods, indexed by @ref rpc_relay_method_t. */
+extern const rpc_method_t rpc_relay_methods[RPC_RELAY_COUNT];
 
 /** @brief `raw` methods, indexed by @ref rpc_raw_method_t. */
 extern const rpc_method_t rpc_raw_methods[RPC_RAW_COUNT];
