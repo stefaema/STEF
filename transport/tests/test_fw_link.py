@@ -77,8 +77,7 @@ def echo_state(_firmware, frame):
 
 def linked(answer=None, **kwargs):
     firmware = FakeFirmware(answer)
-    link = fw_link.Link(firmware, timeout=TIMEOUT, **kwargs)
-    link.start()
+    link = fw_link.FirmwareLink(stream=firmware, timeout=TIMEOUT, **kwargs)
     return firmware, link
 
 
@@ -264,6 +263,20 @@ def test_a_method_finds_the_payloads_its_own_name_predicts():
 
 
 # ── Driving the link ─────────────────────────────────────────────────────────
+
+
+def test_a_link_names_a_port_or_carries_a_stream():
+    with pytest.raises(fw_link.LinkError):
+        fw_link.FirmwareLink()
+    with pytest.raises(fw_link.LinkError):
+        fw_link.FirmwareLink("/dev/null", stream=FakeFirmware())
+
+
+def test_a_link_reads_from_the_moment_it_exists():
+    firmware, link = linked(echo_state)
+    with link:
+        assert link.sys.state().device_count == 3
+    assert firmware.closed
 
 
 def test_a_call_returns_what_the_reply_carried():

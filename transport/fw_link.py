@@ -7,6 +7,8 @@ from transport import fw_abi
 
 DELIMITER = b"\x00"
 DEFAULT_TIMEOUT = 1.0
+DEFAULT_BAUDRATE = 115200
+READ_POLL = 0.05
 ID_MASK = 0xFFFF
 
 
@@ -201,7 +203,7 @@ def namespaces() -> dict[str, tuple[int, dict[str, MethodSpec]]]:
 
 
 class Namespace:
-    def __init__(self, link: "Link", specs: dict[str, MethodSpec]) -> None:
+    def __init__(self, link: "FirmwareLink", specs: dict[str, MethodSpec]) -> None:
         self._link = link
         self._specs = specs
 
@@ -229,14 +231,24 @@ class _Pending:
         self.payload = b""
 
 
-class Link:
+class FirmwareLink:
     def __init__(
         self,
-        stream: Any,
+        port: str | None = None,
+        *,
+        stream: Any = None,
+        baudrate: int = DEFAULT_BAUDRATE,
         timeout: float = DEFAULT_TIMEOUT,
         on_log: Any = None,
     ) -> None:
         self._namespaces: dict[str, Namespace] = {}
+        if (port is None) == (stream is None):
+            raise LinkError("name a port or pass a stream, not both and not neither")
+        if stream is None:
+            import serial
+
+            stream = serial.Serial(port, baudrate, timeout=READ_POLL)
+
         self._stream = stream
         self._timeout = timeout
         self._on_log = on_log
@@ -252,15 +264,7 @@ class Link:
         self._namespaces = {
             name: Namespace(self, specs) for name, (_, specs) in namespaces().items()
         }
-
-    @classmethod
-    def open(cls, port: str, baudrate: int = 115200, **kwargs: Any) -> "Link":
-        import serial
-
-        stream = serial.Serial(port, baudrate, timeout=0.05)
-        link = cls(stream, **kwargs)
-        link.start()
-        return link
+        self._start()
 
     def __getattr__(self, name: str) -> Namespace:
         namespace = self.__dict__.get("_namespaces", {}).get(name)
@@ -271,13 +275,13 @@ class Link:
     def __dir__(self) -> list[str]:
         return [*super().__dir__(), *self._namespaces]
 
-    def __enter__(self) -> "Link":
+    def __enter__(self) -> "FirmwareLink":
         return self
 
     def __exit__(self, *_: Any) -> None:
         self.close()
 
-    def start(self) -> None:
+    def _start(self) -> None:
         if self._reader is not None:
             return
         self._stop.clear()
