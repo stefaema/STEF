@@ -13,6 +13,8 @@ from clang.cindex import CursorKind, TypeKind
 
 T = TypeVar("T")
 
+# ── What gets read ───────────────────────────────────────────────────────────
+
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(__file__).resolve().parents[1]
 OUT = PACKAGE / "fw_abi.py"
@@ -43,6 +45,8 @@ STATUS_HEADERS = {"rpc_proto.h", "rpc_api.h"}
 STATUS_NOT_A_VALUE = {"RPC_OK", "RPC_STATUS_LAST"}
 COUNT_FIELD = "count"
 
+# ── How a C type is spelled in ctypes ────────────────────────────────────────
+
 STDINT = {
     "int8_t": "ctypes.c_int8",
     "int16_t": "ctypes.c_int16",
@@ -72,6 +76,9 @@ PRIMITIVES = {
     TypeKind.FLOAT: "ctypes.c_float",
     TypeKind.DOUBLE: "ctypes.c_double",
 }
+
+
+# ── What one pass collects ───────────────────────────────────────────────────
 
 
 class GeneratorError(Exception):
@@ -118,6 +125,9 @@ class Abi:
     statuses: list[tuple[str, int]] = field(default_factory=list)
 
 
+# ── The pinned toolchain, so the output is reproducible ──────────────────────
+
+
 def from_environment(name: str) -> Path:
     """Return the directory the named variable points at, or refuse to continue."""
     value = os.environ.get(name)
@@ -149,6 +159,9 @@ def clang_args() -> list[str]:
     ]
 
 
+# ── Parsing ──────────────────────────────────────────────────────────────────
+
+
 def not_none(value: T | None, what: str) -> T:
     """Return the value, or say which thing clang declined to report."""
     if value is None:
@@ -157,7 +170,14 @@ def not_none(value: T | None, what: str) -> T:
 
 
 def parse(source: str, name: str = "fw_abi_gen.c") -> cindex.Cursor:
-    """Return the translation unit for the source, refusing anything with errors."""
+    """Return the root of the translation unit, refusing anything with errors."""
+    # A header is not a translation unit and cannot be parsed alone, so the
+    # source that includes them all is manufactured here and never written to
+    # disk. Every declaration in every header then hangs off this one root,
+    # which is why the callers filter on cursor.location.file.
+    #
+    # PARSE_DETAILED_PROCESSING_RECORD is what keeps macros in the AST. Clang
+    # discards preprocessor definitions once it has used them.
     tu = cindex.Index.create().parse(
         name,
         args=clang_args(),
@@ -173,6 +193,9 @@ def parse(source: str, name: str = "fw_abi_gen.c") -> cindex.Cursor:
 def includes() -> str:
     """Return the #include lines naming every header being read."""
     return "".join(f'#include "{Path(h).name}"\n' for h, _ in HEADERS)
+
+
+# ── Macros, which clang reports as tokens and not values ─────────────────────
 
 
 def is_function_like(cursor: cindex.Cursor) -> bool:
@@ -224,6 +247,9 @@ def macro_values(names: list[str]) -> list[tuple[str, int]]:
     if missing:
         raise GeneratorError(f"macros did not evaluate: {', '.join(missing)}")
     return [(n, values[n]) for n in names]
+
+
+# ── C types, one ctypes expression at a time ─────────────────────────────────
 
 
 def ctype_of(type_: cindex.Type, records: set[str]) -> str:
@@ -306,6 +332,9 @@ def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
     )
 
 
+# ── The pass itself ──────────────────────────────────────────────────────────
+
+
 def collect() -> Abi:
     """Return everything the headers declare that the PC is entitled to see."""
     owned = {Path(h).name: emits_types for h, emits_types in HEADERS}
@@ -372,6 +401,9 @@ def collect() -> Abi:
     if not abi.statuses:
         raise GeneratorError("no status enumerators found")
     return abi
+
+
+# ── Rendering the module ─────────────────────────────────────────────────────
 
 
 def exception_name(status: str) -> str:
@@ -496,6 +528,9 @@ def formatted(text: str, filename: Path) -> str:
     if done.returncode != 0:
         raise GeneratorError(f"ruff format rejected the output:\n{done.stderr.strip()}")
     return done.stdout
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
 
 
 def main() -> int:
