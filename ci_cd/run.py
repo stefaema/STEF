@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 """Repository verification. See ci_cd/README.md.
 
-ci_cd/run.py lint | test | integration
-ci_cd/run.py build tmc2209
-ci_cd/run.py --list
+python -m ci_cd.run lint | test | integration
+python -m ci_cd.run build tmc2209
+python -m ci_cd.run --list
 """
 
 import argparse
@@ -11,12 +10,12 @@ import os
 import sys
 from pathlib import Path
 
-import actions
-from checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
-from discovery import Module, discover
-from environment import ensure_hooks, ensure_tools, staged_files, tracked_files
-from paths import ROOT
-from ui import DIM, OFF
+from ci_cd import actions
+from ci_cd.checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
+from ci_cd.discovery import Module, discover
+from ci_cd.environment import ensure_hooks, ensure_tools, staged_files, tracked_files
+from ci_cd.paths import ROOT
+from ci_cd.ui import DIM, OFF
 
 
 def list_modules(mods: list[Module]) -> int:
@@ -40,7 +39,7 @@ def one_module(name: str, mods: list[Module]) -> Module | None:
 
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="ci_cd/run.py",
+        prog="python -m ci_cd.run",
         description=__doc__.strip().splitlines()[0] if __doc__ else None,
     )
     ap.add_argument(

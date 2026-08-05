@@ -1,7 +1,14 @@
-from checks import check_build, check_fmt, check_lint, check_test
-from discovery import Module
-from environment import staged_files, tracked_files
-from ui import heading, skip
+from ci_cd.checks import (
+    check_build,
+    check_fmt,
+    check_generated,
+    check_lint,
+    check_test,
+    check_types,
+)
+from ci_cd.discovery import Module, discover
+from ci_cd.environment import staged_files, tracked_files
+from ci_cd.ui import heading, skip
 
 ORDER = ("lint", "test", "integration")
 
@@ -14,7 +21,7 @@ def lint(staged: bool = False) -> bool:
     heading(f"lint: {len(files)} {where} files")
     if not files:
         return skip("lint", f"no {where} files")
-    return check_fmt(files) & check_lint(files)
+    return check_fmt(files) & check_lint(files) & check_types(discover())
 
 
 def test(mods: list[Module]) -> bool:
@@ -29,6 +36,7 @@ def test(mods: list[Module]) -> bool:
 def integration(mods: list[Module]) -> bool:
     ok = test(mods)
     heading("integration: across modules")
+    ok &= check_generated(mods)
     ok &= skip("cross-module", "needs a second subsystem")
     ok &= skip("derived docs", "needs the doc generator")
     return ok

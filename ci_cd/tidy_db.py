@@ -5,7 +5,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from paths import CICD_BUILD, ROOT
+from ci_cd.paths import CICD_BUILD, ROOT
 
 GCC_ONLY = {
     "-mlongcalls",

@@ -1,11 +1,11 @@
 import re
 from pathlib import Path
 
-import tidy_db
-from discovery import Module, discover
-from environment import in_shell, sh
-from paths import CICD_BUILD, ROOT
-from ui import hint, report, skip
+from ci_cd import tidy_db
+from ci_cd.discovery import Module, discover
+from ci_cd.environment import in_shell, sh, shell_output
+from ci_cd.paths import CICD_BUILD, ROOT
+from ci_cd.ui import hint, report, skip
 
 EXTRA_SCOPES = {"docs", "meta", "repo"}
 PYTEST_NO_TESTS = 5
@@ -29,7 +29,7 @@ def check_fmt(files: list[Path]) -> bool:
         skip("fmt (c)", "no C files")
 
     if not ok:
-        hint("ci_cd/run.py fmt --fix")
+        hint("python -m ci_cd.run fmt --fix")
     return ok
 
 
@@ -56,6 +56,22 @@ def apply_fmt(files: list[Path]) -> bool:
         skip("fmt (c)", "no C files")
 
     return ok
+
+
+def check_types(mods: list[Module]) -> bool:
+    ok = True
+    checked = 0
+    for m in mods:
+        if not m.python_files:
+            continue
+        checked += 1
+        interpreter = shell_output(m, "command -v python")
+        if interpreter is None:
+            ok &= skip(f"types {m.name}", "no python in this module's shell")
+            continue
+        rc = sh(["basedpyright", "--pythonpath", interpreter, str(m.path)])
+        ok &= report(f"types {m.name}", rc == 0, "basedpyright")
+    return ok if checked else skip("types", "no python files")
 
 
 def check_lint(files: list[Path]) -> bool:
@@ -132,18 +148,25 @@ def check_build(m: Module) -> bool:
             "idf.py",
         )
     for d in m.ctest_dirs:
-        out = CICD_BUILD / m.name / d.name
-        rc = in_shell(
-            m,
-            f"cmake -S {d} -B {out} -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON > /dev/null"
-            f" && cmake --build {out} > /dev/null",
+        ok &= report(
+            f"build {m.name}/{d.relative_to(m.path)}", cmake(m, d) == 0, "cmake"
         )
-        ok &= report(f"build {m.name}/{d.relative_to(m.path)}", rc == 0, "cmake")
+    if m.native_lib:
+        ok &= report(f"build {m.name}", cmake(m, m.native_lib) == 0, "cmake")
     if m.python_pkg:
         ok &= report(
             f"build {m.name}", in_shell(m, "python -c 'import sys'") == 0, "python"
         )
     return ok
+
+
+def cmake(m: Module, source: Path) -> int:
+    out = CICD_BUILD / m.name / source.name
+    return in_shell(
+        m,
+        f"cmake -S {source} -B {out} -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        f" > /dev/null && cmake --build {out} > /dev/null",
+    )
 
 
 def check_test(m: Module) -> bool:
@@ -155,9 +178,21 @@ def check_test(m: Module) -> bool:
         rc = in_shell(m, f"ctest --test-dir {out} --output-on-failure")
         ok &= report(f"test {m.name}/{d.relative_to(m.path)}", rc == 0, "ctest")
     if m.python_pkg:
+        if m.native_lib and cmake(m, m.native_lib) != 0:
+            return ok and report(f"test {m.name}", False, "its library did not build")
         rc = in_shell(m, f"pytest {m.path} -q", quiet_on=(PYTEST_NO_TESTS,))
         if rc == PYTEST_NO_TESTS:
             ok &= skip(f"test {m.name}", "no tests found")
         else:
             ok &= report(f"test {m.name}", rc == 0, "pytest")
+    return ok
+
+
+def check_generated(mods: list[Module]) -> bool:
+    ok = True
+    for m in mods:
+        if m.generated is None:
+            continue
+        rc = in_shell(m, f"cd {m.path} && {m.generated}")
+        ok &= report(f"generated {m.name}", rc == 0, "regenerated, unchanged")
     return ok

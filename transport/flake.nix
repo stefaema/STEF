@@ -21,6 +21,7 @@
           ];
 
           env.LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+          env.LIBC_INCLUDE = "${pkgs.stdenv.cc.libc_dev}/include";
         };
       });
     };

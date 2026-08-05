@@ -13,7 +13,14 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          buildInputs = [ pkgs.python3 pkgs.ruff pkgs.clang-tools pkgs.git pkgs.nix ];
+          buildInputs = [
+            pkgs.python3
+            pkgs.ruff
+            pkgs.basedpyright
+            pkgs.clang-tools
+            pkgs.git
+            pkgs.nix
+          ];
         };
       });
     };

@@ -4,11 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from discovery import Module
-from paths import CICD_RUNNER, HOOKS_PATH, ROOT
-from ui import DIM, OFF, RED
+from ci_cd.discovery import Module
+from ci_cd.paths import CICD_RUNNER, HOOKS_PATH, ROOT
+from ci_cd.ui import DIM, OFF, RED
 
-TOOLS = ("ruff", "clang-tidy")
+TOOLS = ("ruff", "basedpyright", "clang-tidy")
 
 
 def ensure_tools() -> None:
@@ -29,7 +29,8 @@ def ensure_tools() -> None:
             str(ROOT / "ci_cd"),
             "--command",
             sys.executable,
-            str(CICD_RUNNER),
+            "-m",
+            CICD_RUNNER,
             *sys.argv[1:],
         ],
     )
@@ -70,6 +71,17 @@ def in_shell(module: Module, script: str, quiet_on: tuple[int, ...] = ()) -> int
         ["nix", "develop", f"./{module.name}", "--command", "bash", "-c", script],
         quiet_on=quiet_on,
     )
+
+
+def shell_output(module: Module, script: str) -> str | None:
+    p = subprocess.run(
+        ["nix", "develop", f"./{module.name}", "--command", "bash", "-c", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return p.stdout.strip() or None if p.returncode == 0 else None
 
 
 def current_branch() -> str:

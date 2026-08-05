@@ -1,12 +1,16 @@
 # CI/CD
 ```
-ci_cd/run.py lint          format and lint every tracked file
-ci_cd/run.py lint --staged the same, restricted to what is staged
-ci_cd/run.py test          every module builds and its unit tests pass
-ci_cd/run.py integration   test, plus what only makes sense across modules
-ci_cd/run.py --list        what was discovered
-ci_cd/run.py test rpc      one check, one module
+python -m ci_cd.run lint          format, lint and type-check
+python -m ci_cd.run lint --staged the same, restricted to what is staged
+python -m ci_cd.run test          every module builds and its unit tests pass
+python -m ci_cd.run integration   test, plus what only makes sense across modules
+python -m ci_cd.run --list        what was discovered
+python -m ci_cd.run test rpc      one check, one module
 ```
+
+`ci_cd` is a package rooted at the repository root, like every other Python
+module here, so it is reached with `-m` and from that root. That one import root
+is also why `pyrightconfig.json` carries no path list.
 
 ## Actions
 
@@ -14,15 +18,17 @@ The three correspond to the points where work moves.
 
 | action | when | what |
 |--------|------|------|
-| `lint` | every commit | `fmt` and `lint` |
+| `lint` | every commit | `fmt`, `lint` and `types` |
 | `test` | reaching `develop` | `lint`, then build and unit tests, all modules |
-| `integration` | reaching `main` | `test` plus cross-module and derived docs |
+| `integration` | reaching `main` | `test` plus `generated`, cross-module and derived docs |
 
 - Each action runs the one below it. Reaching `main` covers everything.
 
 - That containment catches a commit made with `--no-verify` when merges to `develop`.
 
-- `lint` from `pre-commit` takes the staged files. From `test` it takes every tracked file.
+- `lint` from `pre-commit` takes the staged files. From `test` it takes every
+  tracked file. `types` ignores that distinction: a type error is not local to
+  the file that causes it, so it always asks about whole modules.
 
 - Which action applies is decided by where the work is going. `BRANCH_ACTION` in `actions.py` holds that table.
 
@@ -35,9 +41,9 @@ Each file answers one question. Read them in this order.
 | `paths.py` | where is everything | `ROOT`, `CICD_BUILD`, `CICD_RUNNER`, `HOOKS_PATH` |
 | `ui.py` | how does a result get printed | `heading`, `report`, `skip` |
 | `discovery.py` | what counts as a module, and what is in it | `Module`, `discover` |
-| `environment.py` | python to command line, and the shell each command needs | `sh`, `in_shell`, `git`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
+| `environment.py` | python to command line, and the shell each command needs | `sh`, `in_shell`, `shell_output`, `git`, `ensure_tools`, `ensure_hooks`, `staged_files`, `tracked_files` |
 | `tidy_db.py` | how is the firmware compile database made readable to clang | `rewritten_for_clang` |
-| `checks.py` | what does one check do to one thing | `check_fmt`, `check_lint`, `check_build`, `check_test`, `check_commit_msg` |
+| `checks.py` | what does one check do to one thing | `check_fmt`, `check_lint`, `check_types`, `check_build`, `check_test`, `check_generated`, `check_commit_msg` |
 | `actions.py` | which checks make up an action, and which branch demands which action | `lint`, `test`, `integration`, `BRANCH_ACTION`, `required_for` |
 | `run.py` | entry point: what you or a hook ask of the `ci_cd` module | the argument parser, and nothing else of substance |
 
@@ -49,15 +55,15 @@ is one function and one entry in `ORDER`. A new branch policy is one entry in
 
 ## Hooks
 
-Four hooks, each a single `exec` into `run.py`. They hold no policy, only the
-translation from git's calling convention to a command:
+Four hooks, each a single `exec` into `ci_cd.run`. They hold no policy, only
+the translation from git's calling convention to a command:
 
 | hook | runs | fires |
 |------|------|-------|
-| `pre-commit` | `run.py lint --staged` | every commit, on the staged files only |
-| `commit-msg` | `run.py commit-msg <file>` | the only moment git offers the message, so no action contains this check and nothing downstream repeats it |
-| `pre-merge-commit` | `run.py verify-for <current branch>` | only when git writes the merge commit itself |
-| `pre-push` | `run.py verify-for <destination refs>` | every push, asking about the destination |
+| `pre-commit` | `ci_cd.run lint --staged` | every commit, on the staged files only |
+| `commit-msg` | `ci_cd.run commit-msg <file>` | the only moment git offers the message, so no action contains this check and nothing downstream repeats it |
+| `pre-merge-commit` | `ci_cd.run verify-for <current branch>` | only when git writes the merge commit itself |
+| `pre-push` | `ci_cd.run verify-for <destination refs>` | every push, asking about the destination |
 
 - Being bound to that moment, `pre-merge-commit` needs `merge.ff false`, which
   `run.py` sets, or a fast-forward merge slips past it.
@@ -74,7 +80,8 @@ translation from git's calling convention to a command:
 
 - `.git/hooks` is not versioned, so `run.py` points git at the tracked directory
   on every invocation, `core.hooksPath ci_cd/hooks` plus `merge.ff false`. Both
-  are idempotent, so a clone and one `ci_cd/run.py --list` is the whole setup.
+  are idempotent, so a clone and one `python -m ci_cd.run --list` is the whole
+  setup.
 
 ## Modules are discovered, not listed
 
@@ -83,10 +90,21 @@ is checked:
 
 - `CMakeLists.txt` naming `project.cmake` → an ESP-IDF app, built with `idf.py`
 - `test/CMakeLists.txt` → a host build, run with `ctest`
+- a root `CMakeLists.txt` naming its own `project()` → a library the module
+  itself needs, built before its tests run
 - `pyproject.toml` → a Python package, run with `pytest`
+- any `.py` file → type-checked
+- `[tool.stef] generated` in `pyproject.toml` → a command that regenerates a
+  committed file and fails if it moved, run by `integration`
 
 - A module with none of these, `ci_cd`, `dev_base` and `gui` today, is listed as
   empty and skipped. Its name is still a valid commit scope.
+
+- The library and the tests are two different questions about the same
+  `CMakeLists.txt` shape, which is why the root one and a `test/` one are
+  discovered separately. `transport` builds `librpc.so` out of `rpc/`, `shared/`
+  and `tmc2209/` sources, and nothing in it can be imported until that exists,
+  so `check_test` builds it rather than assuming `check_build` already ran.
 
 - Nothing enumerates the modules and nothing declares which depends on which.
   Both would be second copies of what the tree already says.
@@ -103,8 +121,14 @@ is checked:
   have not committed yet.
 
 - `ci_cd` is one of those modules and no more. `ci_cd/flake.nix` declares
-  `ruff`, `clang-tools` and the rest, and `run.py` re-execs itself into that
-  shell when they are not already on `PATH`.
+  `ruff`, `basedpyright`, `clang-tools` and the rest, and `run.py` re-execs
+  itself into that shell when they are not already on `PATH`.
+
+- `basedpyright` is the second exception, pinned here rather than in every
+  module and told with `--pythonpath` which interpreter a module's imports
+  resolve against. Everything else it needs is in `pyrightconfig.json` at the
+  repository root, which the editor reads too, so neither can propose what the
+  other rejects. That is the same arrangement as `ruff.toml`.
 
 - Every flake resolves nixpkgs through `dev_base`, so one revision builds the
   whole repository. Bumping it is `nix flake update` in `dev_base`, then in each

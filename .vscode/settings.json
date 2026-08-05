@@ -41,19 +41,12 @@
     "cmake.exportCompileCommandsFile": true,
 
     // ----------------------------------------------------------------- Python
-    // Every module is its own package rooted at <module>/src, so the analyzer
-    // needs those roots spelled out. Keep this list in sync when modules are
-    // added.
-    "basedpyright.analysis.typeCheckingMode": "standard",
-    "basedpyright.analysis.diagnosticMode": "openFilesOnly",
+    // Every module is a package rooted at the repository root, so there is one
+    // import root and pyrightconfig.json needs no path list to keep in sync.
+    // That file is what the pipeline reads too, so neither can propose what the
+    // other rejects.
     "basedpyright.analysis.autoImportCompletions": true,
-    "basedpyright.analysis.extraPaths": [
-        "${workspaceFolder}/ccapi/src",
-        "${workspaceFolder}/gui/src",
-        "${workspaceFolder}/orchestrator/src",
-        "${workspaceFolder}/rig/src",
-        "${workspaceFolder}/vision/src"
-    ],
+
     // Lint diagnostics only. filesystemFirst makes ruff.toml beat user-level
     // settings, which otherwise flag rules this repository does not select.
     "ruff.configuration": "${workspaceFolder}/ruff.toml",
@@ -63,17 +56,13 @@
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.pytestArgs": [
-        "ccapi/tests",
-        "gui/tests",
-        "orchestrator/tests",
-        "rig/tests",
-        "vision/tests"
+        "transport/tests"
     ],
 
     // ------------------------------------------------------------- Formatting
     // Nothing rewrites on save: the editor's tools are not the pinned ones, and
     // formatting with a different version produces diffs `fmt` then rejects.
-    // `ci_cd/run.py fmt --fix` is what formats.
+    // `python -m ci_cd.run fmt --fix` is what formats.
     "[c]": {
         "editor.defaultFormatter": "kylinideteam.kylin-clangd",
         "editor.formatOnSave": false

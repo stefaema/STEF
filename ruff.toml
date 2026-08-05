@@ -1,11 +1,11 @@
-# Read by both `ci_cd/run.py` and the editor, so neither can propose what the
+# Read by both `ci_cd.run` and the editor, so neither can propose what the
 # other rejects. The set is ruff's default written down, plus `I` because the
 # editor sorts imports on save and the pipeline would otherwise not care.
 
 line-length = 88
 target-version = "py311"
 
-extend-exclude = [".ci-build", "build", "meta"]
+extend-exclude = [".ci-build", "build", "meta", "transport/fw_api.py"]
 
 [lint]
 select = ["E4", "E7", "E9", "F", "I"]

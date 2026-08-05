@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"  # absolute, so the hook works from any cwd
+cd "$(git rev-parse --show-toplevel)"  # -m resolves the package against the cwd
 
-exec "$ROOT/ci_cd/run.py" commit-msg "$1"
+exec python3 -m ci_cd.run commit-msg "$1"
