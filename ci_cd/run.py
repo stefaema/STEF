@@ -42,7 +42,8 @@ def one_module(name: str, mods: list[Module]) -> Module | None:
 
 def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="ci_cd/run.py", description=__doc__.splitlines()[0]
+        prog="ci_cd/run.py",
+        description=__doc__.strip().splitlines()[0] if __doc__ else None,
     )
     ap.add_argument(
         "--list", action="store_true", help="show discovered modules and exit"
@@ -115,7 +116,10 @@ def main() -> int:
 
     if a.cmd == "build":
         if a.module is None:
-            return 0 if all([check_build(m) for m in mods]) else 1
+            ok = True
+            for m in mods:
+                ok &= check_build(m)
+            return 0 if ok else 1
         m = one_module(a.module, mods)
         return 2 if m is None else (0 if check_build(m) else 1)
 

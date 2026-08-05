@@ -48,13 +48,15 @@ def ensure_hooks() -> None:
 
 
 def git(*args: str) -> str:
-    p = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+    p = subprocess.run(
+        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=False
+    )
     return p.stdout.strip()
 
 
 def sh(cmd: list[str], cwd: Path = ROOT, quiet_on: tuple[int, ...] = ()) -> int:
     try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
     except FileNotFoundError:
         print(f"{RED}{cmd[0]} not found{OFF}", file=sys.stderr)
         return 127

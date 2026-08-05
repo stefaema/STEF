@@ -1,10 +1,10 @@
 import re
 from pathlib import Path
 
+import tidy_db
 from discovery import Module, discover
 from environment import in_shell, sh
 from paths import BUILD, ROOT
-import tidy_db
 from ui import report, skip
 
 EXTRA_SCOPES = {"docs", "meta", "repo"}

@@ -19,10 +19,14 @@ GCC_ONLY = {
 }
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def system_includes(driver: str) -> tuple[str, ...]:
     probe = subprocess.run(
-        [driver, "-xc", "-E", "-v", "-"], input="", capture_output=True, text=True
+        [driver, "-xc", "-E", "-v", "-"],
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
     )
     dirs, collecting = [], False
     for line in probe.stderr.splitlines():
