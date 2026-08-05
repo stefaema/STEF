@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import stages
-from checks import check_build, check_commit_msg, check_fmt, check_test
+from checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
 from discovery import Module, discover
 from environment import ensure_hooks, ensure_tools, staged_files, tracked_files
 from paths import ROOT
@@ -55,6 +55,7 @@ def parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("fmt", help="format check only")
     p.add_argument("--staged", action="store_true", help="only what is in the index")
+    p.add_argument("--fix", action="store_true", help="rewrite rather than report")
 
     p = sub.add_parser("test", help="build and unit tests, every module")
     p.add_argument("module", nargs="?", help="restrict to one module, tests only")
@@ -92,7 +93,8 @@ def main() -> int:
 
     if a.cmd == "fmt":
         files = staged_files() if a.staged else tracked_files()
-        return 0 if check_fmt(files) else 1
+        run_fmt = apply_fmt if a.fix else check_fmt
+        return 0 if run_fmt(files) else 1
 
     if a.cmd == "integration":
         return 0 if stages.integration(mods) else 1

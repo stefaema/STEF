@@ -5,6 +5,10 @@ def heading(text: str) -> None:
     print(f"{DIM}{text}{OFF}")
 
 
+def hint(command: str) -> None:
+    print(f"  {DIM}fix with: {command}{OFF}")
+
+
 def report(label: str, ok: bool, note: str = "") -> bool:
     mark = f"{GREEN}ok{OFF}" if ok else f"{RED}FAIL{OFF}"
     tail = f" {DIM}{note}{OFF}" if note else ""

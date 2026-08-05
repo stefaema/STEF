@@ -5,7 +5,7 @@ import tidy_db
 from discovery import Module, discover
 from environment import in_shell, sh
 from paths import BUILD, ROOT
-from ui import report, skip
+from ui import hint, report, skip
 
 EXTRA_SCOPES = {"docs", "meta", "repo"}
 PYTEST_NO_TESTS = 5
@@ -24,6 +24,33 @@ def check_fmt(files: list[Path]) -> bool:
     c = [f for f in files if f.suffix in (".c", ".h")]
     if c:
         rc = sh(["clang-format", "--dry-run", "-Werror", *[str(f) for f in c]])
+        ok &= report("fmt (c)", rc == 0, f"{len(c)} files")
+    else:
+        skip("fmt (c)", "no C files")
+
+    if not ok:
+        hint("ci_cd/run.py fmt --fix")
+    return ok
+
+
+def apply_fmt(files: list[Path]) -> bool:
+    ok = True
+
+    py = [f for f in files if f.suffix == ".py"]
+    if py:
+        names = [str(f) for f in py]
+        # ruff format does not order imports; I is a lint rule, so it needs its
+        # own pass. Selected alone, to leave every other lint finding to lint.
+        rc = sh(["ruff", "format", *names]) or sh(
+            ["ruff", "check", "--fix", "--select", "I", *names]
+        )
+        ok &= report("fmt (python)", rc == 0, f"{len(py)} files")
+    else:
+        skip("fmt (python)", "no python files")
+
+    c = [f for f in files if f.suffix in (".c", ".h")]
+    if c:
+        rc = sh(["clang-format", "-i", *[str(f) for f in c]])
         ok &= report("fmt (c)", rc == 0, f"{len(c)} files")
     else:
         skip("fmt (c)", "no C files")
