@@ -42,8 +42,6 @@ HEADERS = [
 ]
 
 STATUS_HEADERS = {"rpc_proto.h", "rpc_api.h"}
-STATUS_NOT_A_VALUE = {"RPC_OK", "RPC_STATUS_LAST"}
-COUNT_FIELD = "count"
 
 # ── How a C type is spelled in ctypes ────────────────────────────────────────
 
@@ -78,11 +76,21 @@ PRIMITIVES = {
 }
 
 
-# ── What one pass collects ───────────────────────────────────────────────────
+# ── How this fails ───────────────────────────────────────────────────────────
 
 
 class GeneratorError(Exception):
     """Anything that makes the headers unreadable or the output untrustworthy."""
+
+
+def not_none(value: T | None, what: str) -> T:
+    """Return the value, or say which thing clang declined to report."""
+    if value is None:
+        raise GeneratorError(f"clang did not report {what}")
+    return value
+
+
+# ── What one pass collects ───────────────────────────────────────────────────
 
 
 @dataclass
@@ -160,13 +168,6 @@ def clang_args() -> list[str]:
 
 
 # ── Parsing ──────────────────────────────────────────────────────────────────
-
-
-def not_none(value: T | None, what: str) -> T:
-    """Return the value, or say which thing clang declined to report."""
-    if value is None:
-        raise GeneratorError(f"clang did not report {what}")
-    return value
 
 
 def parse(source: str, name: str = "fw_abi_gen.c") -> cindex.Cursor:
@@ -250,6 +251,8 @@ def macro_values(names: list[str]) -> list[tuple[str, int]]:
 
 
 # ── C types, one ctypes expression at a time ─────────────────────────────────
+
+COUNT_FIELD = "count"
 
 
 def ctype_of(type_: cindex.Type, records: set[str]) -> str:
@@ -404,6 +407,8 @@ def collect() -> Abi:
 
 
 # ── Rendering the module ─────────────────────────────────────────────────────
+
+STATUS_NOT_A_VALUE = {"RPC_OK", "RPC_STATUS_LAST"}
 
 
 def exception_name(status: str) -> str:
