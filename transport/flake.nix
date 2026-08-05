@@ -23,6 +23,10 @@
 
           env.LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
           env.LIBC_INCLUDE = "${pkgs.stdenv.cc.libc_dev}/include";
+
+          shellHook = ''
+            export STEF_HOME="''${STEF_HOME:-$(git rev-parse --show-toplevel)/local}"
+          '';
         };
       });
     };

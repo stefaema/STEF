@@ -13,7 +13,12 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          buildInputs = [ pkgs.gcc pkgs.cmake pkgs.ninja ];
+          buildInputs = [
+            pkgs.gcc
+            pkgs.cmake
+            pkgs.ninja
+            (pkgs.python3.withPackages (ps: [ ps.pytest ]))
+          ];
         };
       });
     };

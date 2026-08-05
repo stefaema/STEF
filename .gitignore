@@ -2,6 +2,9 @@
 build/
 .ci-build/
 
+# Runtime roots in development, what STEF_HOME points at.
+local/
+
 # Toolchain and editor caches
 .cache/
 
