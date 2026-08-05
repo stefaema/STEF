@@ -54,6 +54,11 @@
         "${workspaceFolder}/rig/src",
         "${workspaceFolder}/vision/src"
     ],
+    // Lint diagnostics only. filesystemFirst makes ruff.toml beat user-level
+    // settings, which otherwise flag rules this repository does not select.
+    "ruff.configuration": "${workspaceFolder}/ruff.toml",
+    "ruff.configurationPreference": "filesystemFirst",
+
     "python.terminal.activateEnvironment": false,
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
@@ -66,8 +71,9 @@
     ],
 
     // ------------------------------------------------------------- Formatting
-    // .clang-format is inert (DisableFormat), so format-on-save would do
-    // nothing here and reflow to clangd's LLVM default anywhere it is enabled.
+    // Nothing rewrites on save: the editor's tools are not the pinned ones, and
+    // formatting with a different version produces diffs `fmt` then rejects.
+    // `ci_cd/run.py fmt --fix` is what formats.
     "[c]": {
         "editor.defaultFormatter": "kylinideteam.kylin-clangd",
         "editor.formatOnSave": false
@@ -78,11 +84,7 @@
     },
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
-        "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-            "source.fixAll.ruff": "explicit",
-            "source.organizeImports.ruff": "explicit"
-        }
+        "editor.formatOnSave": false
     },
 
     // ------------------------------------------------------------------ Files
