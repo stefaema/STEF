@@ -1,5 +1,5 @@
 {
   "typeCheckingMode": "standard",
   "exclude": ["**/build", "**/.ci-build", "**/__pycache__", "meta"],
-  "ignore": ["transport/fw_api.py"]
+  "ignore": ["transport/fw_abi.py"]
 }
