@@ -18,6 +18,7 @@
             pkgs.gcc
             pkgs.cmake
             pkgs.ninja
+            pkgs.ruff
           ];
 
           env.LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
