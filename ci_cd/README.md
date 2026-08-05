@@ -52,36 +52,29 @@ is one function and one entry in `ORDER`. A new branch policy is one entry in
 Four hooks, each a single `exec` into `run.py`. They hold no policy, only the
 translation from git's calling convention to a command:
 
-| hook | runs |
-|------|------|
-| `pre-commit` | `run.py lint --staged` |
-| `commit-msg` | `run.py commit-msg <file>` |
-| `pre-merge-commit` | `run.py verify-for <current branch>` |
-| `pre-push` | `run.py verify-for <destination refs>` |
+| hook | runs | fires |
+|------|------|-------|
+| `pre-commit` | `run.py lint --staged` | every commit, on the staged files only |
+| `commit-msg` | `run.py commit-msg <file>` | the only moment git offers the message, so no action contains this check and nothing downstream repeats it |
+| `pre-merge-commit` | `run.py verify-for <current branch>` | only when git writes the merge commit itself |
+| `pre-push` | `run.py verify-for <destination refs>` | every push, asking about the destination |
 
-`pre-merge-commit` fires only when git creates the merge commit itself, so
-`merge.ff false` is set to stop integration merges fast-forwarding past it. Two
-paths still slip by it: a merge that stops for conflicts finishes through
-`git commit`, which runs `pre-commit` instead, and a merge made on another
-clone never runs it at all. `pre-push` is the backstop for both, which is why it
-asks about the destination ref rather than the current branch.
+- Being bound to that moment, `pre-merge-commit` needs `merge.ff false`, which
+  `run.py` sets, or a fast-forward merge slips past it.
 
-`pre-push` drains the ref lines from stdin in shell and passes them as
-arguments. `run.py` re-execs itself into `nix develop` when the pinned tools are
-missing, and a re-exec after reading stdin would hand the replacement process an
-empty one, meaning zero refs, meaning a push waved through.
+- It buys earlier failure, not more coverage. A conflicted merge finishes
+  through `git commit` and a merge made on another clone never runs it, so
+  `pre-push` has to catch everything anyway. That is why it asks about the
+  destination ref rather than the current branch.
 
-`.git/hooks` is not versioned, so a fresh clone would have none. `run.py` points
-git at the tracked directory on every invocation:
+- `pre-push` drains the ref lines from stdin in shell and passes them as
+  arguments. `run.py` re-execs into `nix develop` when the pinned tools are
+  missing, and a re-exec after reading stdin would hand the new process an empty
+  one: zero refs, push waved through.
 
-```
-git config core.hooksPath ci_cd/hooks
-git config merge.ff false
-```
-
-Both are idempotent and cost two `git config` reads, so a clone plus one
-`ci_cd/run.py --list` is all the setup there is. Tying this to a devShell
-instead would make it depend on which directory you happened to enter.
+- `.git/hooks` is not versioned, so `run.py` points git at the tracked directory
+  on every invocation, `core.hooksPath ci_cd/hooks` plus `merge.ff false`. Both
+  are idempotent, so a clone and one `ci_cd/run.py --list` is the whole setup.
 
 ## Modules are discovered, not listed
 
@@ -92,50 +85,48 @@ is checked:
 - `test/CMakeLists.txt` → a host build, run with `ctest`
 - `pyproject.toml` → a Python package, run with `pytest`
 
-A module with none of these, `dev_base` and `ci_cd` today, is discovered, listed
-as empty and skipped. Its name is still a valid commit scope, which is why the
-scope list below is short.
+- A module with none of these, `ci_cd`, `dev_base` and `gui` today, is listed as
+  empty and skipped. Its name is still a valid commit scope.
 
-Nothing enumerates the modules and nothing declares which depends on which. Both
-would be second copies of what the tree already says, wrong the first time
-someone forgot to update them. There is no affected-set calculation either:
-`test` across every module takes about thirty seconds, which is not worth a
-dependency graph to optimise. If that changes, the graph is already written by
-the compiler and readable with `ninja -t deps`.
+- Nothing enumerates the modules and nothing declares which depends on which.
+  Both would be second copies of what the tree already says.
+
+- No affected-set calculation either: `test` across every module takes about
+  thirty seconds. If that changes, the compiler already wrote the graph, and
+  `ninja -t deps` reads it.
 
 ## Tools
 
-Each check runs inside its own module's `nix develop`, so a module declares what
-it needs and this runner only chains them. `nix develop` and not `nix run`,
-because flakes only see git-tracked files and a hook has to check the work you
-have not committed yet.
+- Each check runs inside its own module's `nix develop`: a module declares what
+  it needs, this runner only chains them. `nix develop` and not `nix run`,
+  because flakes only see git-tracked files and a hook has to check work you
+  have not committed yet.
 
-`ci_cd` is one of those modules and no more: `ci_cd/flake.nix` declares `ruff`,
-`clang-tools` and the rest, and `run.py` re-execs itself into that shell when
-they are not already on `PATH`. Every flake in the tree, this one included,
-resolves nixpkgs through `dev_base`, so one revision builds the whole
-repository. Bumping it is `nix flake update` in `dev_base`, then in each module.
+- `ci_cd` is one of those modules and no more. `ci_cd/flake.nix` declares
+  `ruff`, `clang-tools` and the rest, and `run.py` re-execs itself into that
+  shell when they are not already on `PATH`.
 
-The one exception is `clang-tidy`, which runs outside any shell against a
-merged, rewritten copy of every compile database in the tree: the host builds
-under `.ci-build`, plus the firmware's. `rewritten_for_clang()` in `tidy_db.py`
-drops the GCC-only flags and asks each driver where its own headers live, which
-is the command-line counterpart of the `Remove` list and `--query-driver` that
-`.clangd` needs for the same reason.
+- Every flake resolves nixpkgs through `dev_base`, so one revision builds the
+  whole repository. Bumping it is `nix flake update` in `dev_base`, then in each
+  module.
 
-The firmware half needs one thing more. Its database invokes
-`xtensa-esp32s3-elf-gcc`, and upstream clang has no Xtensa backend, so it cannot
-be told the target and never predefines `__XTENSA__`. ESP-IDF's
-`xtensa/config/core.h` branches on exactly that macro, taking a fallback include
-path meant for non-Xtensa hosts, which does not resolve from where the header
-sits. `tidy_db.py` therefore defines `__XTENSA__` for entries whose driver is
-the cross compiler. Everything else about the target stays wrong, so what this
-buys is a parse that reaches the repository's own code, not a faithful model of
-the chip.
+- `clang-tidy` is the exception, running outside any shell against a merged,
+  rewritten copy of every compile database in the tree: the host builds under
+  `.ci-build`, plus the firmware's. `rewritten_for_clang()` in `tidy_db.py`
+  drops the GCC-only flags and asks each driver where its own headers live, the
+  command-line counterpart of `.clangd`'s `Remove` list and `--query-driver`.
 
-A C file in no database is skipped rather than guessed at, and the count says
-so. `clang-tidy` given an unknown file falls back to a bare command with no
-include paths, which fails on the first project header and says nothing useful.
+- The firmware database invokes `xtensa-esp32s3-elf-gcc`, and upstream clang has
+  no Xtensa backend, so it cannot be told the target and never predefines
+  `__XTENSA__`. ESP-IDF's `xtensa/config/core.h` branches on that macro into a
+  fallback include path that does not resolve, so `tidy_db.py` defines it for
+  those entries. Everything else about the target stays wrong: this buys a parse
+  that reaches our own code, not a model of the chip.
+
+- A C file in no database is skipped rather than guessed at, and the count says
+  so. `clang-tidy` given an unknown file falls back to a bare command with no
+  include paths, which fails on the first project header and says nothing
+  useful.
 
 ## Commit messages
 
