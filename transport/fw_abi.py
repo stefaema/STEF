@@ -5,7 +5,7 @@ import enum
 import pathlib
 import typing
 
-_lib = ctypes.CDLL(str(pathlib.Path(__file__).with_name("librpc.so")))
+_lib = ctypes.CDLL(str(pathlib.Path(__file__).parent / "build" / "librpc.so"))
 
 RPC_MAX_FRAME = 512
 RPC_HDR_LEN = 8

@@ -85,8 +85,8 @@ the translation from git's calling convention to a command:
 
 ## Modules are discovered, not listed
 
-A directory with a `flake.nix` is a module, and what it contains decides how it
-is checked:
+A directory with a `flake.nix` is a module, and one without it only groups the
+modules a level below. What a module contains decides how it is checked:
 
 - `CMakeLists.txt` naming `project.cmake` → an ESP-IDF app, built with `idf.py`
 - `test/CMakeLists.txt` → a host build, run with `ctest`
@@ -102,8 +102,9 @@ is checked:
 
 - The library and the tests are two different questions about the same
   `CMakeLists.txt` shape, which is why the root one and a `test/` one are
-  discovered separately. `transport` builds `librpc.so` out of `rpc/`, `shared/`
-  and `tmc2209/` sources, and nothing in it can be imported until that exists,
+  discovered separately. `transport` builds `librpc.so` out of `portable/rpc/`,
+  `shared/` and `portable/tmc2209/` sources, and nothing in it can be imported
+  until that exists,
   so `check_test` builds it rather than assuming `check_build` already ran.
 
 - Nothing enumerates the modules and nothing declares which depends on which.

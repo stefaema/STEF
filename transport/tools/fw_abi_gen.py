@@ -20,25 +20,25 @@ PACKAGE = Path(__file__).resolve().parents[1]
 OUT = PACKAGE / "fw_abi.py"
 
 INCLUDE_DIRS = [
-    ROOT / "rpc" / "include",
+    ROOT / "portable" / "rpc" / "include",
     ROOT / "shared" / "rpc_api" / "include",
-    ROOT / "tmc2209" / "include",
+    ROOT / "portable" / "tmc2209" / "include",
 ]
 
 TYPES_AND_FUNCTIONS = True
 NAMES_ONLY = False
 
 HEADERS = [
-    ("rpc/include/rpc_proto.h", TYPES_AND_FUNCTIONS),
-    ("rpc/include/rpc_frame.h", TYPES_AND_FUNCTIONS),
-    ("rpc/include/cobs.h", TYPES_AND_FUNCTIONS),
-    ("rpc/include/crc16.h", TYPES_AND_FUNCTIONS),
+    ("portable/rpc/include/rpc_proto.h", TYPES_AND_FUNCTIONS),
+    ("portable/rpc/include/rpc_frame.h", TYPES_AND_FUNCTIONS),
+    ("portable/rpc/include/cobs.h", TYPES_AND_FUNCTIONS),
+    ("portable/rpc/include/crc16.h", TYPES_AND_FUNCTIONS),
     ("shared/rpc_api/include/rpc_api.h", TYPES_AND_FUNCTIONS),
-    ("tmc2209/include/tmc2209_err.h", TYPES_AND_FUNCTIONS),
-    ("tmc2209/include/tmc2209_frame.h", TYPES_AND_FUNCTIONS),
-    ("tmc2209/include/tmc2209_reg.h", TYPES_AND_FUNCTIONS),
-    ("tmc2209/include/tmc2209_lines.h", NAMES_ONLY),
-    ("tmc2209/include/tmc2209_stepgen.h", NAMES_ONLY),
+    ("portable/tmc2209/include/tmc2209_err.h", TYPES_AND_FUNCTIONS),
+    ("portable/tmc2209/include/tmc2209_frame.h", TYPES_AND_FUNCTIONS),
+    ("portable/tmc2209/include/tmc2209_reg.h", TYPES_AND_FUNCTIONS),
+    ("portable/tmc2209/include/tmc2209_lines.h", NAMES_ONLY),
+    ("portable/tmc2209/include/tmc2209_stepgen.h", NAMES_ONLY),
 ]
 
 STATUS_HEADERS = {"rpc_proto.h", "rpc_api.h"}
@@ -430,7 +430,7 @@ def render(abi: Abi) -> str:
     w("import pathlib")
     w("import typing")
     w("")
-    w('_lib = ctypes.CDLL(str(pathlib.Path(__file__).with_name("librpc.so")))')
+    w('_lib = ctypes.CDLL(str(pathlib.Path(__file__).parent / "build" / "librpc.so"))')
     w("")
     for name, value in abi.constants:
         w(f"{name} = {value}")

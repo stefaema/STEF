@@ -41,8 +41,18 @@ def authored(path: Path, pattern: str) -> list[Path]:
 
 
 def module_roots() -> list[Path]:
-    """Return every module directory, which this nix-based repo marks with a flake.nix."""
-    return [flake.parent for flake in sorted(ROOT.glob("*/flake.nix"))]
+    """Return every module directory, which this nix-based repo marks with a flake.nix.
+
+    A directory that carries no flake.nix of its own only groups modules, so the
+    search descends one level into it.
+    """
+    top = [flake.parent for flake in ROOT.glob("*/flake.nix")]
+    grouped = [
+        flake.parent
+        for flake in ROOT.glob("*/*/flake.nix")
+        if flake.parent.parent not in top
+    ]
+    return sorted(top + grouped)
 
 
 def is_esp_idf_based(cmake_dir: Path) -> bool:

@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror)
 
 set(RPC_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../rpc)
+set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../portable/rpc)
 
 add_executable(contract_check contract_check.c ${RPC_API_DIR}/rpc_api/rpc_strerror.c)
 target_include_directories(contract_check PRIVATE
