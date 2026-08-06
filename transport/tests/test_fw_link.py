@@ -4,24 +4,24 @@ import time
 
 import pytest
 
-from transport import fw_abi, fw_link
+from transport import fw_api, fw_link
 
 TIMEOUT = 0.5
 
 
 def seal_reply(request_id, status, payload=b""):
-    buf = fw_abi.rpc_buf_t()
+    buf = fw_api.rpc_buf_t()
     if payload:
-        ctypes.memmove(ctypes.byref(buf, fw_abi.RPC_HDR_LEN), payload, len(payload))
-    length = fw_abi.rpc_frame_seal_rep(buf, request_id, status, len(payload))
+        ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
+    length = fw_api.rpc_frame_seal_rep(buf, request_id, status, len(payload))
     return fw_link.encode(bytes(buf.bytes[:length]))
 
 
 def seal_log(level, uptime_ms, text):
-    buf = fw_abi.rpc_buf_t()
+    buf = fw_api.rpc_buf_t()
     payload = text.encode()
-    ctypes.memmove(ctypes.byref(buf, fw_abi.RPC_HDR_LEN), payload, len(payload))
-    length = fw_abi.rpc_frame_seal_log(buf, level, uptime_ms, len(payload))
+    ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
+    length = fw_api.rpc_frame_seal_log(buf, level, uptime_ms, len(payload))
     return fw_link.encode(bytes(buf.bytes[:length]))
 
 
@@ -69,10 +69,10 @@ class FakeFirmware:
 
 
 def echo_state(_firmware, frame):
-    ret = fw_abi.rpc_sys_state_ret(
-        uptime_ms=1234, device_count=3, mode=fw_abi.RPC_MODE_IDLE, ready=1
+    ret = fw_api.rpc_sys_state_ret(
+        uptime_ms=1234, device_count=3, mode=fw_api.RPC_MODE_IDLE, ready=1
     )
-    return [seal_reply(frame.header.id, fw_abi.RPC_OK, bytes(ret))]
+    return [seal_reply(frame.header.id, fw_api.RPC_OK, bytes(ret))]
 
 
 def linked(answer=None, **kwargs):
@@ -120,10 +120,10 @@ def test_a_run_past_the_bound_is_dropped_and_the_next_one_survives():
 
 
 def test_a_request_survives_the_round_trip_through_the_wire_format():
-    args = fw_abi.rpc_raw_read_args(idx=1, reg=fw_abi.TMC2209_CHOPCONF)
+    args = fw_api.rpc_raw_read_args(idx=1, reg=fw_api.TMC2209_CHOPCONF)
     stream = fw_link.encode(
         fw_link.seal_request(
-            0x1234, fw_abi.RPC_NS_RAW, fw_abi.RPC_RAW_READ, bytes(args)
+            0x1234, fw_api.RPC_NS_RAW, fw_api.RPC_RAW_READ, bytes(args)
         )
     )
 
@@ -132,18 +132,18 @@ def test_a_request_survives_the_round_trip_through_the_wire_format():
 
     frame = fw_link.open_frame(runs[0])
     assert frame is not None
-    assert frame.type == fw_abi.RPC_FRAME_REQ
+    assert frame.type == fw_api.RPC_FRAME_REQ
     assert frame.header.id == 0x1234
-    assert frame.header.ns == fw_abi.RPC_NS_RAW
-    assert frame.header.method == fw_abi.RPC_RAW_READ
+    assert frame.header.ns == fw_api.RPC_NS_RAW
+    assert frame.header.method == fw_api.RPC_RAW_READ
 
-    back = fw_abi.rpc_raw_read_args.from_buffer_copy(frame.payload)
-    assert (back.idx, back.reg) == (1, fw_abi.TMC2209_CHOPCONF)
+    back = fw_api.rpc_raw_read_args.from_buffer_copy(frame.payload)
+    assert (back.idx, back.reg) == (1, fw_api.TMC2209_CHOPCONF)
 
 
 def test_the_encoding_carries_no_delimiter_of_its_own():
-    payload = bytes(fw_abi.rpc_raw_read_args(idx=0, reg=0))
-    frame = fw_link.seal_request(0, fw_abi.RPC_NS_RAW, fw_abi.RPC_RAW_READ, payload)
+    payload = bytes(fw_api.rpc_raw_read_args(idx=0, reg=0))
+    frame = fw_link.seal_request(0, fw_api.RPC_NS_RAW, fw_api.RPC_RAW_READ, payload)
     encoded = fw_link.encode(frame)
 
     assert b"\x00" in frame
@@ -153,9 +153,9 @@ def test_the_encoding_carries_no_delimiter_of_its_own():
 
 def test_a_corrupted_frame_does_not_open():
     frame = bytearray(
-        fw_link.seal_request(7, fw_abi.RPC_NS_SYS, fw_abi.RPC_SYS_STATE, b"")
+        fw_link.seal_request(7, fw_api.RPC_NS_SYS, fw_api.RPC_SYS_STATE, b"")
     )
-    frame[fw_abi.RPC_HDR_LEN - 1] ^= 0xFF
+    frame[fw_api.RPC_HDR_LEN - 1] ^= 0xFF
     runs = fw_link.FrameSplitter().feed(fw_link.encode(bytes(frame)))
     assert fw_link.open_frame(runs[0]) is None
 
@@ -167,7 +167,7 @@ def test_a_run_that_is_not_cobs_does_not_open():
 def test_a_payload_too_large_to_frame_is_refused():
     with pytest.raises(fw_link.LinkError):
         fw_link.seal_request(
-            0, fw_abi.RPC_NS_SYS, 0, b"x" * (fw_abi.RPC_MAX_PAYLOAD + 1)
+            0, fw_api.RPC_NS_SYS, 0, b"x" * (fw_api.RPC_MAX_PAYLOAD + 1)
         )
 
 
@@ -195,52 +195,52 @@ def test_a_call_returns_what_the_reply_carried():
 
     assert state.uptime_ms == 1234
     assert state.device_count == 3
-    assert firmware.requests[0].header.ns == fw_abi.RPC_NS_SYS
-    assert firmware.requests[0].header.method == fw_abi.RPC_SYS_STATE
+    assert firmware.requests[0].header.ns == fw_api.RPC_NS_SYS
+    assert firmware.requests[0].header.method == fw_api.RPC_SYS_STATE
 
 
 def test_arguments_travel_positionally_and_by_name():
     def answer(_firmware, frame):
-        value = fw_abi.rpc_raw_read_ret(value=0xDEADBEEF)
-        return [seal_reply(frame.header.id, fw_abi.RPC_OK, bytes(value))]
+        value = fw_api.rpc_raw_read_ret(value=0xDEADBEEF)
+        return [seal_reply(frame.header.id, fw_api.RPC_OK, bytes(value))]
 
     firmware, link = linked(answer)
     with link:
-        assert link.raw.read(1, fw_abi.TMC2209_GCONF).value == 0xDEADBEEF
-        assert link.raw.read(idx=1, reg=fw_abi.TMC2209_GCONF).value == 0xDEADBEEF
+        assert link.raw.read(1, fw_api.TMC2209_GCONF).value == 0xDEADBEEF
+        assert link.raw.read(idx=1, reg=fw_api.TMC2209_GCONF).value == 0xDEADBEEF
 
     for request in firmware.requests:
-        args = fw_abi.rpc_raw_read_args.from_buffer_copy(request.payload)
-        assert (args.idx, args.reg) == (1, fw_abi.TMC2209_GCONF)
+        args = fw_api.rpc_raw_read_args.from_buffer_copy(request.payload)
+        assert (args.idx, args.reg) == (1, fw_api.TMC2209_GCONF)
 
 
 def test_a_flexible_argument_reaches_the_wire_whole():
-    datagram = bytes(range(fw_abi.TMC2209_WRITE_LEN))
+    datagram = bytes(range(fw_api.TMC2209_WRITE_LEN))
 
     def answer(_firmware, frame):
-        ret = fw_abi.rpc_relay_send_ret(outcome=fw_abi.RPC_OK, count=0)
-        payload = bytes(ret)[: fw_abi.rpc_relay_send_ret.rx.offset]
-        return [seal_reply(frame.header.id, fw_abi.RPC_OK, payload)]
+        ret = fw_api.rpc_relay_send_ret(outcome=fw_api.RPC_OK, count=0)
+        payload = bytes(ret)[: fw_api.rpc_relay_send_ret.rx.offset]
+        return [seal_reply(frame.header.id, fw_api.RPC_OK, payload)]
 
     firmware, link = linked(answer)
     with link:
         out = link.relay.send(0, 0, datagram)
 
-    assert out.outcome == fw_abi.RPC_OK
+    assert out.outcome == fw_api.RPC_OK
     sent = firmware.requests[0].payload
-    base = ctypes.sizeof(fw_abi.rpc_relay_send_args)
+    base = ctypes.sizeof(fw_api.rpc_relay_send_args)
     assert sent[base:] == datagram
 
 
 def test_a_failing_status_raises_the_exception_that_names_it():
     def answer(_firmware, frame):
-        return [seal_reply(frame.header.id, fw_abi.RPC_NO_BACKEND)]
+        return [seal_reply(frame.header.id, fw_api.RPC_NO_BACKEND)]
 
     _, link = linked(answer)
-    with link, pytest.raises(fw_abi.RpcNoBackend) as caught:
+    with link, pytest.raises(fw_api.RpcNoBackend) as caught:
         link.raw.poll_health(0)
 
-    assert caught.value.status == fw_abi.RPC_NO_BACKEND
+    assert caught.value.status == fw_api.RPC_NO_BACKEND
 
 
 def test_a_log_between_the_request_and_its_reply_reaches_the_sink():
@@ -268,7 +268,7 @@ def test_a_log_between_the_request_and_its_reply_reaches_the_sink():
 def test_a_reply_nobody_waits_for_is_counted_and_discarded():
     firmware, link = linked()
     with link:
-        firmware.push(seal_reply(0xBEEF, fw_abi.RPC_OK))
+        firmware.push(seal_reply(0xBEEF, fw_api.RPC_OK))
         assert wait_until(lambda: link.unmatched == 1)
 
 
@@ -290,7 +290,7 @@ def test_an_abandoned_request_frees_its_id():
     with link:
         with pytest.raises(fw_link.LinkTimeout):
             link.sys.state(timeout=0.05)
-        firmware.push(seal_reply(firmware.requests[0].header.id, fw_abi.RPC_OK))
+        firmware.push(seal_reply(firmware.requests[0].header.id, fw_api.RPC_OK))
         assert wait_until(lambda: link.unmatched == 1)
 
 
@@ -327,7 +327,7 @@ def test_an_argument_the_method_does_not_take_is_refused():
     _, link = linked(echo_state)
     with link:
         with pytest.raises(TypeError):
-            link.raw.read(0, fw_abi.TMC2209_GCONF, 3)
+            link.raw.read(0, fw_api.TMC2209_GCONF, 3)
         with pytest.raises(TypeError):
             link.raw.read(0, idx=1)
         with pytest.raises(TypeError):

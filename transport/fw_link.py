@@ -5,7 +5,7 @@ import itertools
 import threading
 from typing import Any, NamedTuple
 
-from transport import fw_abi, fw_api
+from transport import fw_api
 
 # ── Names ────────────────────────────────────────────────────────────────────
 
@@ -45,12 +45,12 @@ def cobs_encoded_max(length: int) -> int:
     return length + length // 254 + 1
 
 
-MAX_ENCODED = cobs_encoded_max(fw_abi.RPC_MAX_FRAME)
+MAX_ENCODED = cobs_encoded_max(fw_api.RPC_MAX_FRAME)
 
 HEADERS = {
-    fw_abi.RPC_FRAME_REQ: fw_abi.rpc_req_hdr_t,
-    fw_abi.RPC_FRAME_REP: fw_abi.rpc_rep_hdr_t,
-    fw_abi.RPC_FRAME_LOG: fw_abi.rpc_log_hdr_t,
+    fw_api.RPC_FRAME_REQ: fw_api.rpc_req_hdr_t,
+    fw_api.RPC_FRAME_REP: fw_api.rpc_rep_hdr_t,
+    fw_api.RPC_FRAME_LOG: fw_api.rpc_log_hdr_t,
 }
 
 
@@ -108,12 +108,12 @@ class FrameSplitter:
 
 def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes:
     """Return a request frame, header and CRC put on by the firmware's own code."""
-    if len(payload) > fw_abi.RPC_MAX_PAYLOAD:
+    if len(payload) > fw_api.RPC_MAX_PAYLOAD:
         raise LinkError(f"payload of {len(payload)} bytes exceeds the frame")
-    buf = fw_abi.rpc_buf_t()
+    buf = fw_api.rpc_buf_t()
     if payload:
-        ctypes.memmove(ctypes.byref(buf, fw_abi.RPC_HDR_LEN), payload, len(payload))
-    length = fw_abi.rpc_frame_seal_req(buf, request_id, ns, method, len(payload))
+        ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
+    length = fw_api.rpc_frame_seal_req(buf, request_id, ns, method, len(payload))
     if length == 0:
         raise LinkError(f"the firmware refused to seal {len(payload)} bytes")
     return bytes(buf.bytes[:length])
@@ -124,7 +124,7 @@ def encode(frame: bytes) -> bytes:
     src = (ctypes.c_uint8 * len(frame)).from_buffer_copy(frame)
     capacity = cobs_encoded_max(len(frame))
     dst = (ctypes.c_uint8 * capacity)()
-    written = fw_abi.cobs_encode(src, len(frame), dst, capacity)
+    written = fw_api.cobs_encode(src, len(frame), dst, capacity)
     if written == 0:
         raise LinkError(f"cobs_encode refused {len(frame)} bytes")
     return bytes(dst[:written]) + DELIMITER
@@ -132,18 +132,18 @@ def encode(frame: bytes) -> bytes:
 
 def open_frame(run: bytes) -> Frame | None:
     """Return what the run decodes to, or None if it is not a frame."""
-    buf = fw_abi.rpc_buf_t()
+    buf = fw_api.rpc_buf_t()
     src = (ctypes.c_uint8 * len(run)).from_buffer_copy(run)
-    decoded = fw_abi.cobs_decode(src, len(run), buf.bytes, fw_abi.RPC_MAX_FRAME)
+    decoded = fw_api.cobs_decode(src, len(run), buf.bytes, fw_api.RPC_MAX_FRAME)
     if decoded == 0:
         return None
 
-    view = fw_abi.rpc_view_t()
-    if not fw_abi.rpc_frame_open(ctypes.byref(buf), decoded, ctypes.byref(view)):
+    view = fw_api.rpc_view_t()
+    if not fw_api.rpc_frame_open(ctypes.byref(buf), decoded, ctypes.byref(view)):
         return None
 
     header_type = HEADERS[view.type]
-    header = header_type.from_buffer_copy(bytes(buf.bytes[: fw_abi.RPC_HDR_LEN]))
+    header = header_type.from_buffer_copy(bytes(buf.bytes[: fw_api.RPC_HDR_LEN]))
     payload = b""
     if view.payload_len:
         payload = ctypes.string_at(view.payload, view.payload_len)
@@ -198,7 +198,7 @@ class FirmwareLink:
         self._reader: threading.Thread | None = None
         self.unmatched = 0
         self.malformed = 0
-        self._namespaces = fw_api.surface(self.invoke)
+        self._namespaces = fw_api.bind(self.invoke)
         self._start()
 
     def __getattr__(self, name: str) -> fw_api.Namespace:
@@ -266,7 +266,7 @@ class FirmwareLink:
             self.malformed += 1
             return
 
-        if frame.type == fw_abi.RPC_FRAME_LOG:
+        if frame.type == fw_api.RPC_FRAME_LOG:
             if self._on_log is not None:
                 self._on_log(
                     LogRecord(
@@ -277,7 +277,7 @@ class FirmwareLink:
                 )
             return
 
-        if frame.type != fw_abi.RPC_FRAME_REP:
+        if frame.type != fw_api.RPC_FRAME_REP:
             self.unmatched += 1
             return
 
@@ -330,7 +330,7 @@ class FirmwareLink:
         if pending.status is None:
             raise LinkClosed("the link closed while the request was in flight")
 
-        fw_abi.raise_for_status(pending.status)
+        fw_api.raise_for_status(pending.status)
         return pending.payload
 
     def invoke(

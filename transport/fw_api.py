@@ -168,6 +168,19 @@ class Namespace:
         return [*super().__dir__(), *self._specs]
 
 
-def surface(carry: Any) -> dict[str, Namespace]:
+def bind(carry: Any) -> dict[str, Namespace]:
     """Return every namespace the ABI declares, bound to the given carrier."""
     return {name: Namespace(carry, specs) for name, specs in namespaces().items()}
+
+
+# ── Everything the ABI already names ─────────────────────────────────────────
+
+
+def __getattr__(name: str) -> Any:
+    """Relay whatever this module does not define to the generated ABI."""
+    return getattr(fw_abi, name)
+
+
+def __dir__() -> list[str]:
+    """Return this module's own names plus everything the ABI carries."""
+    return sorted({*globals(), *vars(fw_abi)})
