@@ -5,7 +5,7 @@ import itertools
 import threading
 from typing import Any, NamedTuple
 
-from transport import fw_abi
+from transport import fw_abi, fw_api
 
 # ── Names ────────────────────────────────────────────────────────────────────
 
@@ -150,132 +150,6 @@ def open_frame(run: bytes) -> Frame | None:
     return Frame(view.type, header, payload)
 
 
-# ── Payloads that end in a flexible array ────────────────────────────────────
-
-
-def _array(elem: Any, count: int) -> Any:
-    """Return the ctypes array type for the element and count given."""
-    return elem * count
-
-
-def pack(struct_type: type, values: dict[str, Any]) -> bytes:
-    """Return the payload bytes, sizing any flexible member from its sequence."""
-    flex = fw_abi.FLEX.get(struct_type)
-    if flex is None:
-        return bytes(struct_type(**values))
-
-    values = dict(values)
-    items = list(values.pop(flex.field, ()))
-    head = struct_type(**values)
-    setattr(head, flex.count_field, len(items))
-    return bytes(head) + bytes(_array(flex.elem, len(items))(*items))
-
-
-def unpack(struct_type: type, payload: bytes) -> Any:
-    """Return the payload as its struct, with a flexible member attached."""
-    base = ctypes.sizeof(struct_type)
-    if len(payload) < base:
-        payload = payload + bytes(base - len(payload))
-
-    head = struct_type.from_buffer_copy(payload[:base])
-    flex = fw_abi.FLEX.get(struct_type)
-    if flex is not None:
-        count = getattr(head, flex.count_field)
-        width = ctypes.sizeof(flex.elem)
-        tail = payload[base : base + count * width]
-        if len(tail) != count * width:
-            raise LinkError(f"{struct_type.__name__} claims {count} it did not send")
-        setattr(head, flex.field, list(_array(flex.elem, count).from_buffer_copy(tail)))
-    return head
-
-
-# ── The surface derived from the enums ───────────────────────────────────────
-
-
-class MethodSpec(NamedTuple):
-    """One callable method, and the payload types its own name predicts."""
-
-    name: str
-    ns: int
-    method: int
-    args: type | None
-    ret: type | None
-    fields: tuple[str, ...]
-
-
-def _positional_fields(args_type: type | None) -> tuple[str, ...]:
-    """Return the arguments a caller may pass by position, in order."""
-    if args_type is None:
-        return ()
-    declared = getattr(args_type, "_fields_", [])
-    names = [name for name, *_ in declared if not name.startswith("_pad")]
-    flex = fw_abi.FLEX.get(args_type)
-    if flex is not None:
-        names = [n for n in names if n != flex.count_field] + [flex.field]
-    return tuple(names)
-
-
-def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
-    """Return one namespace's methods, keyed by the name they answer to."""
-    specs: dict[str, MethodSpec] = {}
-    for member in method_enum:
-        if member.name.endswith("_COUNT"):
-            continue
-        payload_stem = member.name.lower()
-        args = getattr(fw_abi, f"{payload_stem}_args", None)
-        ret = getattr(fw_abi, f"{payload_stem}_ret", None)
-        attr = member.name.removeprefix(f"RPC_{stem}_").lower()
-        specs[attr] = MethodSpec(
-            name=f"{stem.lower()}.{attr}",
-            ns=ns,
-            method=int(member),
-            args=args,
-            ret=ret,
-            fields=_positional_fields(args),
-        )
-    return specs
-
-
-def namespaces() -> dict[str, tuple[int, dict[str, MethodSpec]]]:
-    """Return every namespace that has methods, derived from the enums."""
-    found: dict[str, tuple[int, dict[str, MethodSpec]]] = {}
-    for member in fw_abi.rpc_ns_t:
-        if member.name.endswith("_COUNT"):
-            continue
-        stem = member.name.removeprefix("RPC_NS_")
-        method_enum = getattr(fw_abi, f"rpc_{stem.lower()}_method_t", None)
-        if method_enum is None:
-            continue
-        found[stem.lower()] = (int(member), _methods(stem, int(member), method_enum))
-    return found
-
-
-class Namespace:
-    """One namespace's methods, reached as attributes of the link."""
-
-    def __init__(self, link: "FirmwareLink", specs: dict[str, MethodSpec]) -> None:
-        """Bind these methods to the link that will carry them."""
-        self._link = link
-        self._specs = specs
-
-    def __getattr__(self, name: str) -> Any:
-        """Return the named method, bound to this link, or say there is none."""
-        spec = self._specs.get(name)
-        if spec is None:
-            raise AttributeError(name)
-
-        def invoke(*args: Any, **kwargs: Any) -> Any:
-            """Send this method's request and return what the reply carried."""
-            return self._link.invoke(spec, args, kwargs)
-
-        invoke.__name__ = name
-        return invoke
-
-    def __dir__(self) -> list[str]:
-        """Return the attributes plus every method name, so completion sees them."""
-        return [*super().__dir__(), *self._specs]
-
-
 # ── Requests in flight ───────────────────────────────────────────────────────
 
 
@@ -304,7 +178,7 @@ class FirmwareLink:
         on_log: Any = None,
     ) -> None:
         """Open the port, or take a stream, and start reading either way."""
-        self._namespaces: dict[str, Namespace] = {}
+        self._namespaces: dict[str, fw_api.Namespace] = {}
         if (port is None) == (stream is None):
             raise LinkError("name a port or pass a stream, not both and not neither")
         if stream is None:
@@ -324,12 +198,10 @@ class FirmwareLink:
         self._reader: threading.Thread | None = None
         self.unmatched = 0
         self.malformed = 0
-        self._namespaces = {
-            name: Namespace(self, specs) for name, (_, specs) in namespaces().items()
-        }
+        self._namespaces = fw_api.surface(self.invoke)
         self._start()
 
-    def __getattr__(self, name: str) -> Namespace:
+    def __getattr__(self, name: str) -> fw_api.Namespace:
         """Return the named namespace, or say this build serves none by that name."""
         namespace = self.__dict__.get("_namespaces", {}).get(name)
         if namespace is None:
@@ -463,36 +335,19 @@ class FirmwareLink:
 
     def invoke(
         self,
-        spec: MethodSpec,
+        spec: fw_api.MethodSpec,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> Any:
         """Call a method by its spec, packing arguments and unpacking the reply."""
-        if len(args) > len(spec.fields):
-            raise TypeError(
-                f"{spec.name} takes {len(spec.fields)} arguments, got {len(args)}"
-            )
-
         kwargs = dict(kwargs)
         timeout = None
         if "timeout" not in spec.fields:
             timeout = kwargs.pop("timeout", None)
 
-        values = dict(zip(spec.fields, args, strict=False))
-        for name in kwargs:
-            if name in values:
-                raise TypeError(f"{spec.name} got {name} twice")
-        values.update(kwargs)
-
-        unknown = set(values) - set(spec.fields)
-        if unknown:
-            raise TypeError(f"{spec.name} has no argument {', '.join(sorted(unknown))}")
-
-        payload = pack(spec.args, values) if spec.args is not None else b""
+        payload = fw_api.arguments(spec, args, kwargs)
         reply = self.call(spec.ns, spec.method, payload, timeout)
-        if spec.ret is None:
-            return None
-        return unpack(spec.ret, reply)
+        return fw_api.result(spec, reply)
 
 
 # ── Finding the board ────────────────────────────────────────────────────────
