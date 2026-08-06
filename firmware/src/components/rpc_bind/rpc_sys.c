@@ -4,7 +4,7 @@
 #include "esp_app_desc.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "rpc_api.h"
+#include "fw_api.h"
 #include "tmc2209.h"
 
 /* Copies @p src into a fixed field and zeroes the rest of it. The tail matters:

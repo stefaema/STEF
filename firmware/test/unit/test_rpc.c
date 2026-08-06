@@ -17,8 +17,8 @@
 #include <string.h>
 
 #include "fake_devices.h"
+#include "fw_api.h"
 #include "mock_tmc2209.h"
-#include "rpc_api.h"
 #include "rpc_dispatch.h"
 #include "rpc_frame.h"
 #include "rpc_methods.h"

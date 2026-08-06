@@ -12,7 +12,7 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror -g -O1)
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TMC2209_DIR ${ROOT_DIR}/portable/tmc2209)
 set(RPC_DIR ${ROOT_DIR}/portable/rpc)
-set(RPC_API_DIR ${ROOT_DIR}/shared/rpc_api)
+set(FW_API_DIR ${ROOT_DIR}/shared/fw_api)
 set(RPC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/rpc_bind)
 set(TMC_BIND_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../src/components/tmc2209_bind)
 
@@ -64,7 +64,7 @@ add_executable(unit_tests
 # devices.h comes from tmc2209_bind; the tests link a fake for it.
 target_include_directories(unit_tests PRIVATE
     ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include
-    ${RPC_API_DIR}/include ${TMC2209_DIR}/test)
+    ${FW_API_DIR}/include ${TMC2209_DIR}/test)
 target_link_libraries(unit_tests PRIVATE tmc2209 rpc unity)
 
 enable_testing()

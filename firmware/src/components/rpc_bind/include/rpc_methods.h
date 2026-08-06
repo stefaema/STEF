@@ -18,7 +18,7 @@
 #ifndef RPC_METHODS_H
 #define RPC_METHODS_H
 
-#include "rpc_api.h"
+#include "fw_api.h"
 #include "rpc_dispatch.h"
 
 /** @brief `sys` methods, indexed by @ref rpc_sys_method_t. */

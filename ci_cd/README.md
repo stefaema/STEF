@@ -90,8 +90,8 @@ modules a level below. What a module contains decides how it is checked:
 
 - `CMakeLists.txt` naming `project.cmake` → an ESP-IDF app, built with `idf.py`
 - `test/CMakeLists.txt` → a host build, run with `ctest`
-- a root `CMakeLists.txt` naming its own `project()` → a library the module
-  itself needs, built before its tests run
+- a `host/` or root `CMakeLists.txt` naming its own `project()` → a library the
+  module ships, built before any module is tested
 - `pyproject.toml` → a Python package, run with `pytest`
 - any `.py` file → type-checked
 - `[tool.stef] generated` in `pyproject.toml` → a command that regenerates a
@@ -101,11 +101,11 @@ modules a level below. What a module contains decides how it is checked:
   empty and skipped. Its name is still a valid commit scope.
 
 - The library and the tests are two different questions about the same
-  `CMakeLists.txt` shape, which is why the root one and a `test/` one are
-  discovered separately. `transport` builds `librpc.so` out of `portable/rpc/`,
-  `shared/` and `portable/tmc2209/` sources, and nothing in it can be imported
-  until that exists,
-  so `check_test` builds it rather than assuming `check_build` already ran.
+  `CMakeLists.txt` shape, which is why a `host/` one and a `test/` one are
+  discovered separately. `fw_api` builds `libfw_api.so` out of `portable/rpc/`,
+  its own and `portable/tmc2209/` sources, and neither its own Python nor
+  `transport`'s can be imported until that exists, so every module is built
+  before any module is tested.
 
 - Nothing enumerates the modules and nothing declares which depends on which.
   Both would be second copies of what the tree already says.

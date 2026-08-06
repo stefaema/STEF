@@ -1,6 +1,7 @@
 import pytest
 
-from transport import fw_api, fw_wire
+from shared import fw_api
+from transport import fw_wire
 
 # ── Splitting a byte stream into frames ──────────────────────────────────────
 

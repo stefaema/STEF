@@ -3,12 +3,12 @@
 import ctypes
 from typing import Any, NamedTuple
 
-from transport import fw_api
+from shared import fw_api
 
 DELIMITER = b"\x00"
 
 
-class WireError(fw_api.TransportError):
+class WireError(fw_api.FwError):
     """A frame that cannot be built, or bytes that cannot be one."""
 
 
@@ -35,7 +35,7 @@ class Frame(NamedTuple):
 
 
 class LogRecord(NamedTuple):
-    """One log line the firmware sent unprompted."""
+    """One log line the firmware sent."""
 
     level: int
     uptime_ms: int

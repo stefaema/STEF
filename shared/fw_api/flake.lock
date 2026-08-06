@@ -5,11 +5,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "path": "../dev_base",
+        "path": "../../dev_base",
         "type": "path"
       },
       "original": {
-        "path": "../dev_base",
+        "path": "../../dev_base",
         "type": "path"
       },
       "parent": []

@@ -29,8 +29,10 @@ def test(mods: list[Module]) -> bool:
     """Run lint, then build and unit test every module."""
     ok = lint()
     heading("test: build and unit tests, every module")
+    # Every build first: a module's tests may import what another module builds.
     for m in mods:
         ok &= check_build(m)
+    for m in mods:
         ok &= check_test(m)
     return ok
 

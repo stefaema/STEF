@@ -2,7 +2,7 @@ import ctypes
 
 import pytest
 
-from transport import fw_api
+from shared import fw_api
 
 # ── Payloads that end in a flexible array ────────────────────────────────────
 

@@ -4,9 +4,6 @@ version = "0.1.0"
 description = "PC-side client of the film transport"
 requires-python = ">=3.11"
 
-[tool.stef]
-generated = "python tools/fw_abi_gen.py --check"
-
 [tool.pytest.ini_options]
 pythonpath = [".."]
 testpaths = ["tests"]

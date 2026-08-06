@@ -73,10 +73,15 @@ def esp_idf_dir(module: Path) -> Path | None:
 
 
 def native_lib_dir(module: Path) -> Path | None:
-    """Return the module root if it is a host-buildable CMake project, not firmware."""
-    if is_esp_idf_based(module) or not is_cmake_project(module):
-        return None
-    return module
+    """Return the host-buildable CMake project, either host or the module root."""
+    return next(
+        (
+            d
+            for d in (module / "host", module)
+            if not is_esp_idf_based(d) and is_cmake_project(d)
+        ),
+        None,
+    )
 
 
 def c_test_dirs(module: Path) -> list[Path]:

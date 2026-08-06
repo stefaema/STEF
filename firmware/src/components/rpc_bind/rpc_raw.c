@@ -25,7 +25,7 @@
 #include <stddef.h>
 
 #include "devices.h"
-#include "rpc_api.h"
+#include "fw_api.h"
 #include "rpc_methods.h"
 #include "rpc_status.h"
 #include "tmc2209.h"

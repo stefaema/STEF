@@ -3,16 +3,16 @@
 import ctypes
 from typing import Any, NamedTuple
 
-from transport import fw_abi
+from shared.fw_api import abi
 
 # ── How this fails ───────────────────────────────────────────────────────────
 
 
-class TransportError(Exception):
+class FwError(Exception):
     """Anything this package raises for itself, as opposed to what the board says."""
 
 
-class ApiError(TransportError):
+class ApiError(FwError):
     """A payload that does not agree with the type it claims to be."""
 
 
@@ -26,7 +26,7 @@ def _array(elem: Any, count: int) -> Any:
 
 def pack(struct_type: type, values: dict[str, Any]) -> bytes:
     """Return the payload bytes, sizing any flexible member from its sequence."""
-    flex = fw_abi.FLEX.get(struct_type)
+    flex = abi.FLEX.get(struct_type)
     if flex is None:
         return bytes(struct_type(**values))
 
@@ -44,7 +44,7 @@ def unpack(struct_type: type, payload: bytes) -> Any:
         payload = payload + bytes(base - len(payload))
 
     head = struct_type.from_buffer_copy(payload[:base])
-    flex = fw_abi.FLEX.get(struct_type)
+    flex = abi.FLEX.get(struct_type)
     if flex is not None:
         count = getattr(head, flex.count_field)
         width = ctypes.sizeof(flex.elem)
@@ -75,7 +75,7 @@ def _positional_fields(args_type: type | None) -> tuple[str, ...]:
         return ()
     declared = getattr(args_type, "_fields_", [])
     names = [name for name, *_ in declared if not name.startswith("_pad")]
-    flex = fw_abi.FLEX.get(args_type)
+    flex = abi.FLEX.get(args_type)
     if flex is not None:
         names = [n for n in names if n != flex.count_field] + [flex.field]
     return tuple(names)
@@ -88,8 +88,8 @@ def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
         if member.name.endswith("_COUNT"):
             continue
         payload_stem = member.name.lower()
-        args = getattr(fw_abi, f"{payload_stem}_args", None)
-        ret = getattr(fw_abi, f"{payload_stem}_ret", None)
+        args = getattr(abi, f"{payload_stem}_args", None)
+        ret = getattr(abi, f"{payload_stem}_ret", None)
         attr = member.name.removeprefix(f"RPC_{stem}_").lower()
         specs[attr] = MethodSpec(
             name=f"{stem.lower()}.{attr}",
@@ -105,11 +105,11 @@ def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
 def namespaces() -> dict[str, dict[str, MethodSpec]]:
     """Return every namespace that has methods, derived from the enums."""
     found: dict[str, dict[str, MethodSpec]] = {}
-    for member in fw_abi.rpc_ns_t:
+    for member in abi.rpc_ns_t:
         if member.name.endswith("_COUNT"):
             continue
         stem = member.name.removeprefix("RPC_NS_")
-        method_enum = getattr(fw_abi, f"rpc_{stem.lower()}_method_t", None)
+        method_enum = getattr(abi, f"rpc_{stem.lower()}_method_t", None)
         if method_enum is None:
             continue
         found[stem.lower()] = _methods(stem, int(member), method_enum)
@@ -182,9 +182,9 @@ def attach(carry: Any) -> dict[str, Namespace]:
 
 def __getattr__(name: str) -> Any:
     """Relay whatever this module does not define to the generated ABI."""
-    return getattr(fw_abi, name)
+    return getattr(abi, name)
 
 
 def __dir__() -> list[str]:
     """Return this module's own names plus everything the ABI carries."""
-    return sorted({*globals(), *vars(fw_abi)})
+    return sorted({*globals(), *vars(abi)})

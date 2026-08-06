@@ -6,7 +6,8 @@ import threading
 from concurrent.futures import Future
 from typing import Any, Callable, NamedTuple
 
-from transport import fw_api, fw_wire
+from shared import fw_api
+from transport import fw_wire
 
 # ── Names ────────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ ID_MASK = 0xFFFF
 # ── How this fails ───────────────────────────────────────────────────────────
 
 
-class LinkError(fw_api.TransportError):
+class LinkError(fw_api.FwError):
     """Anything that stops a call from reaching an answer."""
 
 
@@ -149,6 +150,7 @@ _DONE = object()
 class _Pending:
     """One request written to the wire, waiting for the reply that carries its id."""
 
+    # Closed attr set.
     __slots__ = ("event", "payload", "status")
 
     def __init__(self) -> None:

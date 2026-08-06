@@ -1,4 +1,4 @@
-#include "rpc_api.h"
+#include "fw_api.h"
 
 const char *rpc_strerror(rpc_status_t status)
 {

@@ -18,7 +18,7 @@
 #ifndef RPC_STATUS_H
 #define RPC_STATUS_H
 
-#include "rpc_api.h"
+#include "fw_api.h"
 #include "tmc2209_err.h"
 
 /** @brief @p err as the status a reply carries. */

@@ -1,8 +1,8 @@
 {
-  description = "STEF - the wire contract both ends compile";
+  description = "STEF - where a module's shipped files are, and where this machine's own files go";
 
   inputs = {
-    base.url = "path:../dev_base";
+    base.url = "path:../../dev_base";
     nixpkgs.follows = "base/nixpkgs";
   };
 
@@ -14,9 +14,6 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           buildInputs = [
-            pkgs.gcc
-            pkgs.cmake
-            pkgs.ninja
             (pkgs.python3.withPackages (ps: [ ps.pytest ]))
           ];
         };

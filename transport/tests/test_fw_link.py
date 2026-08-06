@@ -4,7 +4,8 @@ import time
 
 import pytest
 
-from transport import fw_api, fw_link, fw_wire
+from shared import fw_api
+from transport import fw_link, fw_wire
 
 TIMEOUT = 0.5
 

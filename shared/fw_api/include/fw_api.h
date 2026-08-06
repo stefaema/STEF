@@ -1,10 +1,10 @@
 /**
- * @file rpc_api.h
+ * @file fw_api.h
  * @brief What this firmware serves: namespaces, method numbers, payloads.
  *
  * The `rpc` component moves frames and is entitled to know nothing about what
- * they ask for. This is the other half of that split, and it lives in
- * `rpc_bind` for the same reason `board.h` lives in `tmc2209_bind`: it names
+ * they ask for. This is the other half of that split, and it lives in its own
+ * module for the same reason `board.h` lives in `tmc2209_bind`: it names
  * drivers, registers and library calls, so it changes when this machine changes
  * and the transport does not.
  *
@@ -31,8 +31,8 @@
  * build reads alongside the component's headers.
  */
 
-#ifndef RPC_API_H
-#define RPC_API_H
+#ifndef FW_API_H
+#define FW_API_H
 
 #include <stdint.h>
 

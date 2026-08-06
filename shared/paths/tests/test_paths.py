@@ -70,7 +70,7 @@ def test_a_home_wins_over_xdg(clean_env, monkeypatch):
 
 
 def test_a_package_carries_its_builtin_beside_its_code():
-    assert paths.builtin_dir("shared") == Path(__file__).parent.parent / "builtin"
+    assert paths.builtin_dir("shared.paths") == Path(__file__).parent.parent / "builtin"
     assert paths.builtin_dir("transport").is_dir()
 
 
