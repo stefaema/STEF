@@ -97,7 +97,7 @@ def test_a_method_finds_the_payloads_its_own_name_predicts():
 
 def test_binding_attaches_every_namespace_to_one_carrier():
     seen = []
-    surface = fw_api.bind(lambda spec, args, kwargs: seen.append(spec.name))
+    surface = fw_api.attach(lambda spec, args, kwargs: seen.append(spec.name))
 
     assert set(surface) == set(fw_api.namespaces())
     surface["raw"].poll_health(0)
@@ -110,7 +110,7 @@ def test_the_abi_is_reachable_without_naming_it():
     assert fw_api.rpc_relay_send_args is not None
     assert fw_api.TMC2209_GCONF == 0
     assert "rpc_raw_move_args" in dir(fw_api)
-    assert "bind" in dir(fw_api)
+    assert "attach" in dir(fw_api)
 
 
 def test_a_name_neither_module_has_still_fails():

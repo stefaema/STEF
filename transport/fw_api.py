@@ -8,7 +8,11 @@ from transport import fw_abi
 # ── How this fails ───────────────────────────────────────────────────────────
 
 
-class ApiError(Exception):
+class TransportError(Exception):
+    """Anything this package raises for itself, as opposed to what the board says."""
+
+
+class ApiError(TransportError):
     """A payload that does not agree with the type it claims to be."""
 
 
@@ -168,7 +172,7 @@ class Namespace:
         return [*super().__dir__(), *self._specs]
 
 
-def bind(carry: Any) -> dict[str, Namespace]:
+def attach(carry: Any) -> dict[str, Namespace]:
     """Return every namespace the ABI declares, bound to the given carrier."""
     return {name: Namespace(carry, specs) for name, specs in namespaces().items()}
 

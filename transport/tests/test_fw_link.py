@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from transport import fw_api, fw_link
+from transport import fw_api, fw_link, fw_wire
 
 TIMEOUT = 0.5
 
@@ -14,7 +14,7 @@ def seal_reply(request_id, status, payload=b""):
     if payload:
         ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
     length = fw_api.rpc_frame_seal_rep(buf, request_id, status, len(payload))
-    return fw_link.encode(bytes(buf.bytes[:length]))
+    return fw_wire.encode(bytes(buf.bytes[:length]))
 
 
 def seal_log(level, uptime_ms, text):
@@ -22,7 +22,7 @@ def seal_log(level, uptime_ms, text):
     payload = text.encode()
     ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
     length = fw_api.rpc_frame_seal_log(buf, level, uptime_ms, len(payload))
-    return fw_link.encode(bytes(buf.bytes[:length]))
+    return fw_wire.encode(bytes(buf.bytes[:length]))
 
 
 class FakeFirmware:
@@ -31,7 +31,7 @@ class FakeFirmware:
         self.requests = []
         self.closed = False
         self._out = bytearray()
-        self._splitter = fw_link.FrameSplitter()
+        self._splitter = fw_wire.FrameSplitter()
         self._cv = threading.Condition()
 
     def push(self, data):
@@ -41,7 +41,7 @@ class FakeFirmware:
 
     def write(self, data):
         for run in self._splitter.feed(data):
-            frame = fw_link.open_frame(run)
+            frame = fw_wire.open_frame(run)
             assert frame is not None
             self.requests.append(frame)
             if self.answer is not None:
@@ -75,9 +75,9 @@ def echo_state(_firmware, frame):
     return [seal_reply(frame.header.id, fw_api.RPC_OK, bytes(ret))]
 
 
-def linked(answer=None, **kwargs):
+def linked(answer=None, timeout=TIMEOUT, **kwargs):
     firmware = FakeFirmware(answer)
-    link = fw_link.FirmwareLink(stream=firmware, timeout=TIMEOUT, **kwargs)
+    link = fw_link.FirmwareLink(stream=firmware, timeout=timeout, **kwargs)
     return firmware, link
 
 
@@ -88,87 +88,6 @@ def wait_until(predicate, timeout=TIMEOUT):
             return True
         time.sleep(0.005)
     return False
-
-
-# ── Splitting a byte stream into frames ──────────────────────────────────────
-
-
-def test_a_frame_is_what_lies_between_two_delimiters():
-    splitter = fw_link.FrameSplitter()
-    assert splitter.feed(b"abc\x00") == [b"abc"]
-
-
-def test_a_frame_split_across_reads_is_still_one_frame():
-    splitter = fw_link.FrameSplitter()
-    assert splitter.feed(b"ab") == []
-    assert splitter.feed(b"cd\x00") == [b"abcd"]
-
-
-def test_empty_runs_are_not_frames():
-    splitter = fw_link.FrameSplitter()
-    assert splitter.feed(b"\x00\x00ab\x00\x00cd\x00") == [b"ab", b"cd"]
-
-
-def test_a_run_past_the_bound_is_dropped_and_the_next_one_survives():
-    splitter = fw_link.FrameSplitter()
-    assert splitter.feed(b"x" * (fw_link.MAX_ENCODED + 1)) == []
-    assert splitter.dropped == 1
-    assert splitter.feed(b"junk\x00ab\x00") == [b"ab"]
-
-
-# ── The codec, which is the firmware's own ───────────────────────────────────
-
-
-def test_a_request_survives_the_round_trip_through_the_wire_format():
-    args = fw_api.rpc_raw_read_args(idx=1, reg=fw_api.TMC2209_CHOPCONF)
-    stream = fw_link.encode(
-        fw_link.seal_request(
-            0x1234, fw_api.RPC_NS_RAW, fw_api.RPC_RAW_READ, bytes(args)
-        )
-    )
-
-    runs = fw_link.FrameSplitter().feed(stream)
-    assert len(runs) == 1
-
-    frame = fw_link.open_frame(runs[0])
-    assert frame is not None
-    assert frame.type == fw_api.RPC_FRAME_REQ
-    assert frame.header.id == 0x1234
-    assert frame.header.ns == fw_api.RPC_NS_RAW
-    assert frame.header.method == fw_api.RPC_RAW_READ
-
-    back = fw_api.rpc_raw_read_args.from_buffer_copy(frame.payload)
-    assert (back.idx, back.reg) == (1, fw_api.TMC2209_CHOPCONF)
-
-
-def test_the_encoding_carries_no_delimiter_of_its_own():
-    payload = bytes(fw_api.rpc_raw_read_args(idx=0, reg=0))
-    frame = fw_link.seal_request(0, fw_api.RPC_NS_RAW, fw_api.RPC_RAW_READ, payload)
-    encoded = fw_link.encode(frame)
-
-    assert b"\x00" in frame
-    assert encoded.endswith(b"\x00")
-    assert b"\x00" not in encoded[:-1]
-
-
-def test_a_corrupted_frame_does_not_open():
-    frame = bytearray(
-        fw_link.seal_request(7, fw_api.RPC_NS_SYS, fw_api.RPC_SYS_STATE, b"")
-    )
-    frame[fw_api.RPC_HDR_LEN - 1] ^= 0xFF
-    runs = fw_link.FrameSplitter().feed(fw_link.encode(bytes(frame)))
-    assert fw_link.open_frame(runs[0]) is None
-
-
-def test_a_run_that_is_not_cobs_does_not_open():
-    assert fw_link.open_frame(b"\x05ab") is None
-
-
-def test_a_payload_too_large_to_frame_is_refused():
-    with pytest.raises(fw_link.LinkError):
-        fw_link.seal_request(
-            0, fw_api.RPC_NS_SYS, 0, b"x" * (fw_api.RPC_MAX_PAYLOAD + 1)
-        )
 
 
 # ── Driving the link ─────────────────────────────────────────────────────────
@@ -332,3 +251,65 @@ def test_an_argument_the_method_does_not_take_is_refused():
             link.raw.read(0, idx=1)
         with pytest.raises(TypeError):
             link.raw.read(idx=0, register=1)
+
+
+# ── What the broker guarantees ───────────────────────────────────────────────
+
+
+def test_only_one_request_is_ever_on_the_wire():
+    depth = []
+
+    def answer(firmware, frame):
+        depth.append(len(firmware.requests))
+        return echo_state(firmware, frame)
+
+    _, link = linked(answer)
+    with link:
+        threads = [threading.Thread(target=link.sys.state) for _ in range(6)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+
+    assert depth == [1, 2, 3, 4, 5, 6]
+
+
+def test_a_timeout_measures_this_call_and_not_the_queue():
+    def answer(_firmware, frame):
+        time.sleep(0.15)
+        return echo_state(_firmware, frame)
+
+    _, link = linked(answer, timeout=0.4)
+    with link:
+        started = time.monotonic()
+        threads = [threading.Thread(target=link.sys.state) for _ in range(5)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+
+    assert time.monotonic() - started > 0.5
+
+
+def test_a_log_sink_never_runs_on_the_reader():
+    threads = []
+    seen = threading.Event()
+
+    def sink(_record):
+        threads.append(threading.current_thread().name)
+        seen.set()
+
+    firmware, link = linked(echo_state, on_log=sink)
+    with link:
+        firmware.push(seal_log(3, 1, "hello"))
+        assert seen.wait(TIMEOUT)
+        assert link.sys.state().uptime_ms == 1234
+
+    assert threads == ["fw_logs"]
+
+
+def test_a_sink_that_raises_costs_one_record_and_nothing_else():
+    def sink(_record):
+        raise RuntimeError("the sink is broken")
+
+    firmware, link = linked(echo_state, on_log=sink)
+    with link:
+        firmware.push(seal_log(3, 1, "boom"))
+        assert wait_until(lambda: link.dropped == 1)
+        assert link.sys.state().uptime_ms == 1234
