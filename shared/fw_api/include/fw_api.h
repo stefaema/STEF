@@ -55,7 +55,7 @@
  */
 #define RPC_PROTOCOL_VERSION 1
 
-/** @brief Namespaces, by who assembles the bytes. See docs/README.md. */
+/** @brief Namespaces, by who assembles the bytes. */
 typedef enum {
     RPC_NS_SYS   = 0, /**< about the firmware, not about a driver */
     RPC_NS_RELAY = 1, /**< the PC assembles the datagram */
