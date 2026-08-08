@@ -46,10 +46,16 @@ typedef enum {
     TMC2209_PWM_AUTO     = 0x72,
 } tmc2209_reg_t;
 
+/** @brief A @ref tmc2209_reg_t narrowed to a byte. */
+typedef uint8_t tmc2209_reg_id_t;
+
 /** Registers in the table, and therefore cache slots. OTP_PROG is excluded: it blows fuses. */
 #define TMC2209_REG_COUNT   23
 /** Registers whose modification should be exclusive to the library. */
 #define TMC2209_OWNED_COUNT 10
+
+/** @brief One bit per cache slot, so slot @c n is bit @c n. */
+typedef uint32_t tmc2209_slot_mask_t;
 
 /** @brief What the driver permits, as a bitmask. */
 enum {
@@ -118,7 +124,12 @@ typedef enum {
     TMC2209_OPEN_LOAD         = 1U << 6,  /**< DRV_STATUS ola/olb. Also true at standstill */
     TMC2209_STANDSTILL        = 1U << 7,  /**< DRV_STATUS.stst */
 } tmc2209_condition_t;
+/* clang-format on */
 
+/** @brief Bits of @ref tmc2209_condition_t. */
+typedef uint32_t tmc2209_condition_mask_t;
+
+/* clang-format off */
 /** Conditions that latch, and are therefore the ones tmc2209_clear_faults() acts on. */
 #define TMC2209_CONDITIONS_LATCHED                                       \
     ((uint32_t)TMC2209_DRIVER_RESET | (uint32_t)TMC2209_DRIVER_FAULT |   \

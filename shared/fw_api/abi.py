@@ -62,243 +62,390 @@ TMC2209_ACCESS_READ = 1
 TMC2209_ACCESS_WRITE = 2
 
 
-class rpc_frame_t(enum.IntEnum):
+class RpcFrame(enum.IntEnum):
+    """Which of the three kinds of frame this is. First byte, always."""
+
     RPC_FRAME_REQ = 0
+    REQ = 0
     RPC_FRAME_REP = 1
+    REP = 1
     RPC_FRAME_LOG = 2
+    LOG = 2
 
 
-RPC_FRAME_REQ = rpc_frame_t.RPC_FRAME_REQ
-RPC_FRAME_REP = rpc_frame_t.RPC_FRAME_REP
-RPC_FRAME_LOG = rpc_frame_t.RPC_FRAME_LOG
+rpc_frame_t = RpcFrame
+RPC_FRAME_REQ = RpcFrame.RPC_FRAME_REQ
+RPC_FRAME_REP = RpcFrame.RPC_FRAME_REP
+RPC_FRAME_LOG = RpcFrame.RPC_FRAME_LOG
 
 
-class rpc_ns_t(enum.IntEnum):
+class RpcNs(enum.IntEnum):
+    """Namespaces, by who assembles the bytes. See docs/README.md."""
+
     RPC_NS_SYS = 0
+    SYS = 0
     RPC_NS_RELAY = 1
+    RELAY = 1
     RPC_NS_RAW = 2
+    RAW = 2
     RPC_NS_FILM = 3
+    FILM = 3
     RPC_NS_COUNT = 4
+    COUNT = 4
 
 
-RPC_NS_SYS = rpc_ns_t.RPC_NS_SYS
-RPC_NS_RELAY = rpc_ns_t.RPC_NS_RELAY
-RPC_NS_RAW = rpc_ns_t.RPC_NS_RAW
-RPC_NS_FILM = rpc_ns_t.RPC_NS_FILM
-RPC_NS_COUNT = rpc_ns_t.RPC_NS_COUNT
+rpc_ns_t = RpcNs
+RPC_NS_SYS = RpcNs.RPC_NS_SYS
+RPC_NS_RELAY = RpcNs.RPC_NS_RELAY
+RPC_NS_RAW = RpcNs.RPC_NS_RAW
+RPC_NS_FILM = RpcNs.RPC_NS_FILM
+RPC_NS_COUNT = RpcNs.RPC_NS_COUNT
 
 
-class rpc_sys_method_t(enum.IntEnum):
+class RpcSysMethod(enum.IntEnum):
+    """`sys` methods.
+
+    RPC_SYS_VERSION is the one method that must answer on a link whose version
+    has not been agreed yet, so its reply shape can never change.
+    """
+
     RPC_SYS_VERSION = 0
+    VERSION = 0
     RPC_SYS_STATE = 1
+    STATE = 1
     RPC_SYS_DEVICES = 2
+    DEVICES = 2
     RPC_SYS_COUNT = 3
+    COUNT = 3
 
 
-RPC_SYS_VERSION = rpc_sys_method_t.RPC_SYS_VERSION
-RPC_SYS_STATE = rpc_sys_method_t.RPC_SYS_STATE
-RPC_SYS_DEVICES = rpc_sys_method_t.RPC_SYS_DEVICES
-RPC_SYS_COUNT = rpc_sys_method_t.RPC_SYS_COUNT
+rpc_sys_method_t = RpcSysMethod
+RPC_SYS_VERSION = RpcSysMethod.RPC_SYS_VERSION
+RPC_SYS_STATE = RpcSysMethod.RPC_SYS_STATE
+RPC_SYS_DEVICES = RpcSysMethod.RPC_SYS_DEVICES
+RPC_SYS_COUNT = RpcSysMethod.RPC_SYS_COUNT
 
 
-class rpc_relay_method_t(enum.IntEnum):
+class RpcRelayMethod(enum.IntEnum):
+    """`relay` methods.
+
+    One, and there will only ever be one. The namespace exists to put bytes on
+    the wire unaltered, and a second method would be a second opinion.
+    """
+
     RPC_RELAY_SEND = 0
+    SEND = 0
     RPC_RELAY_COUNT = 1
+    COUNT = 1
 
 
-RPC_RELAY_SEND = rpc_relay_method_t.RPC_RELAY_SEND
-RPC_RELAY_COUNT = rpc_relay_method_t.RPC_RELAY_COUNT
+rpc_relay_method_t = RpcRelayMethod
+RPC_RELAY_SEND = RpcRelayMethod.RPC_RELAY_SEND
+RPC_RELAY_COUNT = RpcRelayMethod.RPC_RELAY_COUNT
 
 
-class rpc_raw_method_t(enum.IntEnum):
+class RpcRawMethod(enum.IntEnum):
+    """`raw` methods, one per public library call, in the header's order.
+
+    The numbering is the wire's and the ordering is `tmc2209.h`'s, so a method
+    added to the library is appended here rather than inserted. Renumbering
+    would silently redirect an older PC's calls.
+    """
+
     RPC_RAW_READ = 0
+    READ = 0
     RPC_RAW_POLL = 1
+    POLL = 1
     RPC_RAW_WRITE = 2
+    WRITE = 2
     RPC_RAW_POLL_HEALTH = 3
+    POLL_HEALTH = 3
     RPC_RAW_CLEAR_FAULTS = 4
+    CLEAR_FAULTS = 4
     RPC_RAW_POLL_LOAD = 5
+    POLL_LOAD = 5
     RPC_RAW_POLL_PINS = 6
+    POLL_PINS = 6
     RPC_RAW_POLL_VERSION = 7
+    POLL_VERSION = 7
     RPC_RAW_VERIFY_CONFIG = 8
+    VERIFY_CONFIG = 8
     RPC_RAW_SET_VELOCITY = 9
+    SET_VELOCITY = 9
     RPC_RAW_SET_CURRENT = 10
+    SET_CURRENT = 10
     RPC_RAW_BRINGUP = 11
+    BRINGUP = 11
     RPC_RAW_ALL_OWNED_VALID = 12
+    ALL_OWNED_VALID = 12
     RPC_RAW_INVALIDATE_OWNED = 13
+    INVALIDATE_OWNED = 13
     RPC_RAW_LINE_READ = 14
+    LINE_READ = 14
     RPC_RAW_LINE_WRITE = 15
+    LINE_WRITE = 15
     RPC_RAW_ENABLE = 16
+    ENABLE = 16
     RPC_RAW_IS_ENABLED = 17
+    IS_ENABLED = 17
     RPC_RAW_MOVE = 18
+    MOVE = 18
     RPC_RAW_RETARGET = 19
+    RETARGET = 19
     RPC_RAW_HALT = 20
+    HALT = 20
     RPC_RAW_MOTION = 21
+    MOTION = 21
     RPC_RAW_COUNT = 22
+    COUNT = 22
 
 
-RPC_RAW_READ = rpc_raw_method_t.RPC_RAW_READ
-RPC_RAW_POLL = rpc_raw_method_t.RPC_RAW_POLL
-RPC_RAW_WRITE = rpc_raw_method_t.RPC_RAW_WRITE
-RPC_RAW_POLL_HEALTH = rpc_raw_method_t.RPC_RAW_POLL_HEALTH
-RPC_RAW_CLEAR_FAULTS = rpc_raw_method_t.RPC_RAW_CLEAR_FAULTS
-RPC_RAW_POLL_LOAD = rpc_raw_method_t.RPC_RAW_POLL_LOAD
-RPC_RAW_POLL_PINS = rpc_raw_method_t.RPC_RAW_POLL_PINS
-RPC_RAW_POLL_VERSION = rpc_raw_method_t.RPC_RAW_POLL_VERSION
-RPC_RAW_VERIFY_CONFIG = rpc_raw_method_t.RPC_RAW_VERIFY_CONFIG
-RPC_RAW_SET_VELOCITY = rpc_raw_method_t.RPC_RAW_SET_VELOCITY
-RPC_RAW_SET_CURRENT = rpc_raw_method_t.RPC_RAW_SET_CURRENT
-RPC_RAW_BRINGUP = rpc_raw_method_t.RPC_RAW_BRINGUP
-RPC_RAW_ALL_OWNED_VALID = rpc_raw_method_t.RPC_RAW_ALL_OWNED_VALID
-RPC_RAW_INVALIDATE_OWNED = rpc_raw_method_t.RPC_RAW_INVALIDATE_OWNED
-RPC_RAW_LINE_READ = rpc_raw_method_t.RPC_RAW_LINE_READ
-RPC_RAW_LINE_WRITE = rpc_raw_method_t.RPC_RAW_LINE_WRITE
-RPC_RAW_ENABLE = rpc_raw_method_t.RPC_RAW_ENABLE
-RPC_RAW_IS_ENABLED = rpc_raw_method_t.RPC_RAW_IS_ENABLED
-RPC_RAW_MOVE = rpc_raw_method_t.RPC_RAW_MOVE
-RPC_RAW_RETARGET = rpc_raw_method_t.RPC_RAW_RETARGET
-RPC_RAW_HALT = rpc_raw_method_t.RPC_RAW_HALT
-RPC_RAW_MOTION = rpc_raw_method_t.RPC_RAW_MOTION
-RPC_RAW_COUNT = rpc_raw_method_t.RPC_RAW_COUNT
+rpc_raw_method_t = RpcRawMethod
+RPC_RAW_READ = RpcRawMethod.RPC_RAW_READ
+RPC_RAW_POLL = RpcRawMethod.RPC_RAW_POLL
+RPC_RAW_WRITE = RpcRawMethod.RPC_RAW_WRITE
+RPC_RAW_POLL_HEALTH = RpcRawMethod.RPC_RAW_POLL_HEALTH
+RPC_RAW_CLEAR_FAULTS = RpcRawMethod.RPC_RAW_CLEAR_FAULTS
+RPC_RAW_POLL_LOAD = RpcRawMethod.RPC_RAW_POLL_LOAD
+RPC_RAW_POLL_PINS = RpcRawMethod.RPC_RAW_POLL_PINS
+RPC_RAW_POLL_VERSION = RpcRawMethod.RPC_RAW_POLL_VERSION
+RPC_RAW_VERIFY_CONFIG = RpcRawMethod.RPC_RAW_VERIFY_CONFIG
+RPC_RAW_SET_VELOCITY = RpcRawMethod.RPC_RAW_SET_VELOCITY
+RPC_RAW_SET_CURRENT = RpcRawMethod.RPC_RAW_SET_CURRENT
+RPC_RAW_BRINGUP = RpcRawMethod.RPC_RAW_BRINGUP
+RPC_RAW_ALL_OWNED_VALID = RpcRawMethod.RPC_RAW_ALL_OWNED_VALID
+RPC_RAW_INVALIDATE_OWNED = RpcRawMethod.RPC_RAW_INVALIDATE_OWNED
+RPC_RAW_LINE_READ = RpcRawMethod.RPC_RAW_LINE_READ
+RPC_RAW_LINE_WRITE = RpcRawMethod.RPC_RAW_LINE_WRITE
+RPC_RAW_ENABLE = RpcRawMethod.RPC_RAW_ENABLE
+RPC_RAW_IS_ENABLED = RpcRawMethod.RPC_RAW_IS_ENABLED
+RPC_RAW_MOVE = RpcRawMethod.RPC_RAW_MOVE
+RPC_RAW_RETARGET = RpcRawMethod.RPC_RAW_RETARGET
+RPC_RAW_HALT = RpcRawMethod.RPC_RAW_HALT
+RPC_RAW_MOTION = RpcRawMethod.RPC_RAW_MOTION
+RPC_RAW_COUNT = RpcRawMethod.RPC_RAW_COUNT
 
 
-class rpc_mode_t(enum.IntEnum):
+class RpcMode(enum.IntEnum):
+    """What the firmware is doing. Reported by `sys.state`, never set."""
+
     RPC_MODE_IDLE = 0
+    IDLE = 0
     RPC_MODE_SCANNING = 1
+    SCANNING = 1
     RPC_MODE_FAULT = 2
+    FAULT = 2
 
 
-RPC_MODE_IDLE = rpc_mode_t.RPC_MODE_IDLE
-RPC_MODE_SCANNING = rpc_mode_t.RPC_MODE_SCANNING
-RPC_MODE_FAULT = rpc_mode_t.RPC_MODE_FAULT
+rpc_mode_t = RpcMode
+RPC_MODE_IDLE = RpcMode.RPC_MODE_IDLE
+RPC_MODE_SCANNING = RpcMode.RPC_MODE_SCANNING
+RPC_MODE_FAULT = RpcMode.RPC_MODE_FAULT
 
 
-class tmc2209_err_t(enum.IntEnum):
+class Tmc2209Err(enum.IntEnum):
+    """Every way a call in this library can fail."""
+
     TMC2209_OK = 0
+    OK = 0
     TMC2209_ERR_ARG = 1
+    ERR_ARG = 1
     TMC2209_ERR_TX_TIMEOUT = 2
+    ERR_TX_TIMEOUT = 2
     TMC2209_ERR_RX_TIMEOUT = 3
+    ERR_RX_TIMEOUT = 3
     TMC2209_ERR_IO = 4
+    ERR_IO = 4
     TMC2209_ERR_ECHO = 5
+    ERR_ECHO = 5
     TMC2209_ERR_PREAMBLE = 6
+    ERR_PREAMBLE = 6
     TMC2209_ERR_CRC = 7
+    ERR_CRC = 7
     TMC2209_ERR_REG = 8
+    ERR_REG = 8
     TMC2209_ERR_NO_ACK = 9
+    ERR_NO_ACK = 9
     TMC2209_ERR_ACCESS = 10
+    ERR_ACCESS = 10
     TMC2209_ERR_NO_BACKEND = 11
+    ERR_NO_BACKEND = 11
     TMC2209_ERR_UNWIRED = 12
+    ERR_UNWIRED = 12
     TMC2209_ERR_INVALID_SLOT = 13
+    ERR_INVALID_SLOT = 13
     TMC2209_ERR_MISMATCH = 14
+    ERR_MISMATCH = 14
     TMC2209_ERR_BUSY = 15
+    ERR_BUSY = 15
     TMC2209_ERR_IDLE = 16
+    ERR_IDLE = 16
     TMC2209_ERR_RATE = 17
+    ERR_RATE = 17
 
 
-TMC2209_OK = tmc2209_err_t.TMC2209_OK
-TMC2209_ERR_ARG = tmc2209_err_t.TMC2209_ERR_ARG
-TMC2209_ERR_TX_TIMEOUT = tmc2209_err_t.TMC2209_ERR_TX_TIMEOUT
-TMC2209_ERR_RX_TIMEOUT = tmc2209_err_t.TMC2209_ERR_RX_TIMEOUT
-TMC2209_ERR_IO = tmc2209_err_t.TMC2209_ERR_IO
-TMC2209_ERR_ECHO = tmc2209_err_t.TMC2209_ERR_ECHO
-TMC2209_ERR_PREAMBLE = tmc2209_err_t.TMC2209_ERR_PREAMBLE
-TMC2209_ERR_CRC = tmc2209_err_t.TMC2209_ERR_CRC
-TMC2209_ERR_REG = tmc2209_err_t.TMC2209_ERR_REG
-TMC2209_ERR_NO_ACK = tmc2209_err_t.TMC2209_ERR_NO_ACK
-TMC2209_ERR_ACCESS = tmc2209_err_t.TMC2209_ERR_ACCESS
-TMC2209_ERR_NO_BACKEND = tmc2209_err_t.TMC2209_ERR_NO_BACKEND
-TMC2209_ERR_UNWIRED = tmc2209_err_t.TMC2209_ERR_UNWIRED
-TMC2209_ERR_INVALID_SLOT = tmc2209_err_t.TMC2209_ERR_INVALID_SLOT
-TMC2209_ERR_MISMATCH = tmc2209_err_t.TMC2209_ERR_MISMATCH
-TMC2209_ERR_BUSY = tmc2209_err_t.TMC2209_ERR_BUSY
-TMC2209_ERR_IDLE = tmc2209_err_t.TMC2209_ERR_IDLE
-TMC2209_ERR_RATE = tmc2209_err_t.TMC2209_ERR_RATE
+tmc2209_err_t = Tmc2209Err
+TMC2209_OK = Tmc2209Err.TMC2209_OK
+TMC2209_ERR_ARG = Tmc2209Err.TMC2209_ERR_ARG
+TMC2209_ERR_TX_TIMEOUT = Tmc2209Err.TMC2209_ERR_TX_TIMEOUT
+TMC2209_ERR_RX_TIMEOUT = Tmc2209Err.TMC2209_ERR_RX_TIMEOUT
+TMC2209_ERR_IO = Tmc2209Err.TMC2209_ERR_IO
+TMC2209_ERR_ECHO = Tmc2209Err.TMC2209_ERR_ECHO
+TMC2209_ERR_PREAMBLE = Tmc2209Err.TMC2209_ERR_PREAMBLE
+TMC2209_ERR_CRC = Tmc2209Err.TMC2209_ERR_CRC
+TMC2209_ERR_REG = Tmc2209Err.TMC2209_ERR_REG
+TMC2209_ERR_NO_ACK = Tmc2209Err.TMC2209_ERR_NO_ACK
+TMC2209_ERR_ACCESS = Tmc2209Err.TMC2209_ERR_ACCESS
+TMC2209_ERR_NO_BACKEND = Tmc2209Err.TMC2209_ERR_NO_BACKEND
+TMC2209_ERR_UNWIRED = Tmc2209Err.TMC2209_ERR_UNWIRED
+TMC2209_ERR_INVALID_SLOT = Tmc2209Err.TMC2209_ERR_INVALID_SLOT
+TMC2209_ERR_MISMATCH = Tmc2209Err.TMC2209_ERR_MISMATCH
+TMC2209_ERR_BUSY = Tmc2209Err.TMC2209_ERR_BUSY
+TMC2209_ERR_IDLE = Tmc2209Err.TMC2209_ERR_IDLE
+TMC2209_ERR_RATE = Tmc2209Err.TMC2209_ERR_RATE
 
 
-class tmc2209_reg_t(enum.IntEnum):
+class Tmc2209Reg(enum.IntEnum):
+    """Every register the library knows, by its datasheet address."""
+
     TMC2209_GCONF = 0
+    GCONF = 0
     TMC2209_GSTAT = 1
+    GSTAT = 1
     TMC2209_IFCNT = 2
+    IFCNT = 2
     TMC2209_SLAVECONF = 3
+    SLAVECONF = 3
     TMC2209_OTP_READ = 5
+    OTP_READ = 5
     TMC2209_IOIN = 6
+    IOIN = 6
     TMC2209_FACTORY_CONF = 7
+    FACTORY_CONF = 7
     TMC2209_IHOLD_IRUN = 16
+    IHOLD_IRUN = 16
     TMC2209_TPOWERDOWN = 17
+    TPOWERDOWN = 17
     TMC2209_TSTEP = 18
+    TSTEP = 18
     TMC2209_TPWMTHRS = 19
+    TPWMTHRS = 19
     TMC2209_TCOOLTHRS = 20
+    TCOOLTHRS = 20
     TMC2209_VACTUAL = 34
+    VACTUAL = 34
     TMC2209_SGTHRS = 64
+    SGTHRS = 64
     TMC2209_SG_RESULT = 65
+    SG_RESULT = 65
     TMC2209_COOLCONF = 66
+    COOLCONF = 66
     TMC2209_MSCNT = 106
+    MSCNT = 106
     TMC2209_MSCURACT = 107
+    MSCURACT = 107
     TMC2209_CHOPCONF = 108
+    CHOPCONF = 108
     TMC2209_DRV_STATUS = 111
+    DRV_STATUS = 111
     TMC2209_PWMCONF = 112
+    PWMCONF = 112
     TMC2209_PWM_SCALE = 113
+    PWM_SCALE = 113
     TMC2209_PWM_AUTO = 114
+    PWM_AUTO = 114
 
 
-TMC2209_GCONF = tmc2209_reg_t.TMC2209_GCONF
-TMC2209_GSTAT = tmc2209_reg_t.TMC2209_GSTAT
-TMC2209_IFCNT = tmc2209_reg_t.TMC2209_IFCNT
-TMC2209_SLAVECONF = tmc2209_reg_t.TMC2209_SLAVECONF
-TMC2209_OTP_READ = tmc2209_reg_t.TMC2209_OTP_READ
-TMC2209_IOIN = tmc2209_reg_t.TMC2209_IOIN
-TMC2209_FACTORY_CONF = tmc2209_reg_t.TMC2209_FACTORY_CONF
-TMC2209_IHOLD_IRUN = tmc2209_reg_t.TMC2209_IHOLD_IRUN
-TMC2209_TPOWERDOWN = tmc2209_reg_t.TMC2209_TPOWERDOWN
-TMC2209_TSTEP = tmc2209_reg_t.TMC2209_TSTEP
-TMC2209_TPWMTHRS = tmc2209_reg_t.TMC2209_TPWMTHRS
-TMC2209_TCOOLTHRS = tmc2209_reg_t.TMC2209_TCOOLTHRS
-TMC2209_VACTUAL = tmc2209_reg_t.TMC2209_VACTUAL
-TMC2209_SGTHRS = tmc2209_reg_t.TMC2209_SGTHRS
-TMC2209_SG_RESULT = tmc2209_reg_t.TMC2209_SG_RESULT
-TMC2209_COOLCONF = tmc2209_reg_t.TMC2209_COOLCONF
-TMC2209_MSCNT = tmc2209_reg_t.TMC2209_MSCNT
-TMC2209_MSCURACT = tmc2209_reg_t.TMC2209_MSCURACT
-TMC2209_CHOPCONF = tmc2209_reg_t.TMC2209_CHOPCONF
-TMC2209_DRV_STATUS = tmc2209_reg_t.TMC2209_DRV_STATUS
-TMC2209_PWMCONF = tmc2209_reg_t.TMC2209_PWMCONF
-TMC2209_PWM_SCALE = tmc2209_reg_t.TMC2209_PWM_SCALE
-TMC2209_PWM_AUTO = tmc2209_reg_t.TMC2209_PWM_AUTO
+tmc2209_reg_t = Tmc2209Reg
+TMC2209_GCONF = Tmc2209Reg.TMC2209_GCONF
+TMC2209_GSTAT = Tmc2209Reg.TMC2209_GSTAT
+TMC2209_IFCNT = Tmc2209Reg.TMC2209_IFCNT
+TMC2209_SLAVECONF = Tmc2209Reg.TMC2209_SLAVECONF
+TMC2209_OTP_READ = Tmc2209Reg.TMC2209_OTP_READ
+TMC2209_IOIN = Tmc2209Reg.TMC2209_IOIN
+TMC2209_FACTORY_CONF = Tmc2209Reg.TMC2209_FACTORY_CONF
+TMC2209_IHOLD_IRUN = Tmc2209Reg.TMC2209_IHOLD_IRUN
+TMC2209_TPOWERDOWN = Tmc2209Reg.TMC2209_TPOWERDOWN
+TMC2209_TSTEP = Tmc2209Reg.TMC2209_TSTEP
+TMC2209_TPWMTHRS = Tmc2209Reg.TMC2209_TPWMTHRS
+TMC2209_TCOOLTHRS = Tmc2209Reg.TMC2209_TCOOLTHRS
+TMC2209_VACTUAL = Tmc2209Reg.TMC2209_VACTUAL
+TMC2209_SGTHRS = Tmc2209Reg.TMC2209_SGTHRS
+TMC2209_SG_RESULT = Tmc2209Reg.TMC2209_SG_RESULT
+TMC2209_COOLCONF = Tmc2209Reg.TMC2209_COOLCONF
+TMC2209_MSCNT = Tmc2209Reg.TMC2209_MSCNT
+TMC2209_MSCURACT = Tmc2209Reg.TMC2209_MSCURACT
+TMC2209_CHOPCONF = Tmc2209Reg.TMC2209_CHOPCONF
+TMC2209_DRV_STATUS = Tmc2209Reg.TMC2209_DRV_STATUS
+TMC2209_PWMCONF = Tmc2209Reg.TMC2209_PWMCONF
+TMC2209_PWM_SCALE = Tmc2209Reg.TMC2209_PWM_SCALE
+TMC2209_PWM_AUTO = Tmc2209Reg.TMC2209_PWM_AUTO
 
 
-class tmc2209_class_t(enum.IntEnum):
+class Tmc2209Class(enum.IntEnum):
+    """Who changes the value, and therefore whether it can be cached."""
+
     TMC2209_CLASS_UNKNOWN = 0
+    UNKNOWN = 0
     TMC2209_CLASS_VOLATILE = 1
+    VOLATILE = 1
     TMC2209_CLASS_OWNED = 2
+    OWNED = 2
     TMC2209_CLASS_CONSTANT = 3
+    CONSTANT = 3
 
 
-TMC2209_CLASS_UNKNOWN = tmc2209_class_t.TMC2209_CLASS_UNKNOWN
-TMC2209_CLASS_VOLATILE = tmc2209_class_t.TMC2209_CLASS_VOLATILE
-TMC2209_CLASS_OWNED = tmc2209_class_t.TMC2209_CLASS_OWNED
-TMC2209_CLASS_CONSTANT = tmc2209_class_t.TMC2209_CLASS_CONSTANT
+tmc2209_class_t = Tmc2209Class
+TMC2209_CLASS_UNKNOWN = Tmc2209Class.TMC2209_CLASS_UNKNOWN
+TMC2209_CLASS_VOLATILE = Tmc2209Class.TMC2209_CLASS_VOLATILE
+TMC2209_CLASS_OWNED = Tmc2209Class.TMC2209_CLASS_OWNED
+TMC2209_CLASS_CONSTANT = Tmc2209Class.TMC2209_CLASS_CONSTANT
 
 
-class tmc2209_condition_t(enum.IntEnum):
+class Tmc2209Condition(enum.IntFlag):
+    """What tmc2209_poll_health() reports, as a bitmask.
+
+    The caller asks whether the driver is healthy without learning
+    that brownout lives in GSTAT and overtemperature lives in DRV_STATUS.
+
+    The two halves behave differently in time, which the caller must know.
+    Latched conditions report that something *happened* and stay asserted until
+    tmc2209_clear_faults() acknowledges them. Live conditions report what is
+    *true now* and clear themselves when the situation passes.
+    """
+
     TMC2209_DRIVER_RESET = 1
+    DRIVER_RESET = 1
     TMC2209_DRIVER_FAULT = 2
+    DRIVER_FAULT = 2
     TMC2209_UNDERVOLTAGE = 4
+    UNDERVOLTAGE = 4
     TMC2209_OVERTEMP_WARNING = 8
+    OVERTEMP_WARNING = 8
     TMC2209_OVERTEMP_SHUTDOWN = 16
+    OVERTEMP_SHUTDOWN = 16
     TMC2209_SHORT_CIRCUIT = 32
+    SHORT_CIRCUIT = 32
     TMC2209_OPEN_LOAD = 64
+    OPEN_LOAD = 64
     TMC2209_STANDSTILL = 128
+    STANDSTILL = 128
 
 
-TMC2209_DRIVER_RESET = tmc2209_condition_t.TMC2209_DRIVER_RESET
-TMC2209_DRIVER_FAULT = tmc2209_condition_t.TMC2209_DRIVER_FAULT
-TMC2209_UNDERVOLTAGE = tmc2209_condition_t.TMC2209_UNDERVOLTAGE
-TMC2209_OVERTEMP_WARNING = tmc2209_condition_t.TMC2209_OVERTEMP_WARNING
-TMC2209_OVERTEMP_SHUTDOWN = tmc2209_condition_t.TMC2209_OVERTEMP_SHUTDOWN
-TMC2209_SHORT_CIRCUIT = tmc2209_condition_t.TMC2209_SHORT_CIRCUIT
-TMC2209_OPEN_LOAD = tmc2209_condition_t.TMC2209_OPEN_LOAD
-TMC2209_STANDSTILL = tmc2209_condition_t.TMC2209_STANDSTILL
+tmc2209_condition_t = Tmc2209Condition
+TMC2209_DRIVER_RESET = Tmc2209Condition.TMC2209_DRIVER_RESET
+TMC2209_DRIVER_FAULT = Tmc2209Condition.TMC2209_DRIVER_FAULT
+TMC2209_UNDERVOLTAGE = Tmc2209Condition.TMC2209_UNDERVOLTAGE
+TMC2209_OVERTEMP_WARNING = Tmc2209Condition.TMC2209_OVERTEMP_WARNING
+TMC2209_OVERTEMP_SHUTDOWN = Tmc2209Condition.TMC2209_OVERTEMP_SHUTDOWN
+TMC2209_SHORT_CIRCUIT = Tmc2209Condition.TMC2209_SHORT_CIRCUIT
+TMC2209_OPEN_LOAD = Tmc2209Condition.TMC2209_OPEN_LOAD
+TMC2209_STANDSTILL = Tmc2209Condition.TMC2209_STANDSTILL
 
 
-class tmc2209_mres_t(enum.IntEnum):
+class Tmc2209Mres(enum.IntEnum):
+    """CHOPCONF.mres, named for the microstep count and not the raw code."""
+
     TMC2209_MRES_256 = 0
     TMC2209_MRES_128 = 1
     TMC2209_MRES_64 = 2
@@ -310,72 +457,123 @@ class tmc2209_mres_t(enum.IntEnum):
     TMC2209_MRES_FULL = 8
 
 
-TMC2209_MRES_256 = tmc2209_mres_t.TMC2209_MRES_256
-TMC2209_MRES_128 = tmc2209_mres_t.TMC2209_MRES_128
-TMC2209_MRES_64 = tmc2209_mres_t.TMC2209_MRES_64
-TMC2209_MRES_32 = tmc2209_mres_t.TMC2209_MRES_32
-TMC2209_MRES_16 = tmc2209_mres_t.TMC2209_MRES_16
-TMC2209_MRES_8 = tmc2209_mres_t.TMC2209_MRES_8
-TMC2209_MRES_4 = tmc2209_mres_t.TMC2209_MRES_4
-TMC2209_MRES_2 = tmc2209_mres_t.TMC2209_MRES_2
-TMC2209_MRES_FULL = tmc2209_mres_t.TMC2209_MRES_FULL
+tmc2209_mres_t = Tmc2209Mres
+TMC2209_MRES_256 = Tmc2209Mres.TMC2209_MRES_256
+TMC2209_MRES_128 = Tmc2209Mres.TMC2209_MRES_128
+TMC2209_MRES_64 = Tmc2209Mres.TMC2209_MRES_64
+TMC2209_MRES_32 = Tmc2209Mres.TMC2209_MRES_32
+TMC2209_MRES_16 = Tmc2209Mres.TMC2209_MRES_16
+TMC2209_MRES_8 = Tmc2209Mres.TMC2209_MRES_8
+TMC2209_MRES_4 = Tmc2209Mres.TMC2209_MRES_4
+TMC2209_MRES_2 = Tmc2209Mres.TMC2209_MRES_2
+TMC2209_MRES_FULL = Tmc2209Mres.TMC2209_MRES_FULL
 
 
-class tmc2209_tbl_t(enum.IntEnum):
+class Tmc2209Tbl(enum.IntEnum):
+    """CHOPCONF.tbl, comparator blank time in clock cycles."""
+
     TMC2209_TBL_16 = 0
     TMC2209_TBL_24 = 1
     TMC2209_TBL_32 = 2
     TMC2209_TBL_40 = 3
 
 
-TMC2209_TBL_16 = tmc2209_tbl_t.TMC2209_TBL_16
-TMC2209_TBL_24 = tmc2209_tbl_t.TMC2209_TBL_24
-TMC2209_TBL_32 = tmc2209_tbl_t.TMC2209_TBL_32
-TMC2209_TBL_40 = tmc2209_tbl_t.TMC2209_TBL_40
+tmc2209_tbl_t = Tmc2209Tbl
+TMC2209_TBL_16 = Tmc2209Tbl.TMC2209_TBL_16
+TMC2209_TBL_24 = Tmc2209Tbl.TMC2209_TBL_24
+TMC2209_TBL_32 = Tmc2209Tbl.TMC2209_TBL_32
+TMC2209_TBL_40 = Tmc2209Tbl.TMC2209_TBL_40
 
 
-class tmc2209_seup_t(enum.IntEnum):
+class Tmc2209Seup(enum.IntEnum):
+    """COOLCONF.seup, current increment per step when load rises."""
+
     TMC2209_SEUP_1 = 0
     TMC2209_SEUP_2 = 1
     TMC2209_SEUP_4 = 2
     TMC2209_SEUP_8 = 3
 
 
-TMC2209_SEUP_1 = tmc2209_seup_t.TMC2209_SEUP_1
-TMC2209_SEUP_2 = tmc2209_seup_t.TMC2209_SEUP_2
-TMC2209_SEUP_4 = tmc2209_seup_t.TMC2209_SEUP_4
-TMC2209_SEUP_8 = tmc2209_seup_t.TMC2209_SEUP_8
+tmc2209_seup_t = Tmc2209Seup
+TMC2209_SEUP_1 = Tmc2209Seup.TMC2209_SEUP_1
+TMC2209_SEUP_2 = Tmc2209Seup.TMC2209_SEUP_2
+TMC2209_SEUP_4 = Tmc2209Seup.TMC2209_SEUP_4
+TMC2209_SEUP_8 = Tmc2209Seup.TMC2209_SEUP_8
 
 
-class tmc2209_sedn_t(enum.IntEnum):
+class Tmc2209Sedn(enum.IntEnum):
+    """COOLCONF.sedn, measurements per current decrement when load falls."""
+
     TMC2209_SEDN_32 = 0
     TMC2209_SEDN_8 = 1
     TMC2209_SEDN_2 = 2
     TMC2209_SEDN_1 = 3
 
 
-TMC2209_SEDN_32 = tmc2209_sedn_t.TMC2209_SEDN_32
-TMC2209_SEDN_8 = tmc2209_sedn_t.TMC2209_SEDN_8
-TMC2209_SEDN_2 = tmc2209_sedn_t.TMC2209_SEDN_2
-TMC2209_SEDN_1 = tmc2209_sedn_t.TMC2209_SEDN_1
+tmc2209_sedn_t = Tmc2209Sedn
+TMC2209_SEDN_32 = Tmc2209Sedn.TMC2209_SEDN_32
+TMC2209_SEDN_8 = Tmc2209Sedn.TMC2209_SEDN_8
+TMC2209_SEDN_2 = Tmc2209Sedn.TMC2209_SEDN_2
+TMC2209_SEDN_1 = Tmc2209Sedn.TMC2209_SEDN_1
 
 
-class tmc2209_line_t(enum.IntEnum):
+class Tmc2209Line(enum.IntEnum):
+    """The driver's control lines, named as the datasheet names them."""
+
     TMC2209_LINE_ENN = 0
+    ENN = 0
     TMC2209_LINE_DIR = 1
+    DIR = 1
     TMC2209_LINE_STEP = 2
+    STEP = 2
     TMC2209_LINE_DIAG = 3
+    DIAG = 3
     TMC2209_LINE_COUNT = 4
+    COUNT = 4
 
 
-TMC2209_LINE_ENN = tmc2209_line_t.TMC2209_LINE_ENN
-TMC2209_LINE_DIR = tmc2209_line_t.TMC2209_LINE_DIR
-TMC2209_LINE_STEP = tmc2209_line_t.TMC2209_LINE_STEP
-TMC2209_LINE_DIAG = tmc2209_line_t.TMC2209_LINE_DIAG
-TMC2209_LINE_COUNT = tmc2209_line_t.TMC2209_LINE_COUNT
+tmc2209_line_t = Tmc2209Line
+TMC2209_LINE_ENN = Tmc2209Line.TMC2209_LINE_ENN
+TMC2209_LINE_DIR = Tmc2209Line.TMC2209_LINE_DIR
+TMC2209_LINE_STEP = Tmc2209Line.TMC2209_LINE_STEP
+TMC2209_LINE_DIAG = Tmc2209Line.TMC2209_LINE_DIAG
+TMC2209_LINE_COUNT = Tmc2209Line.TMC2209_LINE_COUNT
+
+
+class Tmc2209LineMask(enum.IntFlag):
+    """One bit per tmc2209_line_t, as tmc2209_line_mask_t carries them."""
+
+    TMC2209_LINE_ENN = 1
+    ENN = 1
+    TMC2209_LINE_DIR = 2
+    DIR = 2
+    TMC2209_LINE_STEP = 4
+    STEP = 4
+    TMC2209_LINE_DIAG = 8
+    DIAG = 8
+
+
+class Tmc2209Level(enum.IntEnum):
+    """The level on a pin, electrical and with no polarity applied.
+
+    A bool would imply a default direction that only the wiring knows; these two
+    names say exactly what the field is.
+    """
+
+    TMC2209_LOW = 0
+    LOW = 0
+    TMC2209_HIGH = 1
+    HIGH = 1
+
+
+tmc2209_level_t = Tmc2209Level
+TMC2209_LOW = Tmc2209Level.TMC2209_LOW
+TMC2209_HIGH = Tmc2209Level.TMC2209_HIGH
 
 
 class rpc_req_hdr_t(ctypes.Structure):
+    """What a request says before its arguments."""
+
     _fields_ = [
         ("type", ctypes.c_uint8),
         ("ns", ctypes.c_uint8),
@@ -387,6 +585,8 @@ class rpc_req_hdr_t(ctypes.Structure):
 
 
 class rpc_rep_hdr_t(ctypes.Structure):
+    """What a reply says before its return values."""
+
     _fields_ = [
         ("type", ctypes.c_uint8),
         ("status", ctypes.c_uint8),
@@ -397,6 +597,8 @@ class rpc_rep_hdr_t(ctypes.Structure):
 
 
 class rpc_log_hdr_t(ctypes.Structure):
+    """What a log line says before its text."""
+
     _fields_ = [
         ("type", ctypes.c_uint8),
         ("level", ctypes.c_uint8),
@@ -406,6 +608,12 @@ class rpc_log_hdr_t(ctypes.Structure):
 
 
 class rpc_buf_t(ctypes.Union):
+    """Storage for one frame, aligned so its structs may be read in place.
+
+    Every header is read through its own type, and naming the three alternatives
+    here is what makes their alignment the compiler's problem.
+    """
+
     _fields_ = [
         ("req", rpc_req_hdr_t),
         ("rep", rpc_rep_hdr_t),
@@ -415,6 +623,8 @@ class rpc_buf_t(ctypes.Union):
 
 
 class rpc_view_t(ctypes.Structure):
+    """What @ref rpc_frame_open found. Points into the caller's buffer."""
+
     _fields_ = [
         ("type", ctypes.c_uint8),
         ("hdr", ctypes.c_void_p),
@@ -424,6 +634,13 @@ class rpc_view_t(ctypes.Structure):
 
 
 class rpc_dev_args(ctypes.Structure):
+    """A device index and nothing else, which is most of `raw`'s arguments.
+
+    Devices are named by index into the board table. `sys.devices` is how a
+    client learns which index is which, and giving them prettier names is the
+    PC's job.
+    """
+
     _fields_ = [
         ("idx", ctypes.c_uint8),
         ("_pad", ctypes.c_uint8 * 3),
@@ -431,6 +648,8 @@ class rpc_dev_args(ctypes.Structure):
 
 
 class rpc_op_t(ctypes.Structure):
+    """One register and the value to put in it, as a batch element."""
+
     _fields_ = [
         ("value", ctypes.c_uint32),
         ("reg", ctypes.c_uint8),
@@ -439,6 +658,22 @@ class rpc_op_t(ctypes.Structure):
 
 
 class rpc_sys_version_ret(ctypes.Structure):
+    """What `sys.version` answers. Takes no arguments.
+
+    The protocol version leads and is fixed width, so a PC built against a
+    different protocol can read that field, decide it does not understand the
+    rest, and say so, which is the whole point of asking. Nothing may ever be
+    inserted before it.
+
+    The strings are fixed rather than variable for the same reason. This reply
+    has to be readable by an end that disagrees about everything after it, and a
+    length-prefixed field is a thing that end would have to parse correctly to
+    find the field after it.
+
+    The reset reason is here because the question a stale link raises first is
+    "did the board reboot", and answering it costs one byte.
+    """
+
     _fields_ = [
         ("protocol", ctypes.c_uint16),
         ("reset_reason", ctypes.c_uint8),
@@ -450,6 +685,14 @@ class rpc_sys_version_ret(ctypes.Structure):
 
 
 class rpc_sys_state_ret(ctypes.Structure):
+    """What `sys.state` answers. Takes no arguments.
+
+    Reported, never set. The PC does not announce that it is about to run
+    diagnostics; it asks what is happening and is refused per call if the answer
+    makes the call unsafe. So this is the whole of the mode system from the
+    outside: one question, no state to keep in sync across a link that can drop.
+    """
+
     _fields_ = [
         ("uptime_ms", ctypes.c_uint32),
         ("device_count", ctypes.c_uint16),
@@ -459,6 +702,8 @@ class rpc_sys_state_ret(ctypes.Structure):
 
 
 class rpc_dev_info_t(ctypes.Structure):
+    """One driver, as `sys.devices` reports it."""
+
     _fields_ = [
         ("name", ctypes.c_char * 16),
         ("addr", ctypes.c_uint8),
@@ -469,12 +714,21 @@ class rpc_dev_info_t(ctypes.Structure):
 
 
 class rpc_sys_devices_ret(ctypes.Structure):
+    """What `sys.devices` answers. Takes no arguments.
+
+    What the board actually has, so a diagnostic loops over it instead of
+    hardcoding one driver. A bench board with one driver and the carrier with
+    three answer the same question, and the same script covers both.
+    """
+
     _fields_ = [
         ("count", ctypes.c_uint32),
     ]
 
 
 class rpc_relay_send_args(ctypes.Structure):
+    """The datagram to send, assembled by the caller and not examined."""
+
     _fields_ = [
         ("idx", ctypes.c_uint8),
         ("reply_len", ctypes.c_uint8),
@@ -484,6 +738,19 @@ class rpc_relay_send_args(ctypes.Structure):
 
 
 class rpc_relay_send_ret(ctypes.Structure):
+    """What came back, and what the wire made of the attempt.
+
+    @c outcome is a value rather than the frame's status because a driver that
+    stayed silent, or one whose echo came back altered, is an *answer* here and
+    not a failure. The bytes that did arrive are the evidence the caller asked
+    for, and a failing status would have dispatch discard them. The frame's
+    status then reports only whether the call was well formed, which is the one
+    thing this tier is still entitled to have an opinion about.
+
+    Only @c count bytes of @c rx are sent, so the reply is as long as the answer
+    and no longer.
+    """
+
     _fields_ = [
         ("outcome", ctypes.c_uint8),
         ("count", ctypes.c_uint8),
@@ -507,6 +774,8 @@ class rpc_raw_read_ret(ctypes.Structure):
 
 
 class rpc_raw_write_args(ctypes.Structure):
+    """A device, then @c count registers to write to it."""
+
     _fields_ = [
         ("idx", ctypes.c_uint8),
         ("_pad", ctypes.c_uint8 * 3),
@@ -515,6 +784,15 @@ class rpc_raw_write_args(ctypes.Structure):
 
 
 class rpc_raw_write_ret(ctypes.Structure):
+    """Where the library gave up, which is diagnostic only.
+
+    Any failure invalidates every slot in the batch, including the ops
+    transmitted before it, because nothing is confirmed until the closing IFCNT
+    read. So this says where the library stopped, not where the state boundary
+    is, and it travels even on success for exactly that reason: it is never a
+    boundary to act on.
+    """
+
     _fields_ = [
         ("failed_at", ctypes.c_uint16),
         ("_pad", ctypes.c_uint16),
@@ -536,6 +814,11 @@ class rpc_raw_clear_faults_args(ctypes.Structure):
 
 
 class rpc_raw_poll_load_ret(ctypes.Structure):
+    """@c usable travels beside the number because SG_RESULT outside the TCOOLTHRS
+
+    window is noise, and a control loop given only the number will act on it.
+    """
+
     _fields_ = [
         ("value", ctypes.c_uint16),
         ("usable", ctypes.c_uint8),
@@ -544,6 +827,11 @@ class rpc_raw_poll_load_ret(ctypes.Structure):
 
 
 class rpc_raw_poll_pins_ret(ctypes.Structure):
+    """IOIN as it came off the wire. The PC decodes it with the same codec the
+
+    firmware would have used, so decoding here would only cost a round trip.
+    """
+
     _fields_ = [
         ("value", ctypes.c_uint32),
     ]
@@ -557,6 +845,14 @@ class rpc_raw_poll_version_ret(ctypes.Structure):
 
 
 class rpc_raw_verify_config_ret(ctypes.Structure):
+    """Whether the device agrees with the cache, and where it does not.
+
+    A disagreement is a result rather than a transport failure, and the caller
+    wants to know *which* slots disagree. A failing status would have the mask
+    discarded with the frame, so what the call found travels as a value. Same
+    shape as relay's outcome, for the same reason.
+    """
+
     _fields_ = [
         ("mismatched", ctypes.c_uint32),
         ("agrees", ctypes.c_uint8),
@@ -582,6 +878,11 @@ class rpc_raw_set_current_args(ctypes.Structure):
 
 
 class rpc_raw_bringup_ret(ctypes.Structure):
+    """GSTAT as found is the only look anyone gets at what the driver went through
+
+    before this firmware owned it, so it travels even though bring-up clears it.
+    """
+
     _fields_ = [
         ("gstat_at_bringup", ctypes.c_uint32),
     ]
@@ -634,6 +935,12 @@ class rpc_raw_is_enabled_ret(ctypes.Structure):
 
 
 class rpc_raw_move_args(ctypes.Structure):
+    """A run, exactly as the driver library takes it.
+
+    A run outlives the call that started it and nothing on the board ends it on
+    the caller's behalf, so whoever starts one owns stopping it.
+    """
+
     _fields_ = [
         ("idx", ctypes.c_uint8),
         ("dir", ctypes.c_uint8),
@@ -674,6 +981,8 @@ class rpc_raw_motion_ret(ctypes.Structure):
 
 
 class tmc2209_load_t(ctypes.Structure):
+    """What tmc2209_poll_load() reports."""
+
     _fields_ = [
         ("value", ctypes.c_uint16),
         ("usable", ctypes.c_bool),
@@ -681,6 +990,8 @@ class tmc2209_load_t(ctypes.Structure):
 
 
 class tmc2209_gconf_t(ctypes.Structure):
+    """GCONF, the global mode flags."""
+
     _fields_ = [
         ("i_scale_analog", ctypes.c_bool),
         ("internal_rsense", ctypes.c_bool),
@@ -696,6 +1007,8 @@ class tmc2209_gconf_t(ctypes.Structure):
 
 
 class tmc2209_chopconf_t(ctypes.Structure):
+    """CHOPCONF, the chopper and microstep resolution settings."""
+
     _fields_ = [
         ("toff", ctypes.c_uint8),
         ("hstrt", ctypes.c_uint8),
@@ -711,6 +1024,8 @@ class tmc2209_chopconf_t(ctypes.Structure):
 
 
 class tmc2209_ihold_irun_t(ctypes.Structure):
+    """IHOLD_IRUN, the run and hold current scalers."""
+
     _fields_ = [
         ("ihold", ctypes.c_uint8),
         ("irun", ctypes.c_uint8),
@@ -719,6 +1034,8 @@ class tmc2209_ihold_irun_t(ctypes.Structure):
 
 
 class tmc2209_coolconf_t(ctypes.Structure):
+    """COOLCONF, the CoolStep load-adaptive current thresholds."""
+
     _fields_ = [
         ("semin", ctypes.c_uint8),
         ("seup", ctypes.c_uint),
@@ -729,6 +1046,8 @@ class tmc2209_coolconf_t(ctypes.Structure):
 
 
 class tmc2209_drv_status_t(ctypes.Structure):
+    """DRV_STATUS, what the output stage reports right now."""
+
     _fields_ = [
         ("otpw", ctypes.c_bool),
         ("ot", ctypes.c_bool),
@@ -749,6 +1068,8 @@ class tmc2209_drv_status_t(ctypes.Structure):
 
 
 class tmc2209_gstat_t(ctypes.Structure):
+    """GSTAT, the latched global faults."""
+
     _fields_ = [
         ("reset", ctypes.c_bool),
         ("drv_err", ctypes.c_bool),
@@ -757,6 +1078,8 @@ class tmc2209_gstat_t(ctypes.Structure):
 
 
 class tmc2209_ioin_t(ctypes.Structure):
+    """IOIN, the live state of the driver's input pins."""
+
     _fields_ = [
         ("enn", ctypes.c_bool),
         ("ms1", ctypes.c_bool),
@@ -771,6 +1094,15 @@ class tmc2209_ioin_t(ctypes.Structure):
 
 
 class tmc2209_mscuract_t(ctypes.Structure):
+    """MSCURACT, the sine-table entries for the current microstep position.
+
+    These are the entries the driver read out of its internal sine table for the
+    microstep position it is presently at, unscaled by the current setting.
+    A pure function of MSCNT: identical values whether the motor is spinning,
+    stalled, or unplugged. Both fields are 9-bit signed, which is the only reason
+    a decoder is worth having.
+    """
+
     _fields_ = [
         ("cur_a", ctypes.c_int16),
         ("cur_b", ctypes.c_int16),
@@ -778,6 +1110,8 @@ class tmc2209_mscuract_t(ctypes.Structure):
 
 
 class tmc2209_pwm_scale_t(ctypes.Structure):
+    """PWM_SCALE, the duty StealthChop is currently applying."""
+
     _fields_ = [
         ("sum", ctypes.c_uint8),
         ("automatic", ctypes.c_int16),
@@ -785,13 +1119,22 @@ class tmc2209_pwm_scale_t(ctypes.Structure):
 
 
 class tmc2209_pwm_auto_t(ctypes.Structure):
+    """PWM_AUTO, the offset and gradient StealthChop tuned for itself."""
+
     _fields_ = [
         ("ofs_auto", ctypes.c_uint8),
         ("grad_auto", ctypes.c_uint8),
     ]
 
 
+rpc_bool_t = ctypes.c_uint8
+rpc_frame_id_t = ctypes.c_uint8
+rpc_ns_id_t = ctypes.c_uint8
+rpc_log_level_t = ctypes.c_uint8
 rpc_status_t = ctypes.c_uint8
+rpc_dev_id_t = ctypes.c_uint8
+rpc_mode_id_t = ctypes.c_uint8
+rpc_reset_id_t = ctypes.c_uint8
 rpc_raw_poll_args = rpc_raw_read_args
 rpc_raw_poll_ret = rpc_raw_read_ret
 rpc_raw_poll_health_args = rpc_dev_args
@@ -804,6 +1147,9 @@ rpc_raw_all_owned_valid_args = rpc_dev_args
 rpc_raw_invalidate_owned_args = rpc_dev_args
 rpc_raw_is_enabled_args = rpc_dev_args
 rpc_raw_motion_args = rpc_dev_args
+tmc2209_reg_id_t = ctypes.c_uint8
+tmc2209_slot_mask_t = ctypes.c_uint32
+tmc2209_condition_mask_t = ctypes.c_uint32
 
 SIZEOF = {
     "rpc_req_hdr_t": 8,
@@ -866,6 +1212,194 @@ FLEX = {
     rpc_sys_devices_ret: Flex("devs", "count", rpc_dev_info_t),
     rpc_relay_send_args: Flex("tx", "count", ctypes.c_uint8),
     rpc_raw_write_args: Flex("ops", "count", rpc_op_t),
+}
+
+SEMANTIC = {
+    rpc_req_hdr_t: {"type": "rpc_frame_id_t", "ns": "rpc_ns_id_t"},
+    rpc_rep_hdr_t: {"type": "rpc_frame_id_t", "status": "rpc_status_t"},
+    rpc_log_hdr_t: {"type": "rpc_frame_id_t", "level": "rpc_log_level_t"},
+    rpc_dev_args: {"idx": "rpc_dev_id_t"},
+    rpc_op_t: {"reg": "tmc2209_reg_id_t"},
+    rpc_sys_version_ret: {"reset_reason": "rpc_reset_id_t"},
+    rpc_sys_state_ret: {"mode": "rpc_mode_id_t", "ready": "rpc_bool_t"},
+    rpc_dev_info_t: {
+        "wired": "tmc2209_line_mask_t",
+        "has_uart": "rpc_bool_t",
+        "has_stepgen": "rpc_bool_t",
+    },
+    rpc_relay_send_args: {"idx": "rpc_dev_id_t"},
+    rpc_relay_send_ret: {"outcome": "rpc_status_t"},
+    rpc_raw_read_args: {"idx": "rpc_dev_id_t", "reg": "tmc2209_reg_id_t"},
+    rpc_raw_write_args: {"idx": "rpc_dev_id_t"},
+    rpc_raw_poll_health_ret: {"conditions": "tmc2209_condition_mask_t"},
+    rpc_raw_clear_faults_args: {
+        "idx": "rpc_dev_id_t",
+        "conditions": "tmc2209_condition_mask_t",
+    },
+    rpc_raw_poll_load_ret: {"usable": "rpc_bool_t"},
+    rpc_raw_verify_config_ret: {
+        "mismatched": "tmc2209_slot_mask_t",
+        "agrees": "rpc_bool_t",
+    },
+    rpc_raw_set_velocity_args: {"idx": "rpc_dev_id_t"},
+    rpc_raw_set_current_args: {"idx": "rpc_dev_id_t"},
+    rpc_raw_all_owned_valid_ret: {"valid": "rpc_bool_t"},
+    rpc_raw_line_read_args: {"idx": "rpc_dev_id_t", "line": "tmc2209_line_id_t"},
+    rpc_raw_line_read_ret: {"level": "tmc2209_level_id_t"},
+    rpc_raw_line_write_args: {
+        "idx": "rpc_dev_id_t",
+        "line": "tmc2209_line_id_t",
+        "level": "tmc2209_level_id_t",
+    },
+    rpc_raw_enable_args: {"idx": "rpc_dev_id_t", "on": "rpc_bool_t"},
+    rpc_raw_is_enabled_ret: {"on": "rpc_bool_t"},
+    rpc_raw_move_args: {
+        "idx": "rpc_dev_id_t",
+        "dir": "tmc2209_level_id_t",
+        "shaft": "rpc_bool_t",
+    },
+    rpc_raw_retarget_args: {"idx": "rpc_dev_id_t"},
+    rpc_raw_halt_args: {"idx": "rpc_dev_id_t", "immediate": "rpc_bool_t"},
+    rpc_raw_motion_ret: {
+        "running": "rpc_bool_t",
+        "dir": "tmc2209_level_id_t",
+        "shaft": "rpc_bool_t",
+    },
+    tmc2209_chopconf_t: {"tbl": "tmc2209_tbl_t", "mres": "tmc2209_mres_t"},
+    tmc2209_coolconf_t: {"seup": "tmc2209_seup_t", "sedn": "tmc2209_sedn_t"},
+}
+
+PY_ENUM = {
+    "rpc_frame_t": RpcFrame,
+    "rpc_frame_id_t": RpcFrame,
+    "rpc_ns_t": RpcNs,
+    "rpc_ns_id_t": RpcNs,
+    "rpc_sys_method_t": RpcSysMethod,
+    "rpc_relay_method_t": RpcRelayMethod,
+    "rpc_raw_method_t": RpcRawMethod,
+    "rpc_mode_t": RpcMode,
+    "rpc_mode_id_t": RpcMode,
+    "tmc2209_err_t": Tmc2209Err,
+    "tmc2209_reg_t": Tmc2209Reg,
+    "tmc2209_reg_id_t": Tmc2209Reg,
+    "tmc2209_class_t": Tmc2209Class,
+    "tmc2209_condition_t": Tmc2209Condition,
+    "tmc2209_condition_mask_t": Tmc2209Condition,
+    "tmc2209_mres_t": Tmc2209Mres,
+    "tmc2209_tbl_t": Tmc2209Tbl,
+    "tmc2209_seup_t": Tmc2209Seup,
+    "tmc2209_sedn_t": Tmc2209Sedn,
+    "tmc2209_line_t": Tmc2209Line,
+    "tmc2209_line_id_t": Tmc2209Line,
+    "tmc2209_line_mask_t": Tmc2209LineMask,
+    "tmc2209_level_t": Tmc2209Level,
+    "tmc2209_level_id_t": Tmc2209Level,
+}
+
+DOC = {
+    "rpc_frame_t.RPC_FRAME_REQ": "inbound, asking for a method",
+    "rpc_frame_t.RPC_FRAME_REP": "outbound, answering a request",
+    "rpc_frame_t.RPC_FRAME_LOG": "outbound, unprompted. Payload is the text, no terminator",
+    "rpc_ns_t.RPC_NS_SYS": "about the firmware, not about a driver",
+    "rpc_ns_t.RPC_NS_RELAY": "the PC assembles the datagram",
+    "rpc_ns_t.RPC_NS_RAW": "the firmware assembles it, from a register you name",
+    "rpc_ns_t.RPC_NS_FILM": "the firmware assembles it, from an outcome you name",
+    "rpc_sys_method_t.RPC_SYS_STATE": "what the firmware is doing, and whether it is ready",
+    "rpc_sys_method_t.RPC_SYS_DEVICES": "the board table: what exists and what it has",
+    "rpc_mode_t.RPC_MODE_IDLE": "nothing in flight. raw and relay are permitted",
+    "rpc_mode_t.RPC_MODE_SCANNING": "a run owns the transport; raw and relay are refused",
+    "rpc_mode_t.RPC_MODE_FAULT": "construction failed, so no device can be addressed",
+    "tmc2209_err_t.TMC2209_ERR_ARG": "caller passed something impossible",
+    "tmc2209_err_t.TMC2209_ERR_TX_TIMEOUT": "Port accepted fewer bytes than it was given.",
+    "tmc2209_err_t.TMC2209_ERR_RX_TIMEOUT": "port delivered fewer bytes than were asked for",
+    "tmc2209_err_t.TMC2209_ERR_IO": "port failed for its own reasons",
+    "tmc2209_err_t.TMC2209_ERR_ECHO": "what came back is not what we sent: collision or jammed UART line",
+    "tmc2209_err_t.TMC2209_ERR_PREAMBLE": "bad preamble: sync or master address wrong in a reply",
+    "tmc2209_err_t.TMC2209_ERR_CRC": "CRC error",
+    "tmc2209_err_t.TMC2209_ERR_REG": "reply is for a register we did not ask about",
+    "tmc2209_err_t.TMC2209_ERR_NO_ACK": "IFCNT did not advance enough: the write didn't land right",
+    "tmc2209_err_t.TMC2209_ERR_ACCESS": "the register/line access policy does not permit this operation",
+    "tmc2209_err_t.TMC2209_ERR_NO_BACKEND": "nothing is attached to carry out this call",
+    "tmc2209_err_t.TMC2209_ERR_UNWIRED": "the line is not connected on this board",
+    "tmc2209_err_t.TMC2209_ERR_INVALID_SLOT": "the cache holds an invalid value for that register",
+    "tmc2209_err_t.TMC2209_ERR_MISMATCH": "the device disagrees with the cache",
+    "tmc2209_err_t.TMC2209_ERR_BUSY": "A run is in flight and this call would disturb it. *",
+    "tmc2209_err_t.TMC2209_ERR_IDLE": "no run is in flight and this call needs one",
+    "tmc2209_err_t.TMC2209_ERR_RATE": "a rate beyond what this stepgen can emit.",
+    "tmc2209_class_t.TMC2209_CLASS_UNKNOWN": "Not in the table.",
+    "tmc2209_class_t.TMC2209_CLASS_VOLATILE": "The driver itself writes the register. Poll; never cache.",
+    "tmc2209_class_t.TMC2209_CLASS_OWNED": "Only the firmware writes to this register. Cacheable while the slot stays valid.",
+    "tmc2209_class_t.TMC2209_CLASS_CONSTANT": "Nothing writes to this register in this design. Read once at bring-up, cached after.",
+    "tmc2209_condition_t.TMC2209_DRIVER_RESET": "GSTAT.reset: the driver restarted, so\n\nevery register is back at its default\nand the configuration is gone",
+    "tmc2209_condition_t.TMC2209_DRIVER_FAULT": "GSTAT.drv_err",
+    "tmc2209_condition_t.TMC2209_UNDERVOLTAGE": "GSTAT.uv_cp, charge pump",
+    "tmc2209_condition_t.TMC2209_OVERTEMP_WARNING": "DRV_STATUS.otpw",
+    "tmc2209_condition_t.TMC2209_OVERTEMP_SHUTDOWN": "DRV_STATUS.ot",
+    "tmc2209_condition_t.TMC2209_SHORT_CIRCUIT": "DRV_STATUS s2ga/s2gb/s2vsa/s2vsb",
+    "tmc2209_condition_t.TMC2209_OPEN_LOAD": "DRV_STATUS ola/olb. Also true at standstill",
+    "tmc2209_condition_t.TMC2209_STANDSTILL": "DRV_STATUS.stst",
+    "tmc2209_line_t.TMC2209_LINE_ENN": "output, active low. High disables the power stage",
+    "tmc2209_line_t.TMC2209_LINE_DIR": "output. Phase order, before GCONF.shaft inverts it",
+    "tmc2209_line_t.TMC2209_LINE_STEP": "output. One microstep per edge",
+    "tmc2209_line_t.TMC2209_LINE_DIAG": "input. Driver error or StallGuard, per GCONF",
+    "tmc2209_line_t.TMC2209_LINE_COUNT": "meta. Amount of lines a driver has",
+    "rpc_req_hdr_t.type": "@ref RPC_FRAME_REQ",
+    "rpc_req_hdr_t.ns": "namespace index",
+    "rpc_req_hdr_t.method": "numbering is per namespace",
+    "rpc_req_hdr_t.id": "echoed in the reply, so a late answer is recognisable",
+    "rpc_rep_hdr_t.type": "@ref RPC_FRAME_REP",
+    "rpc_rep_hdr_t.id": "the request this answers",
+    "rpc_log_hdr_t.type": "@ref RPC_FRAME_LOG",
+    "rpc_view_t.type": "@ref rpc_frame_t",
+    "rpc_view_t.hdr": "cast to the header @c type names",
+    "rpc_view_t.payload": "aligned, and empty when @c payload_len is 0",
+    "rpc_dev_info_t.addr": "set by the MS1/MS2 straps",
+    "rpc_relay_send_args.reply_len": "bytes to wait for. 0 when the datagram has no reply",
+    "rpc_relay_send_args.count": "how many of @c tx follow",
+    "rpc_relay_send_ret.outcome": "of the transaction, not of the call",
+    "rpc_raw_poll_load_ret.value": "SG_RESULT, 0..510. Higher means less load",
+    "rpc_raw_set_current_args.ihold": "0..31",
+    "rpc_raw_set_current_args.irun": "0..31",
+    "rpc_raw_set_current_args.iholddelay": "0..15",
+    "rpc_raw_move_args.dir": "level to drive on DIR, electrical and uninterpreted",
+    "rpc_raw_move_args.shaft": "GCONF.shaft this move was planned around",
+    "rpc_raw_move_args.pulses": "microsteps to emit. 0 runs until halted",
+    "rpc_raw_move_args.pullin_pps": "rate of the first and last pulse",
+    "rpc_raw_move_args.cruise_pps": "rate held between the ramps",
+    "rpc_raw_move_args.accel_pps_s": "slope of both ramps",
+    "rpc_raw_motion_ret.emitted": "pulses of the current run, or of the last one",
+    "rpc_raw_motion_ret.rate_pps": "rate presently being emitted",
+    "rpc_raw_motion_ret.dir": "DIR the counted run was started with",
+    "rpc_raw_motion_ret.shaft": "GCONF.shaft the counted run was started with",
+    "tmc2209_load_t.value": "SG_RESULT, 0..510. Higher means less load",
+    "tmc2209_load_t.usable": "false when the reading carries no information",
+    "tmc2209_gconf_t.i_scale_analog": "external VREF",
+    "tmc2209_gconf_t.en_spreadcycle": "0 = StealthChop",
+    "tmc2209_gconf_t.shaft": "invert direction",
+    "tmc2209_gconf_t.pdn_disable": "1 = PDN_UART is the UART pin. Required",
+    "tmc2209_gconf_t.mstep_reg_select": "1 = mres comes from CHOPCONF, not MS1/MS2. Required",
+    "tmc2209_gconf_t.test_mode": "factory use. Never set",
+    "tmc2209_chopconf_t.toff": "0 = driver disabled",
+    "tmc2209_ihold_irun_t.ihold": "0..31",
+    "tmc2209_ihold_irun_t.irun": "0..31",
+    "tmc2209_ihold_irun_t.iholddelay": "0..15",
+    "tmc2209_coolconf_t.semin": "0 = CoolStep off",
+    "tmc2209_drv_status_t.otpw": "overtemperature warning / shutdown",
+    "tmc2209_drv_status_t.ot": "overtemperature warning / shutdown",
+    "tmc2209_drv_status_t.s2ga": "short to ground",
+    "tmc2209_drv_status_t.s2gb": "short to ground",
+    "tmc2209_drv_status_t.s2vsa": "short to supply",
+    "tmc2209_drv_status_t.s2vsb": "short to supply",
+    "tmc2209_drv_status_t.ola": "open load",
+    "tmc2209_drv_status_t.olb": "open load",
+    "tmc2209_drv_status_t.cs_actual": "0..31, the current the driver settled on",
+    "tmc2209_drv_status_t.stst": "standstill",
+    "tmc2209_gstat_t.reset": "driver was reset and lost its configuration",
+    "tmc2209_gstat_t.uv_cp": "charge pump undervoltage",
+    "tmc2209_ioin_t.version": "revision byte, whatever the part answers",
+    "tmc2209_mscuract_t.cur_a": "-255..255",
+    "tmc2209_pwm_scale_t.sum": "actual PWM duty StealthChop settled on",
+    "tmc2209_pwm_scale_t.automatic": "-255..255, signed amplitude correction",
 }
 
 
@@ -1004,7 +1538,7 @@ rpc_frame_seal_rep.restype = ctypes.c_size_t
 rpc_frame_seal_rep.argtypes = [
     ctypes.POINTER(rpc_buf_t),
     ctypes.c_uint16,
-    ctypes.c_ubyte,
+    ctypes.c_uint8,
     ctypes.c_size_t,
 ]
 
@@ -1045,7 +1579,7 @@ crc16_ccitt.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
 
 rpc_strerror = _lib.rpc_strerror
 rpc_strerror.restype = ctypes.c_char_p
-rpc_strerror.argtypes = [ctypes.c_ubyte]
+rpc_strerror.argtypes = [ctypes.c_uint8]
 
 tmc2209_strerror = _lib.tmc2209_strerror
 tmc2209_strerror.restype = ctypes.c_char_p

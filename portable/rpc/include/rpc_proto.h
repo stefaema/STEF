@@ -72,44 +72,27 @@ typedef enum {
     RPC_FRAME_LOG = 2, /**< outbound, unprompted. Payload is the text, no terminator */
 } rpc_frame_t;
 
-/* ── Headers ────────────────────────────────────────────────────────────── */
-/*
- * The type byte leads all three, so a receiver can tell them apart before it
- * knows which struct it is holding. Everything after that is arranged for
- * alignment rather than for reading order.
+/* ── What a byte means ──────────────────────────────────────────────────── */
+
+/**
+ * Every field on this wire is a `uintN_t`, so the width says how much room a
+ * value has and nothing says what kind of value it is. These name the kind.
+ *
+ * Each is an alias for a width, never an enum: an enum is `int`-sized and would
+ * move the wire. A typedef carries kind, never bounds.
  */
 
-/** @brief What a request says before its arguments. */
-typedef struct {
-    uint8_t  type;    /**< @ref RPC_FRAME_REQ */
-    uint8_t  ns;      /**< namespace index */
-    uint8_t  method;  /**< numbering is per namespace */
-    uint8_t  _pad;
-    uint16_t id;      /**< echoed in the reply, so a late answer is recognisable */
-    uint16_t _pad2;
-} rpc_req_hdr_t;
-RPC_WIRE_SIZE(rpc_req_hdr_t, RPC_HDR_LEN);
+/** @brief A truth value on the wire. */
+typedef uint8_t rpc_bool_t;
 
-/** @brief What a reply says before its return values. */
-typedef struct {
-    uint8_t  type;    /**< @ref RPC_FRAME_REP */
-    uint8_t  status;  /**< @ref rpc_status_t */
-    uint8_t  _pad[2];
-    uint16_t id;      /**< the request this answers */
-    uint16_t _pad2;
-} rpc_rep_hdr_t;
-RPC_WIRE_SIZE(rpc_rep_hdr_t, RPC_HDR_LEN);
+/** @brief A @ref rpc_frame_t narrowed to a byte. */
+typedef uint8_t rpc_frame_id_t;
 
-/** @brief What a log line says before its text. */
-typedef struct {
-    uint8_t  type;   /**< @ref RPC_FRAME_LOG */
-    uint8_t  level;  /**< 1 error, 2 warn, 3 info, 4 debug, 5 verbose, 0 unknown */
-    uint16_t _pad;
-    uint32_t uptime_ms;
-} rpc_log_hdr_t;
-RPC_WIRE_SIZE(rpc_log_hdr_t, RPC_HDR_LEN);
+/** @brief A namespace index, narrowed to a byte. */
+typedef uint8_t rpc_ns_id_t;
 
-/* ── Status ─────────────────────────────────────────────────────────────── */
+/** @brief The log severity band: 1 error, 2 warn, 3 info, 4 debug, 5 verbose, 0 unknown. */
+typedef uint8_t rpc_log_level_t;
 
 /**
  * @brief What a reply reports, as one byte on the wire.
@@ -127,6 +110,45 @@ RPC_WIRE_SIZE(rpc_log_hdr_t, RPC_HDR_LEN);
  * Values are fixed by the wire. Never renumber; append.
  */
 typedef uint8_t rpc_status_t;
+
+/* ── Headers ────────────────────────────────────────────────────────────── */
+/*
+ * The type byte leads all three, so a receiver can tell them apart before it
+ * knows which struct it is holding. Everything after that is arranged for
+ * alignment rather than for reading order.
+ */
+
+/** @brief What a request says before its arguments. */
+typedef struct {
+    rpc_frame_id_t type;    /**< @ref RPC_FRAME_REQ */
+    rpc_ns_id_t    ns;      /**< namespace index */
+    uint8_t        method;  /**< numbering is per namespace */
+    uint8_t        _pad;
+    uint16_t       id;      /**< echoed in the reply, so a late answer is recognisable */
+    uint16_t       _pad2;
+} rpc_req_hdr_t;
+RPC_WIRE_SIZE(rpc_req_hdr_t, RPC_HDR_LEN);
+
+/** @brief What a reply says before its return values. */
+typedef struct {
+    rpc_frame_id_t type;    /**< @ref RPC_FRAME_REP */
+    rpc_status_t   status;
+    uint8_t        _pad[2];
+    uint16_t       id;      /**< the request this answers */
+    uint16_t       _pad2;
+} rpc_rep_hdr_t;
+RPC_WIRE_SIZE(rpc_rep_hdr_t, RPC_HDR_LEN);
+
+/** @brief What a log line says before its text. */
+typedef struct {
+    rpc_frame_id_t  type;   /**< @ref RPC_FRAME_LOG */
+    rpc_log_level_t level;
+    uint16_t        _pad;
+    uint32_t        uptime_ms;
+} rpc_log_hdr_t;
+RPC_WIRE_SIZE(rpc_log_hdr_t, RPC_HDR_LEN);
+
+/* ── Status ─────────────────────────────────────────────────────────────── */
 
 /**
  * @brief Where the transport's statuses begin. Below this belongs to the caller.

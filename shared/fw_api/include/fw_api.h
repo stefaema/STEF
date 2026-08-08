@@ -26,9 +26,16 @@
  * version: nothing is packed, every field is naturally aligned by way of
  * explicit `_pad` members, and every struct asserts its own size.
  *
- * Nothing in this file may include anything but stdint and rpc_proto.h. It is
- * compiled for the ESP32 and again for the host, and it is what the PC's cffi
- * build reads alongside the component's headers.
+ * ## What a field means
+ *
+ * Semantic typedefs say what kind of value a `uintN_t` holds, and each lives
+ * beside the thing it names: the wire's in `rpc_proto.h`, the driver's in the
+ * tmc2209 headers, this board's here. So `raw`'s payloads name driver types
+ * instead of restating them, `raw` being a projection of that library's API.
+ *
+ * Nothing in this file may include anything but stdint, rpc_proto.h and the
+ * portable driver headers naming those types, all of them freestanding. It is
+ * compiled for the ESP32 and again for the host, and read by the ABI generator.
  */
 
 #ifndef FW_API_H
@@ -37,6 +44,8 @@
 #include <stdint.h>
 
 #include "rpc_proto.h"
+#include "tmc2209_lines.h"
+#include "tmc2209_reg.h"
 
 /**
  * What the two ends check before trusting each other. Bump on any change to a
@@ -77,6 +86,19 @@ typedef enum {
 /** @brief Room for one of `sys.version`'s strings, terminator included. */
 #define RPC_STR_MAX 32
 
+/* ── What a byte means here ─────────────────────────────────────────────── */
+/* This board's own kinds. Everything else a payload carries is spelled in the
+   wire's headers or the driver's. */
+
+/** @brief An index into the board's device table, as `sys.devices` reports it. */
+typedef uint8_t rpc_dev_id_t;
+
+/** @brief A @ref rpc_mode_t narrowed to a byte. */
+typedef uint8_t rpc_mode_id_t;
+
+/** @brief The reset reason the board booted with. */
+typedef uint8_t rpc_reset_id_t;
+
 /* ── Shared payload shapes ──────────────────────────────────────────────── */
 
 /**
@@ -87,16 +109,16 @@ typedef enum {
  * PC's job.
  */
 typedef struct {
-    uint8_t idx;
-    uint8_t _pad[3];
+    rpc_dev_id_t idx;
+    uint8_t      _pad[3];
 } rpc_dev_args;
 RPC_WIRE_SIZE(rpc_dev_args, 4);
 
 /** @brief One register and the value to put in it, as a batch element. */
 typedef struct {
-    uint32_t value;
-    uint8_t  reg;
-    uint8_t  _pad[3];
+    uint32_t         value;
+    tmc2209_reg_id_t reg;
+    uint8_t          _pad[3];
 } rpc_op_t;
 RPC_WIRE_SIZE(rpc_op_t, 8);
 
@@ -132,12 +154,12 @@ typedef enum {
  * "did the board reboot", and answering it costs one byte.
  */
 typedef struct {
-    uint16_t protocol;
-    uint8_t  reset_reason;
-    uint8_t  _pad;
-    char     project[RPC_STR_MAX];
-    char     version[RPC_STR_MAX];
-    char     idf[RPC_STR_MAX];
+    uint16_t       protocol;
+    rpc_reset_id_t reset_reason;
+    uint8_t        _pad;
+    char           project[RPC_STR_MAX];
+    char           version[RPC_STR_MAX];
+    char           idf[RPC_STR_MAX];
 } rpc_sys_version_ret;
 RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
 
@@ -150,20 +172,20 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
  * outside: one question, no state to keep in sync across a link that can drop.
  */
 typedef struct {
-    uint32_t uptime_ms;
-    uint16_t device_count;
-    uint8_t  mode;  /**< @ref rpc_mode_t */
-    uint8_t  ready;
+    uint32_t      uptime_ms;
+    uint16_t      device_count;
+    rpc_mode_id_t mode;
+    rpc_bool_t    ready;
 } rpc_sys_state_ret;
 RPC_WIRE_SIZE(rpc_sys_state_ret, 8);
 
 /** @brief One driver, as `sys.devices` reports it. */
 typedef struct {
-    char    name[RPC_NAME_MAX];
-    uint8_t addr;        /**< set by the MS1/MS2 straps */
-    uint8_t wired;       /**< one bit per line, via TMC2209_LINE_BIT */
-    uint8_t has_uart;
-    uint8_t has_stepgen;
+    char                name[RPC_NAME_MAX];
+    uint8_t             addr;  /**< set by the MS1/MS2 straps */
+    tmc2209_line_mask_t wired;
+    rpc_bool_t          has_uart;
+    rpc_bool_t          has_stepgen;
 } rpc_dev_info_t;
 RPC_WIRE_SIZE(rpc_dev_info_t, 20);
 
@@ -195,11 +217,11 @@ typedef enum {
 
 /** @brief The datagram to send, assembled by the caller and not examined. */
 typedef struct {
-    uint8_t idx;
-    uint8_t reply_len; /**< bytes to wait for. 0 when the datagram has no reply */
-    uint8_t count;     /**< how many of @c tx follow */
-    uint8_t _pad;
-    uint8_t tx[];
+    rpc_dev_id_t idx;
+    uint8_t      reply_len; /**< bytes to wait for. 0 when the datagram has no reply */
+    uint8_t      count;     /**< how many of @c tx follow */
+    uint8_t      _pad;
+    uint8_t      tx[];
 } rpc_relay_send_args;
 RPC_WIRE_SIZE(rpc_relay_send_args, 4);
 
@@ -217,10 +239,10 @@ RPC_WIRE_SIZE(rpc_relay_send_args, 4);
  * and no longer.
  */
 typedef struct {
-    uint8_t outcome; /**< @ref rpc_status_t of the transaction, not of the call */
-    uint8_t count;
-    uint8_t _pad[2];
-    uint8_t rx[RPC_RELAY_MAX_BYTES];
+    rpc_status_t outcome; /**< of the transaction, not of the call */
+    uint8_t      count;
+    uint8_t      _pad[2];
+    uint8_t      rx[RPC_RELAY_MAX_BYTES];
 } rpc_relay_send_ret;
 RPC_WIRE_SIZE(rpc_relay_send_ret, 36);
 
@@ -262,9 +284,9 @@ typedef enum {
 /* Registers. */
 
 typedef struct {
-    uint8_t idx;
-    uint8_t reg;
-    uint8_t _pad[2];
+    rpc_dev_id_t     idx;
+    tmc2209_reg_id_t reg;
+    uint8_t          _pad[2];
 } rpc_raw_read_args;
 RPC_WIRE_SIZE(rpc_raw_read_args, 4);
 
@@ -278,10 +300,10 @@ typedef rpc_raw_read_ret  rpc_raw_poll_ret;
 
 /** @brief A device, then @c count registers to write to it. */
 typedef struct {
-    uint8_t  idx;
-    uint8_t  _pad[3];
-    uint32_t count;
-    rpc_op_t ops[];
+    rpc_dev_id_t idx;
+    uint8_t      _pad[3];
+    uint32_t     count;
+    rpc_op_t     ops[];
 } rpc_raw_write_args;
 RPC_WIRE_SIZE(rpc_raw_write_args, 8);
 
@@ -305,14 +327,14 @@ RPC_WIRE_SIZE(rpc_raw_write_ret, 4);
 typedef rpc_dev_args rpc_raw_poll_health_args;
 
 typedef struct {
-    uint32_t conditions;
+    tmc2209_condition_mask_t conditions;
 } rpc_raw_poll_health_ret;
 RPC_WIRE_SIZE(rpc_raw_poll_health_ret, 4);
 
 typedef struct {
-    uint8_t  idx;
-    uint8_t  _pad[3];
-    uint32_t conditions;
+    rpc_dev_id_t             idx;
+    uint8_t                  _pad[3];
+    tmc2209_condition_mask_t conditions;
 } rpc_raw_clear_faults_args;
 RPC_WIRE_SIZE(rpc_raw_clear_faults_args, 8);
 
@@ -321,9 +343,9 @@ typedef rpc_dev_args rpc_raw_poll_load_args;
 /** @c usable travels beside the number because SG_RESULT outside the TCOOLTHRS
  *  window is noise, and a control loop given only the number will act on it. */
 typedef struct {
-    uint16_t value;  /**< SG_RESULT, 0..510. Higher means less load */
-    uint8_t  usable;
-    uint8_t  _pad;
+    uint16_t   value;  /**< SG_RESULT, 0..510. Higher means less load */
+    rpc_bool_t usable;
+    uint8_t    _pad;
 } rpc_raw_poll_load_ret;
 RPC_WIRE_SIZE(rpc_raw_poll_load_ret, 4);
 
@@ -355,26 +377,26 @@ typedef rpc_dev_args rpc_raw_verify_config_args;
  * shape as relay's outcome, for the same reason.
  */
 typedef struct {
-    uint32_t mismatched; /**< one bit per register slot */
-    uint8_t  agrees;
-    uint8_t  _pad[3];
+    tmc2209_slot_mask_t mismatched;
+    rpc_bool_t          agrees;
+    uint8_t             _pad[3];
 } rpc_raw_verify_config_ret;
 RPC_WIRE_SIZE(rpc_raw_verify_config_ret, 8);
 
 /* Runtime writes. */
 
 typedef struct {
-    uint8_t idx;
-    uint8_t _pad[3];
-    int32_t velocity;
+    rpc_dev_id_t idx;
+    uint8_t      _pad[3];
+    int32_t      velocity;
 } rpc_raw_set_velocity_args;
 RPC_WIRE_SIZE(rpc_raw_set_velocity_args, 8);
 
 typedef struct {
-    uint8_t idx;
-    uint8_t ihold;      /**< 0..31 */
-    uint8_t irun;       /**< 0..31 */
-    uint8_t iholddelay; /**< 0..15 */
+    rpc_dev_id_t idx;
+    uint8_t      ihold;      /**< 0..31 */
+    uint8_t      irun;       /**< 0..31 */
+    uint8_t      iholddelay; /**< 0..15 */
 } rpc_raw_set_current_args;
 RPC_WIRE_SIZE(rpc_raw_set_current_args, 4);
 
@@ -392,8 +414,8 @@ RPC_WIRE_SIZE(rpc_raw_bringup_ret, 4);
 typedef rpc_dev_args rpc_raw_all_owned_valid_args;
 
 typedef struct {
-    uint8_t valid;
-    uint8_t _pad[3];
+    rpc_bool_t valid;
+    uint8_t    _pad[3];
 } rpc_raw_all_owned_valid_ret;
 RPC_WIRE_SIZE(rpc_raw_all_owned_valid_ret, 4);
 
@@ -402,38 +424,38 @@ typedef rpc_dev_args rpc_raw_invalidate_owned_args;
 /* Lines. */
 
 typedef struct {
-    uint8_t idx;
-    uint8_t line; /**< @c tmc2209_line_t */
-    uint8_t _pad[2];
+    rpc_dev_id_t      idx;
+    tmc2209_line_id_t line;
+    uint8_t           _pad[2];
 } rpc_raw_line_read_args;
 RPC_WIRE_SIZE(rpc_raw_line_read_args, 4);
 
 typedef struct {
-    uint8_t level;
-    uint8_t _pad[3];
+    tmc2209_level_id_t level;
+    uint8_t            _pad[3];
 } rpc_raw_line_read_ret;
 RPC_WIRE_SIZE(rpc_raw_line_read_ret, 4);
 
 typedef struct {
-    uint8_t idx;
-    uint8_t line;
-    uint8_t level;
-    uint8_t _pad;
+    rpc_dev_id_t       idx;
+    tmc2209_line_id_t  line;
+    tmc2209_level_id_t level;
+    uint8_t            _pad;
 } rpc_raw_line_write_args;
 RPC_WIRE_SIZE(rpc_raw_line_write_args, 4);
 
 typedef struct {
-    uint8_t idx;
-    uint8_t on;
-    uint8_t _pad[2];
+    rpc_dev_id_t idx;
+    rpc_bool_t   on;
+    uint8_t      _pad[2];
 } rpc_raw_enable_args;
 RPC_WIRE_SIZE(rpc_raw_enable_args, 4);
 
 typedef rpc_dev_args rpc_raw_is_enabled_args;
 
 typedef struct {
-    uint8_t on;
-    uint8_t _pad[3];
+    rpc_bool_t on;
+    uint8_t    _pad[3];
 } rpc_raw_is_enabled_ret;
 RPC_WIRE_SIZE(rpc_raw_is_enabled_ret, 4);
 
@@ -446,40 +468,40 @@ RPC_WIRE_SIZE(rpc_raw_is_enabled_ret, 4);
  * the caller's behalf, so whoever starts one owns stopping it.
  */
 typedef struct {
-    uint8_t  idx;
-    uint8_t  dir;   /**< level to drive on DIR, electrical and uninterpreted */
-    uint8_t  shaft; /**< GCONF.shaft this move was planned around */
-    uint8_t  _pad;
-    uint32_t pulses;      /**< microsteps to emit. 0 runs until halted */
-    uint32_t pullin_pps;  /**< rate of the first and last pulse */
-    uint32_t cruise_pps;  /**< rate held between the ramps */
-    uint32_t accel_pps_s; /**< slope of both ramps */
+    rpc_dev_id_t       idx;
+    tmc2209_level_id_t dir;   /**< level to drive on DIR, electrical and uninterpreted */
+    rpc_bool_t         shaft; /**< GCONF.shaft this move was planned around */
+    uint8_t            _pad;
+    uint32_t           pulses;      /**< microsteps to emit. 0 runs until halted */
+    uint32_t           pullin_pps;  /**< rate of the first and last pulse */
+    uint32_t           cruise_pps;  /**< rate held between the ramps */
+    uint32_t           accel_pps_s; /**< slope of both ramps */
 } rpc_raw_move_args;
 RPC_WIRE_SIZE(rpc_raw_move_args, 20);
 
 typedef struct {
-    uint8_t  idx;
-    uint8_t  _pad[3];
-    uint32_t cruise_pps;
+    rpc_dev_id_t idx;
+    uint8_t      _pad[3];
+    uint32_t     cruise_pps;
 } rpc_raw_retarget_args;
 RPC_WIRE_SIZE(rpc_raw_retarget_args, 8);
 
 typedef struct {
-    uint8_t idx;
-    uint8_t immediate;
-    uint8_t _pad[2];
+    rpc_dev_id_t idx;
+    rpc_bool_t   immediate;
+    uint8_t      _pad[2];
 } rpc_raw_halt_args;
 RPC_WIRE_SIZE(rpc_raw_halt_args, 4);
 
 typedef rpc_dev_args rpc_raw_motion_args;
 
 typedef struct {
-    uint32_t emitted;  /**< pulses of the current run, or of the last one */
-    uint32_t rate_pps; /**< rate presently being emitted */
-    uint8_t  running;
-    uint8_t  dir;      /**< DIR the counted run was started with */
-    uint8_t  shaft;    /**< GCONF.shaft the counted run was started with */
-    uint8_t  _pad;
+    uint32_t           emitted;  /**< pulses of the current run, or of the last one */
+    uint32_t           rate_pps; /**< rate presently being emitted */
+    rpc_bool_t         running;
+    tmc2209_level_id_t dir;      /**< DIR the counted run was started with */
+    rpc_bool_t         shaft;    /**< GCONF.shaft the counted run was started with */
+    uint8_t            _pad;
 } rpc_raw_motion_ret;
 RPC_WIRE_SIZE(rpc_raw_motion_ret, 12);
 

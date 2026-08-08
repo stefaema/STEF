@@ -11,11 +11,13 @@ add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Werror)
 
 set(FW_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(RPC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../portable/rpc)
+set(TMC2209_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../portable/tmc2209)
 
 add_executable(contract_check contract_check.c ${FW_API_DIR}/rpc_strerror.c)
 target_include_directories(contract_check PRIVATE
     ${FW_API_DIR}/include
-    ${RPC_DIR}/include)
+    ${RPC_DIR}/include
+    ${TMC2209_DIR}/include)
 
 enable_testing()
 add_test(NAME fw_api_contract COMMAND contract_check)

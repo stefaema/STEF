@@ -57,6 +57,23 @@ STDINT = {
     "size_t": "ctypes.c_size_t",
 }
 
+# What a semantic typedef can be an alias for: any width the wire uses. A
+# typedef over an enum or a record is a different thing and is not one of these.
+STDINT_KINDS = {
+    TypeKind.CHAR_S,
+    TypeKind.CHAR_U,
+    TypeKind.SCHAR,
+    TypeKind.UCHAR,
+    TypeKind.SHORT,
+    TypeKind.USHORT,
+    TypeKind.INT,
+    TypeKind.UINT,
+    TypeKind.LONG,
+    TypeKind.ULONG,
+    TypeKind.LONGLONG,
+    TypeKind.ULONGLONG,
+}
+
 PRIMITIVES = {
     TypeKind.BOOL: "ctypes.c_bool",
     TypeKind.CHAR_S: "ctypes.c_char",
@@ -102,6 +119,9 @@ class Record:
     fields: list[tuple[str, str]]
     size: int
     flex: tuple[str, str, str] | None = None
+    semantic: dict[str, str] = field(default_factory=dict)
+    doc: str | None = None
+    field_docs: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -110,6 +130,8 @@ class Enum:
 
     name: str
     members: list[tuple[str, int]]
+    doc: str | None = None
+    member_docs: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -131,6 +153,7 @@ class Abi:
     aliases: list[tuple[str, str]] = field(default_factory=list)
     functions: list[Function] = field(default_factory=list)
     statuses: list[tuple[str, int]] = field(default_factory=list)
+    semantic_typedefs: list[str] = field(default_factory=list)
 
 
 # ── The pinned toolchain, so the output is reproducible ──────────────────────
@@ -214,17 +237,18 @@ def is_unnamed(cursor: cindex.Cursor) -> bool:
     return not cursor.spelling or "(unnamed" in cursor.spelling
 
 
-def macro_names(root: cindex.Cursor, owned: dict[str, bool]) -> list[str]:
-    """Return every object-like macro defined by the headers being read."""
-    names: list[str] = []
+def macro_names(root: cindex.Cursor, owned: dict[str, bool]) -> dict[str, str]:
+    """Return every object-like macro the headers define, against the header naming it."""
+    names: dict[str, str] = {}
     for cursor in root.get_children():
         if cursor.kind != CursorKind.MACRO_DEFINITION or not cursor.location.file:
             continue
-        if Path(cursor.location.file.name).name not in owned:
+        header = Path(cursor.location.file.name).name
+        if header not in owned:
             continue
         if len(list(cursor.get_tokens())) < 2 or is_function_like(cursor):
             continue
-        names.append(cursor.spelling)
+        names[cursor.spelling] = header
     return names
 
 
@@ -250,6 +274,58 @@ def macro_values(names: list[str]) -> list[tuple[str, int]]:
     return [(n, values[n]) for n in names]
 
 
+# ── Comments, so prose is authored once and in C ─────────────────────────────
+
+BRIEF = "@brief "
+
+
+def clean_comment(raw: str | None) -> str | None:
+    """Return the comment's text in PEP 257 shape, or None if there was none."""
+    if not raw:
+        return None
+
+    body = raw.strip()
+    for opener in ("/**<", "/**", "/*!", "/*"):
+        if body.startswith(opener):
+            body = body[len(opener) :]
+            break
+    body = body.removesuffix("*/")
+
+    lines = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("*") and not stripped.startswith("*/"):
+            stripped = stripped[1:].lstrip()
+        lines.append(stripped)
+
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    if not lines:
+        return None
+
+    if lines[0].startswith(BRIEF):
+        lines[0] = lines[0][len(BRIEF) :]
+    # PEP 257: a summary line, then a blank, then whatever else was said.
+    if len(lines) > 1 and lines[1]:
+        lines.insert(1, "")
+    return "\n".join(lines).strip() or None
+
+
+def docstring(text: str, indent: str) -> list[str]:
+    """Return the lines of a triple-quoted docstring holding the text verbatim."""
+    safe = text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    lines = safe.split("\n")
+    if len(lines) == 1:
+        return [f'{indent}"""{lines[0]}"""']
+    return [
+        f'{indent}"""{lines[0]}',
+        *(f"{indent}{ln}".rstrip() for ln in lines[1:]),
+        f'{indent}"""',
+    ]
+
+
 # ── C types, one ctypes expression at a time ─────────────────────────────────
 
 COUNT_FIELD = "count"
@@ -265,6 +341,11 @@ def ctype_of(type_: cindex.Type, records: set[str]) -> str:
         declared = type_.get_declaration().spelling
         if declared in records:
             return declared
+        # One typedef at a time, so a semantic typedef over uint8_t lands on the
+        # stdint spelling and not on the canonical `unsigned char`.
+        under = type_.get_declaration().underlying_typedef_type
+        if under.kind != TypeKind.INVALID:
+            return ctype_of(under, records)
         return ctype_of(type_.get_canonical(), records)
 
     if type_.kind == TypeKind.RECORD:
@@ -302,14 +383,33 @@ def argtype_of(type_: cindex.Type, records: set[str]) -> str:
     return ctype_of(type_, records)
 
 
+def written_type(type_: cindex.Type, records: set[str]) -> str | None:
+    """Return the semantic typedef a field was declared with, or None for a bare width."""
+    if type_.kind not in (TypeKind.TYPEDEF, TypeKind.ELABORATED):
+        return None
+    spelling = type_.spelling.removeprefix("const ")
+    if spelling in STDINT or spelling in records:
+        return None
+    return spelling
+
+
 def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
     """Return the struct or union, with any flexible member set aside."""
     name = cursor.spelling
     fields: list[tuple[str, str]] = []
+    semantic: dict[str, str] = {}
+    field_docs: dict[str, str] = {}
     flex = None
     members = list(cursor.type.get_fields())
 
     for index, member in enumerate(members):
+        written = written_type(member.type, records)
+        if written is not None:
+            semantic[member.spelling] = written
+        note = clean_comment(member.raw_comment)
+        if note is not None:
+            field_docs[member.spelling] = note
+
         if member.type.kind != TypeKind.INCOMPLETEARRAY:
             fields.append((member.spelling, ctype_of(member.type, records)))
             continue
@@ -332,20 +432,44 @@ def record_of(cursor: cindex.Cursor, records: set[str]) -> Record:
         fields=fields,
         size=cursor.type.get_size(),
         flex=flex,
+        semantic=semantic,
+        doc=clean_comment(cursor.raw_comment),
+        field_docs=field_docs,
     )
 
 
 # ── The pass itself ──────────────────────────────────────────────────────────
 
 
+def in_header_order(tagged: list[tuple[int, T]]) -> list[T]:
+    """Return the items grouped by the header that declared them, HEADERS' order.
+
+    AST order follows the include graph, so an added include would otherwise
+    relayout the whole file.
+    """
+    return [item for _, item in sorted(tagged, key=lambda pair: pair[0])]
+
+
 def collect() -> Abi:
     """Return everything the headers declare that the PC is entitled to see."""
     owned = {Path(h).name: emits_types for h, emits_types in HEADERS}
+    rank = {Path(h).name: index for index, (h, _) in enumerate(HEADERS)}
     root = parse(includes())
     abi = Abi()
     records: set[str] = set()
 
-    abi.constants.extend(macro_values(macro_names(root, owned)))
+    macro_headers = macro_names(root, owned)
+    macros = [
+        (rank[macro_headers[name]], (name, value))
+        for name, value in macro_values(list(macro_headers))
+    ]
+
+    enum_constants: list[tuple[int, tuple[str, int]]] = []
+    enums: list[tuple[int, Enum]] = []
+    structs: list[tuple[int, Record]] = []
+    aliases: list[tuple[int, tuple[str, str]]] = []
+    functions: list[tuple[int, Function]] = []
+    statuses: list[tuple[int, tuple[str, int]]] = []
 
     for cursor in root.get_children():
         if not cursor.location.file:
@@ -354,56 +478,196 @@ def collect() -> Abi:
         if header not in owned:
             continue
         emits_types = owned[header]
+        order = rank[header]
 
         if cursor.kind == CursorKind.ENUM_DECL:
             members = [(c.spelling, c.enum_value) for c in cursor.get_children()]
             if is_unnamed(cursor):
-                abi.constants.extend(members)
+                enum_constants += [(order, m) for m in members]
                 if header in STATUS_HEADERS:
-                    abi.statuses.extend(members)
+                    statuses += [(order, m) for m in members]
             else:
-                abi.enums.append(Enum(cursor.spelling, members))
+                enums.append(
+                    (
+                        order,
+                        Enum(
+                            name=cursor.spelling,
+                            members=members,
+                            doc=clean_comment(cursor.raw_comment),
+                            member_docs={
+                                c.spelling: note
+                                for c in cursor.get_children()
+                                if (note := clean_comment(c.raw_comment)) is not None
+                            },
+                        ),
+                    )
+                )
 
         elif cursor.kind in (CursorKind.STRUCT_DECL, CursorKind.UNION_DECL):
             if emits_types and cursor.is_definition():
-                abi.records.append(record_of(cursor, records))
+                structs.append((order, record_of(cursor, records)))
                 records.add(cursor.spelling)
 
-        elif cursor.kind == CursorKind.TYPEDEF_DECL and emits_types:
+        elif cursor.kind == CursorKind.TYPEDEF_DECL:
             under = cursor.underlying_typedef_type
             canonical = under.get_canonical()
+            if canonical.kind in STDINT_KINDS and cursor.spelling not in STDINT:
+                abi.semantic_typedefs.append(cursor.spelling)
+            if not emits_types:
+                continue
             if canonical.kind in (TypeKind.RECORD, TypeKind.ENUM):
                 target = canonical.get_declaration().spelling
                 if target != cursor.spelling and target in records:
-                    abi.aliases.append((cursor.spelling, target))
+                    aliases.append((order, (cursor.spelling, target)))
                     records.add(cursor.spelling)
             else:
-                abi.aliases.append((cursor.spelling, ctype_of(under, records)))
+                aliases.append((order, (cursor.spelling, ctype_of(under, records))))
 
         elif cursor.kind == CursorKind.FUNCTION_DECL:
             if not emits_types or cursor.is_definition():
                 continue
-            abi.functions.append(
-                Function(
-                    name=cursor.spelling,
-                    restype=(
-                        None
-                        if cursor.result_type.kind == TypeKind.VOID
-                        else ctype_of(cursor.result_type, records)
+            functions.append(
+                (
+                    order,
+                    Function(
+                        name=cursor.spelling,
+                        restype=(
+                            None
+                            if cursor.result_type.kind == TypeKind.VOID
+                            else ctype_of(cursor.result_type, records)
+                        ),
+                        argtypes=[
+                            argtype_of(
+                                not_none(a, f"an argument of {cursor.spelling}").type,
+                                records,
+                            )
+                            for a in cursor.get_arguments()
+                        ],
                     ),
-                    argtypes=[
-                        argtype_of(
-                            not_none(a, f"an argument of {cursor.spelling}").type,
-                            records,
-                        )
-                        for a in cursor.get_arguments()
-                    ],
                 )
             )
+
+    abi.constants = in_header_order(macros) + in_header_order(enum_constants)
+    abi.enums = in_header_order(enums)
+    abi.records = in_header_order(structs)
+    abi.aliases = in_header_order(aliases)
+    abi.functions = in_header_order(functions)
+    abi.statuses = in_header_order(statuses)
 
     if not abi.statuses:
         raise GeneratorError("no status enumerators found")
     return abi
+
+
+# ── The Python enums the C enums imply ───────────────────────────────────────
+
+ID_SUFFIX = "_id_t"
+MASK_SUFFIX = "_mask_t"
+TERMINATOR = "_COUNT"
+
+
+@dataclass
+class PyEnum:
+    """One generated enum class, and every C spelling that resolves to it."""
+
+    name: str
+    base: str
+    members: list[tuple[str, str, int]]
+    doc: str | None
+    flat: bool
+    spellings: list[str] = field(default_factory=list)
+
+
+def class_name_of(c_name: str) -> str:
+    """Return the CamelCase class name a C type name is emitted under."""
+    return "".join(part.capitalize() for part in c_name.removesuffix("_t").split("_"))
+
+
+def short_names(members: list[tuple[str, int]]) -> dict[str, str]:
+    """Return each member's name with the prefix they all share dropped, where that works.
+
+    The alias lets a call site write `Tmc2209Reg.GCONF`. Where dropping the
+    prefix would leave a digit or nothing, the C name is the only name.
+    """
+    names = [name for name, _ in members]
+    if len(names) < 2:
+        return {}
+    prefix = os.path.commonprefix(names)
+    prefix = prefix[: prefix.rfind("_") + 1]
+    if not prefix:
+        return {}
+    short = {name: name[len(prefix) :] for name in names}
+    if any(not s.isidentifier() or s[0].isdigit() for s in short.values()):
+        return {}
+    return {name: s for name, s in short.items() if s != name}
+
+
+def is_bit_valued(members: list[tuple[str, int]]) -> bool:
+    """Whether every enumerator is one distinct bit, so the enum is already a flag set."""
+    values = [value for _, value in members]
+    return bool(values) and all(v > 0 and v & (v - 1) == 0 for v in values)
+
+
+def py_enums(abi: Abi) -> list[PyEnum]:
+    """Return the enum classes to emit, with the C spellings each one answers to.
+
+    A `*_mask_t` over single-bit enumerators is a flag set. Over an index enum it
+    gets a class of its own at `1 << index`, since the macro saying so does not
+    survive preprocessing. Everything else is an ordinary enumeration.
+    """
+
+    masked = {
+        name.removesuffix(MASK_SUFFIX) + "_t": name
+        for name in abi.semantic_typedefs
+        if name.endswith(MASK_SUFFIX)
+    }
+    named = {
+        name.removesuffix(ID_SUFFIX) + "_t": name
+        for name in abi.semantic_typedefs
+        if name.endswith(ID_SUFFIX)
+    }
+
+    out: list[PyEnum] = []
+    for item in abi.enums:
+        short = short_names(item.members)
+        mask = masked.get(item.name)
+        flags = mask is not None and is_bit_valued(item.members)
+
+        spellings = [item.name]
+        if item.name in named:
+            spellings.append(named[item.name])
+        if flags:
+            spellings.append(masked[item.name])
+
+        out.append(
+            PyEnum(
+                name=class_name_of(item.name),
+                base="IntFlag" if flags else "IntEnum",
+                members=[(name, short.get(name, ""), v) for name, v in item.members],
+                doc=item.doc,
+                flat=True,
+                spellings=spellings,
+            )
+        )
+
+        if mask is None or flags:
+            continue
+        out.append(
+            PyEnum(
+                name=class_name_of(mask),
+                base="IntFlag",
+                members=[
+                    (name, short.get(name, ""), 1 << value)
+                    for name, value in item.members
+                    if not name.endswith(TERMINATOR)
+                ],
+                doc=f"One bit per {item.name}, as {mask} carries them.",
+                flat=False,
+                spellings=[mask],
+            )
+        )
+
+    return out
 
 
 # ── Rendering the module ─────────────────────────────────────────────────────
@@ -437,20 +701,31 @@ def render(abi: Abi) -> str:
     for name, value in abi.constants:
         w(f"{name} = {value}")
 
-    for item in abi.enums:
+    classes = py_enums(abi)
+    for item in classes:
         w("")
         w("")
-        w(f"class {item.name}(enum.IntEnum):")
-        for member, value in item.members:
+        w(f"class {item.name}(enum.{item.base}):")
+        if item.doc:
+            out.extend(docstring(item.doc, "    "))
+            w("")
+        for member, short, value in item.members:
             w(f"    {member} = {value}")
-        w("")
-        for member, _ in item.members:
-            w(f"{member} = {item.name}.{member}")
+            if short:
+                w(f"    {short} = {value}")
+        if item.flat:
+            w("")
+            w(f"{item.spellings[0]} = {item.name}")
+            for member, _, _ in item.members:
+                w(f"{member} = {item.name}.{member}")
 
     for record in abi.records:
         w("")
         w("")
         w(f"class {record.name}(ctypes.{record.kind}):")
+        if record.doc:
+            out.extend(docstring(record.doc, "    "))
+            w("")
         w("    _fields_ = [")
         for member, ctype in record.fields:
             w(f'        ("{member}", {ctype}),')
@@ -480,6 +755,32 @@ def render(abi: Abi) -> str:
         if record.flex:
             member, count, elem = record.flex
             w(f'    {record.name}: Flex("{member}", "{count}", {elem}),')
+    w("}")
+
+    w("")
+    w("SEMANTIC = {")
+    for record in abi.records:
+        if not record.semantic:
+            continue
+        written = ", ".join(f'"{f}": "{t}"' for f, t in record.semantic.items())
+        w(f"    {record.name}: {{{written}}},")
+    w("}")
+
+    w("")
+    w("PY_ENUM = {")
+    for item in classes:
+        for spelling in item.spellings:
+            w(f'    "{spelling}": {item.name},')
+    w("}")
+
+    w("")
+    w("DOC = {")
+    for item in abi.enums:
+        for member, note in item.member_docs.items():
+            w(f'    "{item.name}.{member}": {note!r},')
+    for record in abi.records:
+        for member, note in record.field_docs.items():
+            w(f'    "{record.name}.{member}": {note!r},')
     w("}")
 
     w("")

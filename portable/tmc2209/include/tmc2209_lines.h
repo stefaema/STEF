@@ -36,6 +36,26 @@ typedef enum {
 #define TMC2209_LINES_ALL ((uint8_t)((1U << TMC2209_LINE_COUNT) - 1U))
 
 /**
+ * @brief The level on a pin, electrical and with no polarity applied.
+ *
+ * A bool would imply a default direction that only the wiring knows; these two
+ * names say exactly what the field is.
+ */
+typedef enum {
+    TMC2209_LOW  = 0,
+    TMC2209_HIGH = 1,
+} tmc2209_level_t;
+
+/** @brief A @ref tmc2209_line_t narrowed to a byte. */
+typedef uint8_t tmc2209_line_id_t;
+
+/** @brief One bit per @ref tmc2209_line_t, via @ref TMC2209_LINE_BIT. */
+typedef uint8_t tmc2209_line_mask_t;
+
+/** @brief A @ref tmc2209_level_t narrowed to a byte, for a field on a wire. */
+typedef uint8_t tmc2209_level_id_t;
+
+/**
  * @brief Filled with how a backend reads and writes the four control lines of the driver, through fn pointers.
  *
  * Both calls need to be implemented by the backend, and they are called with the same @p ctx pointer.
@@ -57,7 +77,7 @@ typedef struct tmc2209_lines {
     /** One bit per @ref tmc2209_line_t, via TMC2209_LINE_BIT. A line left out
         is one this board does not connect, and every call naming it is
         refused rather than silently moving some other pin. */
-    uint8_t wired;
+    tmc2209_line_mask_t wired;
 } tmc2209_lines_t;
 
 /** @brief True for a line the driver reads. DIAG is the one it does not. */
