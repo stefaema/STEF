@@ -253,6 +253,28 @@ def nudge(args: MoveArgs): ...
     assert "rpm" in str(caught.value)
 
 
+def test_an_action_declaring_params_over_nothing_derived_is_refused(declaring):
+    with pytest.raises(bench_api.DerivationError) as caught:
+        declaring(
+            """
+from shared import bench_api
+
+@bench_api.action("raw.nudge", params=(bench_api.integer("rpm"),))
+def nudge(): ...
+"""
+        )
+    assert "rpm" in str(caught.value)
+
+
+def test_an_action_splits_its_prose_into_the_line_and_the_rest(rig):
+    read = rig.actions["raw.read"]
+    assert read.effect == "Read one register."
+    assert read.description == "Answers from the cache when the slot is still valid."
+
+    version = rig.actions["sys.version"]
+    assert version.effect == "Report the protocol version."
+
+
 def test_an_action_over_a_field_no_kind_renders_is_refused(declaring):
     with pytest.raises(bench_api.DerivationError) as caught:
         declaring(

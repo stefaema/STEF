@@ -5,7 +5,7 @@ import dataclasses
 import pytest
 
 from shared import bench_api
-from shared.bench_api import READY, Level, Status, blocked, worst
+from shared.bench_api import READY, Level, blocked
 
 # ── Readiness ────────────────────────────────────────────────────────────────
 
@@ -40,27 +40,6 @@ def test_two_refusals_for_the_same_reason_are_the_same_verdict():
 
 
 # ── State ────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("left", list(Status))
-@pytest.mark.parametrize("right", list(Status))
-def test_worst_of_a_pair_is_the_one_that_ranks_higher(left, right):
-    got = worst([left, right])
-    assert got in (left, right)
-    assert bench_api.SEVERITY.index(got) == max(
-        bench_api.SEVERITY.index(left), bench_api.SEVERITY.index(right)
-    )
-
-
-def test_worst_is_the_order_the_screen_reports():
-    assert worst([Status.PASSED, Status.WARNED]) is Status.WARNED
-    assert worst([Status.WARNED, Status.FAILED]) is Status.FAILED
-    assert worst([Status.SKIPPED, Status.PASSED]) is Status.PASSED
-
-
-def test_a_run_of_nothing_but_skips_is_not_reported_as_a_pass():
-    assert worst([Status.SKIPPED, Status.SKIPPED]) is Status.SKIPPED
-    assert worst([]) is Status.SKIPPED
 
 
 def test_a_subsystem_state_is_not_the_firmwares_mode():

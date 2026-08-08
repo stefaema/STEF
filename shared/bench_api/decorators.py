@@ -174,8 +174,9 @@ def action(
             Action(
                 name=name,
                 subsystem=owner.id,
-                description="\n\n".join(p for p in (summary, body) if p),
-                params=with_declared(derived, declared) if derived else declared,
+                effect=summary,
+                description=body,
+                params=with_declared(derived, declared),
                 hazardous=hazardous,
                 precondition=precondition,
                 digest=digest,

@@ -27,14 +27,3 @@ class Level(enum.Enum):
     OK = "ok"
     WARN = "warn"
     ERROR = "error"
-
-
-SEVERITY = (Status.SKIPPED, Status.PASSED, Status.WARNED, Status.FAILED)
-
-
-def worst(statuses):
-    """Return the status a run settles at, which is the worst any step reached."""
-    found = list(statuses)
-    if not found:
-        return Status.SKIPPED
-    return max(found, key=SEVERITY.index)

@@ -31,10 +31,17 @@ def params_for(target: type) -> tuple[Param, ...]:
 
     hints = typing.get_type_hints(target)
     return tuple(
-        param_for(target, f.name, hints[f.name])
+        _hinted(param_for(target, f.name, hints[f.name]), f.metadata.get("doc"))
         for f in dataclasses.fields(target)
         if f.name in hints
     )
+
+
+def _hinted(param: Param, note: str | None) -> Param:
+    """Return the parameter with the note as its hint, where it carries none of its own."""
+    if note is None or param.hint is not None:
+        return param
+    return dataclasses.replace(param, hint=note)
 
 
 def param_for(owner: type, name: str, annotation: object) -> Param:

@@ -58,6 +58,7 @@ class Action:
 
     name: str
     subsystem: str
+    effect: str
     description: str
     params: tuple[Param, ...]
     hazardous: bool

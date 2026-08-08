@@ -1,8 +1,7 @@
 """One vocabulary three unrelated subsystems speak, so one screen renders declarations.
 
 The subsystem declares what only it can know; everything else is the GUI's. A
-declaration imports this package and this package imports nothing back: no I/O,
-no third-party dependency, no subsystem, and no ctypes.
+declaration imports this package and this package imports nothing back.
 """
 
 from shared.bench_api.decorators import (
@@ -39,12 +38,11 @@ from shared.bench_api.registry import (
     load,
 )
 from shared.bench_api.results import Outcome, Result, Table
-from shared.bench_api.state import SEVERITY, Level, Status, SubsystemState, worst
+from shared.bench_api.state import Level, Status, SubsystemState
 
 __all__ = [
     "READY",
     "REGISTRY",
-    "SEVERITY",
     "Action",
     "BenchTest",
     "Button",
@@ -83,5 +81,4 @@ __all__ = [
     "step",
     "subsystem",
     "with_declared",
-    "worst",
 ]

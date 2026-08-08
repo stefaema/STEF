@@ -1,6 +1,6 @@
 """Every row of the derivation table, including the row that is an error."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -96,6 +96,17 @@ def test_a_string_annotation_resolves_the_same_way():
     # `from __future__ import annotations` makes every annotation a string, so
     # get_type_hints rather than raw __annotations__ is what has to be read.
     assert kinds(Op) == [("reg", Kind.CHOICE), ("value", Kind.INTEGER)]
+
+
+def test_a_field_documented_by_its_source_derives_that_as_its_hint():
+    @dataclass
+    class Documented:
+        rate: int = field(default=0, metadata={"doc": "rate held between the ramps"})
+        bare: int = 0
+
+    rate, bare = params_for(Documented)
+    assert rate.hint == "rate held between the ramps"
+    assert bare.hint is None
 
 
 # ── The residue a declaration adds ───────────────────────────────────────────
