@@ -551,7 +551,7 @@ tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
  * @brief Starts a move. Returns as soon as the pulses are on their way.
  *
  * Non-blocking. Sets DIR, then starts the train, in that order and never the other.
- * tmc2209_get_motion_report() is how the caller learns the run ended.
+ * tmc2209_motion_report() is how the caller learns the run ended.
  *
  * A backend reports one run at a time, so the count belongs to whoever collects
  * it before the next move starts. Nothing here enforces that: a caller who
@@ -619,7 +619,7 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
  *
  * The count is not collected here, because a ramped halt is still moving when
  * this returns and its final total is not known yet.
- * tmc2209_get_motion_report() is what collects it.
+ * tmc2209_motion_report() is what collects it.
  *
  * Halting an idle driver succeeds and does nothing.
  *
@@ -653,7 +653,7 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
  * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
  * @retval TMC2209_ERR_IO          the backend failed
  */
-tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out);
+tmc2209_err_t tmc2209_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out);
 
 /* ── Cache validity ─────────────────────────────────────────────────────── */
 

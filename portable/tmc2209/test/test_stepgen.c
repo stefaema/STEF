@@ -196,7 +196,7 @@ static tmc2209_movement_plan_t a_move(bool dir, uint32_t pulses)
 static tmc2209_motion_report_t motion_now(void)
 {
     tmc2209_motion_report_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_get_motion_report(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_motion_report(&g_dev, &motion));
     return motion;
 }
 
@@ -214,7 +214,7 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_move(&g_dev, &m));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_halt(&g_dev, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_retarget(&g_dev, 1000));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion_report(&g_dev, &motion));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_running(&g_dev, &running));
     TEST_ASSERT_EQUAL(0U, g_gen.runs);
 }
@@ -752,7 +752,7 @@ static void test_a_backend_failure_yields_no_count(void)
     tmc2209_motion_report_t motion;
 
     g_gen.fail_state = 1;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_get_motion_report(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_motion_report(&g_dev, &motion));
 
     g_gen.fail_state = 0;
     g_gen.fail_halt  = 1;
@@ -766,7 +766,7 @@ static void test_null_arguments_are_bad_arguments(void)
 
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(NULL, &m));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_get_motion_report(&g_dev, NULL));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_motion_report(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_halt(NULL, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_retarget(NULL, 1000));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_is_running(&g_dev, NULL));
@@ -781,7 +781,7 @@ static void test_init_leaves_the_stepgen_detached(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
 
     tmc2209_motion_report_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_get_motion_report(&g_dev, &motion));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion_report(&g_dev, &motion));
 }
 
 void run_stepgen_tests(void)

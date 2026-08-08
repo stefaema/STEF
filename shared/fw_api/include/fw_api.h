@@ -257,7 +257,7 @@ RPC_WIRE_SIZE(rpc_relay_send_ret, 36);
  */
 typedef enum {
     RPC_RAW_READ             = 0,
-    RPC_RAW_POLL             = 1,
+    RPC_RAW_POLL_RAW         = 1,
     RPC_RAW_WRITE            = 2,
     RPC_RAW_POLL_HEALTH      = 3,
     RPC_RAW_CLEAR_FAULTS     = 4,
@@ -277,7 +277,7 @@ typedef enum {
     RPC_RAW_MOVE             = 18,
     RPC_RAW_RETARGET         = 19,
     RPC_RAW_HALT             = 20,
-    RPC_RAW_MOTION           = 21,
+    RPC_RAW_MOTION_REPORT    = 21,
     RPC_RAW_COUNT            = 22,
 } rpc_raw_method_t;
 
@@ -295,8 +295,8 @@ typedef struct {
 } rpc_raw_read_ret;
 RPC_WIRE_SIZE(rpc_raw_read_ret, 4);
 
-typedef rpc_raw_read_args rpc_raw_poll_args;
-typedef rpc_raw_read_ret  rpc_raw_poll_ret;
+typedef rpc_raw_read_args rpc_raw_poll_raw_args;
+typedef rpc_raw_read_ret  rpc_raw_poll_raw_ret;
 
 /** @brief A device, then @c count registers to write to it. */
 typedef struct {
@@ -493,7 +493,7 @@ typedef struct {
 } rpc_raw_halt_args;
 RPC_WIRE_SIZE(rpc_raw_halt_args, 4);
 
-typedef rpc_dev_args rpc_raw_motion_args;
+typedef rpc_dev_args rpc_raw_motion_report_args;
 
 typedef struct {
     uint32_t           emitted;  /**< pulses of the current run, or of the last one */
@@ -502,8 +502,8 @@ typedef struct {
     tmc2209_level_id_t dir;      /**< DIR the counted run was started with */
     rpc_bool_t         shaft;    /**< GCONF.shaft the counted run was started with */
     uint8_t            _pad;
-} rpc_raw_motion_ret;
-RPC_WIRE_SIZE(rpc_raw_motion_ret, 12);
+} rpc_raw_motion_report_ret;
+RPC_WIRE_SIZE(rpc_raw_motion_report_ret, 12);
 
 /* ── State and statuses ─────────────────────────────────────────────────── */
 

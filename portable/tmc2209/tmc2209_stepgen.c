@@ -233,7 +233,7 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate)
     return (dev->stepgen->halt(dev->stepgen->ctx, immediate) < 0) ? TMC2209_ERR_IO : TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_get_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out)
+tmc2209_err_t tmc2209_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out)
 {
     if (!out) {
         return TMC2209_ERR_ARG;

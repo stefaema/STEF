@@ -72,10 +72,10 @@ static rpc_status_t raw_read(const void *args, void *ret)
     return rpc_status_of_err(tmc2209_read(dev, (tmc2209_reg_t)in->reg, &out->value));
 }
 
-static rpc_status_t raw_poll(const void *args, void *ret)
+static rpc_status_t raw_poll_raw(const void *args, void *ret)
 {
-    const rpc_raw_poll_args *in  = args;
-    rpc_raw_poll_ret        *out = ret;
+    const rpc_raw_poll_raw_args *in  = args;
+    rpc_raw_poll_raw_ret        *out = ret;
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
@@ -418,10 +418,10 @@ static rpc_status_t raw_halt(const void *args, void *ret)
     return rpc_status_of_err(tmc2209_halt(dev, in->immediate != 0U));
 }
 
-static rpc_status_t raw_motion(const void *args, void *ret)
+static rpc_status_t raw_motion_report(const void *args, void *ret)
 {
-    const rpc_raw_motion_args *in  = args;
-    rpc_raw_motion_ret        *out = ret;
+    const rpc_raw_motion_report_args *in  = args;
+    rpc_raw_motion_report_ret        *out = ret;
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
@@ -429,7 +429,7 @@ static rpc_status_t raw_motion(const void *args, void *ret)
     }
 
     tmc2209_motion_report_t m   = { 0 };
-    tmc2209_err_t           err = tmc2209_get_motion_report(dev, &m);
+    tmc2209_err_t           err = tmc2209_motion_report(dev, &m);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
     }
@@ -445,7 +445,7 @@ static rpc_status_t raw_motion(const void *args, void *ret)
 
 const rpc_method_t rpc_raw_methods[RPC_RAW_COUNT] = {
     [RPC_RAW_READ]             = RPC_METHOD(raw_read),
-    [RPC_RAW_POLL]             = RPC_METHOD(raw_poll),
+    [RPC_RAW_POLL_RAW]         = RPC_METHOD(raw_poll_raw),
     [RPC_RAW_WRITE]            = RPC_METHOD_VAR(raw_write),
     [RPC_RAW_POLL_HEALTH]      = RPC_METHOD(raw_poll_health),
     [RPC_RAW_CLEAR_FAULTS]     = RPC_METHOD_ACK(raw_clear_faults),
@@ -465,5 +465,5 @@ const rpc_method_t rpc_raw_methods[RPC_RAW_COUNT] = {
     [RPC_RAW_MOVE]             = RPC_METHOD_ACK(raw_move),
     [RPC_RAW_RETARGET]         = RPC_METHOD_ACK(raw_retarget),
     [RPC_RAW_HALT]             = RPC_METHOD_ACK(raw_halt),
-    [RPC_RAW_MOTION]           = RPC_METHOD(raw_motion),
+    [RPC_RAW_MOTION_REPORT]    = RPC_METHOD(raw_motion_report),
 };

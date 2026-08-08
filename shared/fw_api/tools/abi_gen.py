@@ -41,6 +41,10 @@ HEADERS = [
     ("portable/tmc2209/include/tmc2209_stepgen.h", NAMES_ONLY),
 ]
 
+PROSE_HEADERS = [
+    "portable/tmc2209/include/tmc2209.h",
+]
+
 STATUS_HEADERS = {"rpc_proto.h", "fw_api.h"}
 
 # ── How a C type is spelled in ctypes ────────────────────────────────────────
@@ -154,6 +158,7 @@ class Abi:
     functions: list[Function] = field(default_factory=list)
     statuses: list[tuple[str, int]] = field(default_factory=list)
     semantic_typedefs: list[str] = field(default_factory=list)
+    function_docs: dict[str, str] = field(default_factory=dict)
 
 
 # ── The pinned toolchain, so the output is reproducible ──────────────────────
@@ -216,7 +221,8 @@ def parse(source: str, name: str = "abi_gen.c") -> cindex.Cursor:
 
 def includes() -> str:
     """Return the #include lines naming every header being read."""
-    return "".join(f'#include "{Path(h).name}"\n' for h, _ in HEADERS)
+    read = [h for h, _ in HEADERS] + PROSE_HEADERS
+    return "".join(f'#include "{Path(h).name}"\n' for h in read)
 
 
 # ── Macros, which clang reports as tokens and not values ─────────────────────
@@ -311,6 +317,39 @@ def clean_comment(raw: str | None) -> str | None:
     if len(lines) > 1 and lines[1]:
         lines.insert(1, "")
     return "\n".join(lines).strip() or None
+
+
+BLOCKS = ("@param", "@retval", "@return")
+
+
+def prose(raw: str | None) -> str | None:
+    """Return the comment's text without the parameter and return blocks."""
+    text = clean_comment(raw)
+    if text is None:
+        return None
+
+    lines: list[str] = []
+    for line in text.split("\n"):
+        if line.startswith(BLOCKS):
+            break
+        lines.append(line)
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines) or None
+
+
+def function_prose(root: cindex.Cursor) -> dict[str, str]:
+    """Return what each function is documented as, for the headers read only for that."""
+    read = {Path(h).name for h in PROSE_HEADERS}
+    found: dict[str, str] = {}
+    for cursor in root.get_children():
+        if cursor.kind != CursorKind.FUNCTION_DECL or not cursor.location.file:
+            continue
+        if Path(cursor.location.file.name).name not in read:
+            continue
+        if (note := prose(cursor.raw_comment)) is not None:
+            found[cursor.spelling] = note
+    return found
 
 
 def docstring(text: str, indent: str) -> list[str]:
@@ -553,6 +592,7 @@ def collect() -> Abi:
     abi.aliases = in_header_order(aliases)
     abi.functions = in_header_order(functions)
     abi.statuses = in_header_order(statuses)
+    abi.function_docs = function_prose(root)
 
     if not abi.statuses:
         raise GeneratorError("no status enumerators found")
@@ -781,6 +821,12 @@ def render(abi: Abi) -> str:
     for record in abi.records:
         for member, note in record.field_docs.items():
             w(f'    "{record.name}.{member}": {note!r},')
+    w("}")
+
+    w("")
+    w("FUNCTION_DOC = {")
+    for name, note in abi.function_docs.items():
+        w(f'    "{name}": {note!r},')
     w("}")
 
     w("")

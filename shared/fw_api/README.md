@@ -15,6 +15,11 @@ tables saying what C could only imply, which member is flexible and which typede
 bool or an enum. Sizes, offsets and enum values are the compiler's answer, so no name is
 written twice and a method number cannot disagree across the link.
 
+The comments come too. `DOC` holds what each member is documented as, and `FUNCTION_DOC`
+what each call in `PROSE_HEADERS` is, so a sentence about the wire is authored once beside
+the thing it describes. Those headers are read for their prose alone and put nothing on the
+emitted surface.
+
 `abi.py` opens `build/libfw_api.so` at import, so the library is built before any Python
 here runs, tests included.
 
@@ -42,9 +47,13 @@ ctypes lays out bytes and stops there: padding is visible, a flexible member's c
 be maintained by hand, and a field the C declared `uint8_t` stays an int even when only a
 typedef says it is a direction. `api.py` mirrors every payload as a dataclass without those
 seams, types each field from the ABI's tables, and `encode`/`decode` move between the two.
+Each field keeps its documentation in `metadata["doc"]`, which is how a caller reads what a
+value means without reaching for the header.
 
 The callable surface comes from the same enums. `namespaces()` pairs each namespace and
 method with the payload structs their names predict, and `attach(carry)` binds all of them
 to whatever will actually send a frame, so a transport gets `raw.halt(...)` without naming
-a single method. `from shared import fw_api` reaches this file first and the generated
+a single method. A namespace in `LIBRARY_CALL` is one method per public call of the library
+it binds, so each `MethodSpec` also carries that call's prose, and a method resolving to
+none of them is an error rather than a method the screen cannot describe. `from shared import fw_api` reaches this file first and the generated
 names behind it.

@@ -3,6 +3,7 @@
 import ctypes
 import dataclasses
 import enum
+from types import MappingProxyType
 from typing import Any, NamedTuple
 
 from shared.fw_api import abi
@@ -118,6 +119,14 @@ def python_name(struct_type: type) -> str:
     return "".join(part.capitalize() for part in stem.split("_"))
 
 
+def _documented(spec: Any, struct_type: type, name: str) -> Any:
+    """Return the field carrying whatever the C said about this member."""
+    note = abi.DOC.get(f"{struct_type.__name__}.{name}")
+    if note is not None:
+        spec.metadata = MappingProxyType({"doc": note})
+    return spec
+
+
 def dataclass_for(struct_type: type) -> type:
     """Return the dataclass mirroring one payload, its fields in wire order.
 
@@ -140,10 +149,12 @@ def dataclass_for(struct_type: type) -> type:
         if flex is not None and name == flex.count_field:
             continue
         want = _python_type(struct_type, name, ctype)
-        fields.append((name, want, _default_for(want, ctype)))
+        spec = _documented(_default_for(want, ctype), struct_type, name)
+        fields.append((name, want, spec))
     if flex is not None:
         want = _flex_type(flex.elem)
-        fields.append((flex.field, want, _default_for(want, None)))
+        spec = _documented(_default_for(want, None), struct_type, flex.field)
+        fields.append((flex.field, want, spec))
 
     built = dataclasses.make_dataclass(python_name(struct_type), fields)
     built.__doc__ = struct_type.__doc__
@@ -265,6 +276,22 @@ class MethodSpec(NamedTuple):
     ret: type | None
     fields: tuple[str, ...]
     wire: tuple[type | None, type | None] = (None, None)
+    doc: str | None = None
+
+
+LIBRARY_CALL = {"raw": "tmc2209_"}
+
+
+def _prose(stem: str, attr: str) -> str | None:
+    """Return the prose the generator attached to one method, if any."""
+    prefix = LIBRARY_CALL.get(stem.lower())
+    if prefix is None:
+        return None
+
+    note = abi.FUNCTION_DOC.get(f"{prefix}{attr}")
+    if note is None:
+        raise ApiError(f"{stem.lower()}.{attr} names no {prefix}call")
+    return note
 
 
 def _positional_fields(args_type: type | None) -> tuple[str, ...]:
@@ -294,6 +321,7 @@ def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
             ret=ret,
             fields=_positional_fields(args),
             wire=(args_wire, ret_wire),
+            doc=_prose(stem, attr),
         )
     return specs
 

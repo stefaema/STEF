@@ -76,6 +76,24 @@ def test_every_method_carries_at_least_one_payload():
             assert spec.args is not None or spec.ret is not None, spec.name
 
 
+def test_a_field_carries_the_comment_its_header_gave_it():
+    move = fw_api.namespaces()["raw"]["move"].args
+    by_name = {f.name: f for f in dataclasses.fields(move)}
+
+    assert by_name["cruise_pps"].metadata["doc"] == "rate held between the ramps"
+    assert "doc" not in by_name["idx"].metadata
+
+
+def test_every_raw_method_carries_the_prose_of_the_call_it_binds():
+    for name, spec in fw_api.namespaces()["raw"].items():
+        assert spec.doc == fw_api.abi.FUNCTION_DOC[f"tmc2209_{name}"], spec.name
+
+
+def test_a_namespace_that_binds_no_library_carries_no_prose():
+    for spec in fw_api.namespaces()["sys"].values():
+        assert spec.doc is None
+
+
 def test_no_terminator_became_a_method():
     for specs in fw_api.namespaces().values():
         assert "count" not in specs

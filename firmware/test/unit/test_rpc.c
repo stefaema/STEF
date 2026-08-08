@@ -172,8 +172,8 @@ void test_rpc_unknown_device_is_a_bad_argument(void)
 {
     rpc_setup(false);
 
-    rpc_raw_poll_args a = { .idx = 7, .reg = TMC2209_IOIN };
-    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    rpc_raw_poll_raw_args a = { .idx = 7, .reg = TMC2209_IOIN };
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
 }
 
 /*
@@ -185,11 +185,11 @@ void test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame(void)
 {
     rpc_setup(false);
 
-    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
+    rpc_raw_poll_raw_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) - 1U));
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a) + 1U));
-    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL, &a, 0));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a) - 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a) + 1U));
+    TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, 0));
 }
 
 /* A failing status carries nothing, so a client never reads return values that
@@ -198,9 +198,9 @@ void test_rpc_a_failing_call_carries_no_payload(void)
 {
     rpc_setup(false);
 
-    rpc_raw_poll_args a = { .idx = 7, .reg = TMC2209_IOIN };
+    rpc_raw_poll_raw_args a = { .idx = 7, .reg = TMC2209_IOIN };
 
-    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_ARG, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
     TEST_ASSERT_EQUAL_size_t(0, g_ret_len);
 }
 
@@ -211,10 +211,10 @@ void test_rpc_poll_returns_what_the_device_holds(void)
     rpc_setup(false);
     mock_set_reg(&g_mock, TMC2209_IOIN, 0x21000041U);
 
-    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
+    rpc_raw_poll_raw_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
-    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
-    TEST_ASSERT_EQUAL_HEX32(0x21000041U, RET(rpc_raw_poll_ret)->value);
+    TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL_HEX32(0x21000041U, RET(rpc_raw_poll_raw_ret)->value);
 }
 
 void test_rpc_read_serves_the_cache_and_refuses_an_empty_slot(void)
@@ -330,24 +330,24 @@ void test_rpc_verify_config_reports_agreement_as_a_value(void)
 
 void test_rpc_transport_faults_reach_the_wire_as_themselves(void)
 {
-    rpc_raw_poll_args a = { .idx = 0, .reg = TMC2209_IOIN };
+    rpc_raw_poll_raw_args a = { .idx = 0, .reg = TMC2209_IOIN };
 
     rpc_setup(false);
     g_mock.fail_crc = 1;
-    TEST_ASSERT_EQUAL(RPC_CRC, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_CRC, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
     TEST_ASSERT_EQUAL_size_t(0, g_ret_len); /* an error carries nothing */
 
     rpc_setup(false);
     g_mock.drop_reply = 1;
-    TEST_ASSERT_EQUAL(RPC_RX_TIMEOUT, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_RX_TIMEOUT, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
 
     rpc_setup(false);
     g_mock.wrong_reg = 1;
-    TEST_ASSERT_EQUAL(RPC_REG, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_REG, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
 
     rpc_setup(false);
     g_mock.corrupt_echo = 1;
-    TEST_ASSERT_EQUAL(RPC_ECHO, call(RPC_NS_RAW, RPC_RAW_POLL, &a, sizeof(a)));
+    TEST_ASSERT_EQUAL(RPC_ECHO, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
 }
 
 void test_rpc_an_unconfirmed_write_is_not_reported_as_a_write(void)

@@ -154,8 +154,8 @@ class RpcRawMethod(enum.IntEnum):
 
     RPC_RAW_READ = 0
     READ = 0
-    RPC_RAW_POLL = 1
-    POLL = 1
+    RPC_RAW_POLL_RAW = 1
+    POLL_RAW = 1
     RPC_RAW_WRITE = 2
     WRITE = 2
     RPC_RAW_POLL_HEALTH = 3
@@ -194,15 +194,15 @@ class RpcRawMethod(enum.IntEnum):
     RETARGET = 19
     RPC_RAW_HALT = 20
     HALT = 20
-    RPC_RAW_MOTION = 21
-    MOTION = 21
+    RPC_RAW_MOTION_REPORT = 21
+    MOTION_REPORT = 21
     RPC_RAW_COUNT = 22
     COUNT = 22
 
 
 rpc_raw_method_t = RpcRawMethod
 RPC_RAW_READ = RpcRawMethod.RPC_RAW_READ
-RPC_RAW_POLL = RpcRawMethod.RPC_RAW_POLL
+RPC_RAW_POLL_RAW = RpcRawMethod.RPC_RAW_POLL_RAW
 RPC_RAW_WRITE = RpcRawMethod.RPC_RAW_WRITE
 RPC_RAW_POLL_HEALTH = RpcRawMethod.RPC_RAW_POLL_HEALTH
 RPC_RAW_CLEAR_FAULTS = RpcRawMethod.RPC_RAW_CLEAR_FAULTS
@@ -222,7 +222,7 @@ RPC_RAW_IS_ENABLED = RpcRawMethod.RPC_RAW_IS_ENABLED
 RPC_RAW_MOVE = RpcRawMethod.RPC_RAW_MOVE
 RPC_RAW_RETARGET = RpcRawMethod.RPC_RAW_RETARGET
 RPC_RAW_HALT = RpcRawMethod.RPC_RAW_HALT
-RPC_RAW_MOTION = RpcRawMethod.RPC_RAW_MOTION
+RPC_RAW_MOTION_REPORT = RpcRawMethod.RPC_RAW_MOTION_REPORT
 RPC_RAW_COUNT = RpcRawMethod.RPC_RAW_COUNT
 
 
@@ -969,7 +969,7 @@ class rpc_raw_halt_args(ctypes.Structure):
     ]
 
 
-class rpc_raw_motion_ret(ctypes.Structure):
+class rpc_raw_motion_report_ret(ctypes.Structure):
     _fields_ = [
         ("emitted", ctypes.c_uint32),
         ("rate_pps", ctypes.c_uint32),
@@ -1135,8 +1135,8 @@ rpc_status_t = ctypes.c_uint8
 rpc_dev_id_t = ctypes.c_uint8
 rpc_mode_id_t = ctypes.c_uint8
 rpc_reset_id_t = ctypes.c_uint8
-rpc_raw_poll_args = rpc_raw_read_args
-rpc_raw_poll_ret = rpc_raw_read_ret
+rpc_raw_poll_raw_args = rpc_raw_read_args
+rpc_raw_poll_raw_ret = rpc_raw_read_ret
 rpc_raw_poll_health_args = rpc_dev_args
 rpc_raw_poll_load_args = rpc_dev_args
 rpc_raw_poll_pins_args = rpc_dev_args
@@ -1146,7 +1146,7 @@ rpc_raw_bringup_args = rpc_raw_write_args
 rpc_raw_all_owned_valid_args = rpc_dev_args
 rpc_raw_invalidate_owned_args = rpc_dev_args
 rpc_raw_is_enabled_args = rpc_dev_args
-rpc_raw_motion_args = rpc_dev_args
+rpc_raw_motion_report_args = rpc_dev_args
 tmc2209_reg_id_t = ctypes.c_uint8
 tmc2209_slot_mask_t = ctypes.c_uint32
 tmc2209_condition_mask_t = ctypes.c_uint32
@@ -1187,7 +1187,7 @@ SIZEOF = {
     "rpc_raw_move_args": 20,
     "rpc_raw_retarget_args": 8,
     "rpc_raw_halt_args": 4,
-    "rpc_raw_motion_ret": 12,
+    "rpc_raw_motion_report_ret": 12,
     "tmc2209_load_t": 4,
     "tmc2209_gconf_t": 10,
     "tmc2209_chopconf_t": 20,
@@ -1260,7 +1260,7 @@ SEMANTIC = {
     },
     rpc_raw_retarget_args: {"idx": "rpc_dev_id_t"},
     rpc_raw_halt_args: {"idx": "rpc_dev_id_t", "immediate": "rpc_bool_t"},
-    rpc_raw_motion_ret: {
+    rpc_raw_motion_report_ret: {
         "running": "rpc_bool_t",
         "dir": "tmc2209_level_id_t",
         "shaft": "rpc_bool_t",
@@ -1367,10 +1367,10 @@ DOC = {
     "rpc_raw_move_args.pullin_pps": "rate of the first and last pulse",
     "rpc_raw_move_args.cruise_pps": "rate held between the ramps",
     "rpc_raw_move_args.accel_pps_s": "slope of both ramps",
-    "rpc_raw_motion_ret.emitted": "pulses of the current run, or of the last one",
-    "rpc_raw_motion_ret.rate_pps": "rate presently being emitted",
-    "rpc_raw_motion_ret.dir": "DIR the counted run was started with",
-    "rpc_raw_motion_ret.shaft": "GCONF.shaft the counted run was started with",
+    "rpc_raw_motion_report_ret.emitted": "pulses of the current run, or of the last one",
+    "rpc_raw_motion_report_ret.rate_pps": "rate presently being emitted",
+    "rpc_raw_motion_report_ret.dir": "DIR the counted run was started with",
+    "rpc_raw_motion_report_ret.shaft": "GCONF.shaft the counted run was started with",
     "tmc2209_load_t.value": "SG_RESULT, 0..510. Higher means less load",
     "tmc2209_load_t.usable": "false when the reading carries no information",
     "tmc2209_gconf_t.i_scale_analog": "external VREF",
@@ -1400,6 +1400,38 @@ DOC = {
     "tmc2209_mscuract_t.cur_a": "-255..255",
     "tmc2209_pwm_scale_t.sum": "actual PWM duty StealthChop settled on",
     "tmc2209_pwm_scale_t.automatic": "-255..255, signed amplitude correction",
+}
+
+FUNCTION_DOC = {
+    "tmc2209_init": "Construction only.\n\nEvery register slot starts invalid and no backend is attached.",
+    "tmc2209_attach_uart": "Gives the device the channel it speaks on.\n\nThe wire is shared: one link carries up to four drivers, told apart by the\naddress handed to tmc2209_init(), so several devices attach the same @p uart\nand inherit its timeout and retry policy along with it.",
+    "tmc2209_bringup": "Claims a reachable driver and writes @p config to it.\n\nProbes the driver, seeds the IFCNT baseline, clears GSTAT, reads the\nCONSTANT registers off this particular part, and writes the configuration.\n\n@p config must cover all @ref TMC2209_OWNED_COUNT owned registers. A partial\nconfiguration is rejected.\n\nReturns with the driver holding @p config and standing still.\n\nGSTAT as found is handed back through @p at_bringup before it is cleared,\nwhich is the only chance to see what the driver went through before this\nfirmware owned it. It says nothing about why the *controller* restarted;\nthat is esp_reset_reason()'s answer.",
+    "tmc2209_read": "Reads a register from the cache.\n\nServes owned and constant registers. Volatile registers are refused: the\ndriver changes them, so a remembered copy describes a moment that has\npassed. tmc2209_poll_health() and friends are the way to obtain those.",
+    "tmc2209_write": "Writes a batch of owned registers and verifies that it landed.\n\nThe array is the unit of work: @p n datagrams followed by one IFCNT check,\nso a ten-register configuration costs eleven transactions rather than\ntwenty. Every op is validated before any byte goes out.\n\nBehaviour worth knowing at a call site:\n\n- **Ordering.** Applied in order. A register named twice takes its last\nvalue, and the superseded ops are dropped rather than transmitted.\n- **Skipping.** An op whose value already matches a valid slot is dropped.\nA batch may therefore put zero datagrams on the wire.\n- **Failure.** Any failure invalidates *every* slot in the batch, including\nops transmitted before the failure. Nothing in a batch is confirmed until\nthe IFCNT read at the end, so an early abort leaves even the transmitted\nops unverified. Recovery is to re-send the batch.\n- **During a run, at the caller's risk.** A batch is not refused while\nSTEP pulses are in flight, and three registers will corrupt the run without\nsaying so: GCONF.shaft reverses the motor at speed, CHOPCONF.mres changes\nwhat a pulse is worth halfway through, and a non-zero VACTUAL takes the\ndriver off its STEP pin with the count still rising.",
+    "tmc2209_poll_health": "Reads GSTAT and DRV_STATUS, and reports what is wrong.\n\nOne condition set from two registers.\n\nTMC2209_DRIVER_RESET invalidates every owned slot as sync was lost with the driver.\nConfiguration backup should be handled outside the library.\n\nPurely observational: the latched half of @ref tmc2209_condition_t therefore stays\nasserted across polls until tmc2209_clear_faults() acknowledges it.",
+    "tmc2209_clear_faults": "Acknowledges latched conditions so they stop being reported.\n\nGSTAT flags are latched in the driver: once set they stay set until a 1 is\nwritten back.\n\nPass back the conditions received from `tmc2209_poll_health()`. Only the bits\nin @ref TMC2209_CONDITIONS_LATCHED are acted on; live conditions are ignored,\nso handing the whole set straight back is the intended use. Acknowledging\nonly what was actually seen is also what makes this safe against a fault that\nlatches between the poll and the acknowledgement: it survives to be reported.\n\nThis validates nothing. Clearing `TMC2209_DRIVER_RESET` says the reset was\nnoticed, not that the configuration was rewritten; only a successful\n`tmc2209_write()` covering the owned registers does that (see `tmc2209_bringup()`).",
+    "tmc2209_poll_load": "Reads the StallGuard load estimate, with whether it can be believed at first glance\n\nSG_RESULT is only meaningful inside the TCOOLTHRS speed window, so a raw\nnumber on its own cannot be acted on. This checks what\nit can: TCOOLTHRS of zero means StallGuard is disabled outright.",
+    "tmc2209_poll_pins": "Reads the live input pin states.\n\nReturns the decoded struct rather than a condition, because pin-level detail\nis exactly what a bring-up caller is asking for. IOIN also carries the\ndriver revision; tmc2209_poll_version() is the way to ask for that.",
+    "tmc2209_poll_version": "Reads the revision of the driver answering at this address.\n\nThe IOIN version field is a compatibility generation, not a model number:\n@ref TMC2209_LIB_IOIN_VERSION is the first revision of the TMC2209, and a\nTMC2208 answering 0x20 is a side effect rather than the field's purpose.\nA later revision would report a different number and still be a TMC2209.\n\nReported rather than judged. Which revisions an installation accepts is a\npolicy question, so the caller compares against @ref TMC2209_LIB_IOIN_VERSION,\nor against a set of its own, and decides.",
+    "tmc2209_poll_raw": "Reads any readable register off the device, uninterpreted.\n\nThe path for MSCNT, MSCURACT, PWM_SCALE and PWM_AUTO, which carry no\ncondition worth naming, and for a diagnostic that dumps the whole device.\nDoes not update the cache.",
+    "tmc2209_verify_config": "Checks the cache against the driver for the registers that read back.\n\nOnly GCONF and CHOPCONF can be checked, since the other eight owned\nregisters are write-only.",
+    "tmc2209_set_velocity": "Sets the internal velocity generator. Immediate and verified.\n\nA non-zero value takes the driver off its STEP pin, silently and with no\nfault raised, so it must be returned to zero before coordinated motion.\n\nVACTUAL is write-only driver-side, so the value can only ever be checked\nagainst the cache. That is authoritative while the slot is valid, and\nTMC2209_DRIVER_RESET is what ends the guarantee.",
+    "tmc2209_set_current": "Sets run and hold current. Immediate and verified.",
+    "tmc2209_attach_lines": "Gives the device its control lines.\n\nOptional, and one set per driver. Every line call on a device without them\nreports TMC2209_ERR_NO_BACKEND, so a configuration-only caller needs no stub\nbackend.",
+    "tmc2209_line_is_wired": "True when @p line is attached and this board connects it.",
+    "tmc2209_line_read": "Reads the level presently on a line.\n\nElectrical, uninterpreted. An output answers with the level being driven,\nwhich is what makes this the read-back after a write.\n\nThis and IOIN observe the same pins from opposite ends of the trace, one\nfrom the ESP32 and one from the driver, so a disagreement between them is\nevidence neither reading can produce alone. See tmc2209_poll_pins().",
+    "tmc2209_line_write": "Drives a line to a level.\n\nElectrical and immediate: no polarity applied, no sequencing, no\npreconditions checked. Driving STEP low then high is one microstep only if\neach level was held for the part's minimum pulse width, which nothing here\nmeasures and nothing here waits for.",
+    "tmc2209_enable": "Enables or disables the power stage.\n\nENN's polarity is a property of the part, so it is applied here and the\ncaller says what it wants rather than what level achieves it.\n\nNothing is checked and nothing is refused. A driver whose CHOPCONF.toff is\nzero enables and still holds no current, which is a fact worth learning from\na poll rather than from a rejected call.\n\nWorth knowing when reading DRV_STATUS afterwards: open load and cs_actual\ndescribe a power stage that is driving. A disabled driver reports them\nanyway, and they mean nothing.",
+    "tmc2209_is_enabled": "Reads back whether the power stage is enabled.\n\nThe ESP32's view. IOIN.enn is the driver's, and tmc2209_poll_pins() is how\nto ask for it.",
+    "tmc2209_attach_stepgen": "Gives the device its source of STEP pulses.\n\nOne per driver, like the lines and unlike the shared wire. Attaching one hands\nSTEP over: `tmc2209_line_write()` on STEP is refused from then on, because a\nperipheral bound to a pin and a GPIO write to the same pin are two owners and\nnot two views.",
+    "tmc2209_is_running": "Whether STEP pulses are presently going out.\n\nAsks the backend and reports, touching nothing else. This is what a\nsupervisor watches with.",
+    "tmc2209_move": "Starts a move. Returns as soon as the pulses are on their way.\n\nNon-blocking. Sets DIR, then starts the train, in that order and never the other.\ntmc2209_motion_report() is how the caller learns the run ended.\n\nA backend reports one run at a time, so the count belongs to whoever collects\nit before the next move starts. Nothing here enforces that: a caller who\nneeds the total is the caller who reads it.\n\n@p m.shaft is applied, not assumed: a driver holding the other value is\nwritten first, which costs one verified datagram and costs nothing when it\nalready agrees. The cached GCONF has to be valid for that, since the\nregister's other bits would otherwise have to be invented. Refusing to move\nrather than guessing is deliberate.\n\nA non-zero VACTUAL takes the driver off its STEP pin silently, so a move\nwould emit pulses that move nothing and still be counted. That is refused\nwhen the cache knows the velocity, and not when it does not, because\ninventing a refusal out of an invalid slot is worse than the check's absence.",
+    "tmc2209_retarget": "Changes the cruise rate of a run in flight.\n\nWhat an unbounded run is for. Restarting the run to change speed would put a\nstop and a start into the motion.\n\nUnlike tmc2209_move(), a rate below pullin_pps is accepted. Pull-in bounds\nstarting and stopping, not running: a motor already turning can be ramped\nanywhere below it.",
+    "tmc2209_halt": "Ends the run.\n\nNot an emergency stop. @p immediate still finishes the pulse in progress, and\nthe ramped form keeps stepping all the way down to pullin_pps. Anything\ngenuinely urgent drops the power stage with tmc2209_enable(), which is\nsynchronous and needs no peripheral to cooperate.\n\nThe count is not collected here, because a ramped halt is still moving when\nthis returns and its final total is not known yet.\ntmc2209_motion_report() is what collects it.\n\nHalting an idle driver succeeds and does nothing.",
+    "tmc2209_motion_report": "Collects the run's pulse count, rate, and whether it is still going.\n\nReaches the stepgen backend and nothing else.\n\nA backend holds one run's count, so this is the only chance to read a total\nbefore the next move overwrites it. Nothing enforces that: a caller that\nstarts another move without asking loses the previous run's count.\n\nThe count is pulses emitted, not steps taken. They agree while the motor\nstays in sync.",
+    "tmc2209_all_owned_valid": "True when every owned slot is valid. False for a NULL device.",
+    "tmc2209_invalidate_owned": "Invalidates every owned slot.\n\nConstant slots survive, since a brownout does not change the factory trim.\nCallers that write through tmc2209_uart_send() must call this: a datagram the\nlibrary did not build is one it cannot account for.",
+    "tmc2209_uart_send": "Sends raw bytes and optionally collects a fixed-length reply.\n\nBytes in, bytes out, no interpretation. The caller framed the datagram, so\nthis keeps the lock and the echo discipline and skips framing and the cache\nentirely.\n\nNothing about the reply is judged. A wrong CRC, a reply for a register that\nwas not asked about, and outright nonsense all come back as bytes, because\nthe caller here is diagnosing the driver and an opinion from this library\nwould be another thing under suspicion.\n\nShort replies are reported rather than discarded. @p rx_got says how many\nbytes arrived, which separates nothing at all from something incomplete and\nis what makes the bytes that did arrive safe to look at.",
 }
 
 
