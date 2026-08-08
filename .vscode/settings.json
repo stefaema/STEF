@@ -1,15 +1,10 @@
 {
     // ---------------------------------------------------------------- C / C++
-    // clangd is the only C/C++ engine here (no cpptools installed). Per-tree
-    // .clangd files pick the compile database; this section only says how to
-    // launch the server. --query-driver is the load-bearing flag: without it
-    // clangd refuses to run the cross GCC and every ESP-IDF header goes missing.
     "clangd.path": "clangd",
     "clangd.useBuiltInClangdIfAvailable": false,
     "clangd.arguments": [
-        // Two drivers to allow: the cross GCC for firmware/src, and the nix
-        // host GCC the unit tests are built with (its libc headers live in the
-        // store, not /usr/include, so clangd has to ask it).
+        // Without this clangd refuses to run the cross GCC and the nix host
+        // GCC, and every header they own goes missing.
         "--query-driver=/nix/store/*/bin/xtensa-esp*-elf-*,/nix/store/*/bin/*gcc*,/usr/bin/*gcc*,/usr/bin/*clang*",
         "--background-index",
         "--clang-tidy",
@@ -21,18 +16,14 @@
     "clangd.onConfigChanged": "restart",
     "clangd.detectExtensionConflicts": true,
     "clangd.enableClangTidyDiagnostic": true,
-    // Fallback for files not in any compile database (a brand new .c before a
-    // reconfigure, or a scratch header). Keeps the editor from red-lining C11.
     "clangd.fallbackFlags": [
         "-std=c11",
         "-Wall"
     ],
 
     // ------------------------------------------------------------------ CMake
-    // The ESP-IDF app is not driven by cmake-tools: it needs idf.py and the nix
-    // devshell. Point cmake-tools at the host unit tests instead, and never let
-    // it configure on its own, because the configure needs IDF_PATH from the
-    // devshell. Use the Tasks (Ctrl+Shift+B) for anything that must build.
+    // cmake-tools drives the host unit tests only. The ESP-IDF app needs idf.py
+    // and IDF_PATH from the devshell, so nothing configures automatically.
     "cmake.sourceDirectory": "${workspaceFolder}/firmware/test/unit",
     "cmake.buildDirectory": "${workspaceFolder}/firmware/test/unit/build",
     "cmake.configureOnOpen": false,
@@ -41,14 +32,10 @@
     "cmake.exportCompileCommandsFile": true,
 
     // ----------------------------------------------------------------- Python
-    // Every module is a package rooted at the repository root, so there is one
-    // import root and pyrightconfig.json needs no path list to keep in sync.
-    // That file is what the pipeline reads too, so neither can propose what the
-    // other rejects.
     "basedpyright.analysis.autoImportCompletions": true,
+    "basedpyright.analysis.diagnosticMode": "workspace",
 
-    // Lint diagnostics only. filesystemFirst makes ruff.toml beat user-level
-    // settings, which otherwise flag rules this repository does not select.
+    // filesystemFirst makes ruff.toml beat user-level settings.
     "ruff.configuration": "${workspaceFolder}/ruff.toml",
     "ruff.configurationPreference": "filesystemFirst",
 
@@ -60,21 +47,26 @@
     ],
 
     // ------------------------------------------------------------- Formatting
-    // Nothing rewrites on save: the editor's tools are not the pinned ones, and
-    // formatting with a different version produces diffs `fmt` then rejects.
-    // `python -m ci_cd.run fmt --fix` is what formats.
+    // `python -m ci_cd.run fmt --fix` formats. The editor's tools are not the
+    // pinned versions, so on-save rewrites produce diffs `fmt` then rejects.
     "[c]": {
-        "editor.defaultFormatter": "kylinideteam.kylin-clangd",
+        "editor.defaultFormatter": "KylinIdeTeam.kylin-clangd",
         "editor.formatOnSave": false
     },
     "[cpp]": {
-        "editor.defaultFormatter": "kylinideteam.kylin-clangd",
+        "editor.defaultFormatter": "KylinIdeTeam.kylin-clangd",
         "editor.formatOnSave": false
     },
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": false
     },
+
+    // --------------------------------------------------------------- Problems
+    "problems.defaultViewMode": "tree",
+    "problems.sortOrder": "severity",
+    "problems.showCurrentInStatus": true,
+    "problems.autoReveal": false,
 
     // ------------------------------------------------------------------ Files
     "files.associations": {
@@ -86,8 +78,6 @@
     },
     "files.insertFinalNewline": true,
     "files.trimTrailingWhitespace": true,
-    // Build trees are enormous (ESP-IDF pulls in the whole framework). Hiding
-    // them from search is what keeps Ctrl+Shift+F usable.
     "search.exclude": {
         "**/build/**": true,
         "**/.cache/**": true,
