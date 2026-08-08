@@ -397,8 +397,7 @@ static void test_write_verifies_the_batch_once(void)
 }
 
 /* An op whose value already matches a valid slot changes nothing, so it never
-   reaches the wire. This is what recovers the old flush()'s saving without any
-   staging state. */
+   reaches the wire. */
 static void test_write_skips_ops_that_change_nothing(void)
 {
     setup_ready();

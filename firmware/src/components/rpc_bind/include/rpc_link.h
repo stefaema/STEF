@@ -6,8 +6,6 @@
  * also go to stdout, because raw text between frames is exactly what a framer
  * must not receive. Starting the link redirects the log stream into it, and
  * from that moment a log is a frame like any other.
- *
- * See firmware/docs/top-bottom-assessment.md, "How RPC Works".
  */
 
 #ifndef RPC_LINK_H
