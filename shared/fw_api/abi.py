@@ -80,7 +80,7 @@ RPC_FRAME_LOG = RpcFrame.RPC_FRAME_LOG
 
 
 class RpcNs(enum.IntEnum):
-    """Namespaces, by who assembles the bytes. See docs/README.md."""
+    """Namespaces, by who assembles the bytes."""
 
     RPC_NS_SYS = 0
     SYS = 0
