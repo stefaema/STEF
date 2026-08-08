@@ -1,3 +1,8 @@
+# The part is an ESP32-S3, and nothing but sdkconfig says so. Without this a
+# fresh checkout configures for the default esp32, which has no USB-Serial/JTAG
+# peripheral, and rpc_link fails to link against a driver that exports nothing.
+CONFIG_IDF_TARGET="esp32s3"
+
 # We flash/monitor over the native USB port (USB-Serial/JTAG), not the
 # UART-bridge "COM" port. ESP-IDF's default makes native USB a secondary,
 # output-only console (stdin still bound to UART0), which silently breaks
