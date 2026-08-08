@@ -134,6 +134,49 @@ def test_arguments_travel_positionally_and_by_name():
         assert (args.idx, args.reg) == (1, fw_api.TMC2209_GCONF)
 
 
+def test_a_reply_reaches_the_caller_as_python_and_not_as_ctypes():
+    _, link = linked(echo_state)
+    with link:
+        state = link.sys.state()
+
+    assert state == fw_api.namespaces()["sys"]["state"].ret(
+        uptime_ms=1234, device_count=3, mode=fw_api.RpcMode.IDLE, ready=True
+    )
+    assert state.mode is fw_api.RpcMode.RPC_MODE_IDLE
+    assert state.ready is True
+    assert not isinstance(state, ctypes.Structure)
+
+
+def test_an_enum_argument_puts_the_byte_a_bare_int_would_have():
+    def answer(_firmware, frame):
+        return [seal_reply(frame.header.id, fw_api.RPC_OK)]
+
+    firmware, link = linked(answer)
+    with link:
+        link.raw.move(idx=1, dir=fw_api.Tmc2209Level.HIGH, shaft=True, pulses=4000)
+        link.raw.move(idx=1, dir=1, shaft=1, pulses=4000)
+
+    by_hand = fw_api.rpc_raw_move_args(idx=1, dir=1, shaft=1, pulses=4000)
+    assert [request.payload for request in firmware.requests] == [bytes(by_hand)] * 2
+
+
+def test_a_device_table_arrives_as_a_list_of_dataclasses():
+    def answer(_firmware, frame):
+        head = fw_api.rpc_sys_devices_ret(count=1)
+        one = fw_api.rpc_dev_info_t(
+            name=b"capstan", addr=0, wired=fw_api.TMC2209_LINES_ALL, has_uart=1
+        )
+        return [seal_reply(frame.header.id, fw_api.RPC_OK, bytes(head) + bytes(one))]
+
+    _, link = linked(answer)
+    with link:
+        (capstan,) = link.sys.devices().devs
+
+    assert capstan.name == b"capstan"
+    assert capstan.has_uart is True
+    assert capstan.wired is fw_api.Tmc2209LineMask(fw_api.TMC2209_LINES_ALL)
+
+
 def test_a_flexible_argument_reaches_the_wire_whole():
     datagram = bytes(range(fw_api.TMC2209_WRITE_LEN))
 

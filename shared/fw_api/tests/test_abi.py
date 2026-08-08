@@ -1,4 +1,5 @@
 import ctypes
+import enum
 
 import pytest
 
@@ -127,6 +128,105 @@ def test_a_flexible_member_is_named_but_not_laid_out(head):
     laid_out = [name for name, _ in head._fields_]
     assert flex.field not in laid_out
     assert flex.count_field in laid_out
+
+
+# ── What the semantic typedefs became ────────────────────────────────────────
+
+SUFFIXES = ("_id_t", "_mask_t")
+
+WRITTEN = sorted({w for fields in abi.SEMANTIC.values() for w in fields.values()})
+
+
+def enum_named_by(written):
+    """Return the enum a semantic typedef narrows, or None when it narrows nothing."""
+    for suffix in SUFFIXES:
+        if written.endswith(suffix):
+            return getattr(abi, written[: -len(suffix)] + "_t", None)
+    return None
+
+
+def laid_out(record):
+    """Return every field name the record carries, its flexible member included."""
+    names = {name for name, *_ in record._fields_}
+    flex = abi.FLEX.get(record)
+    return names | ({flex.field} if flex else set())
+
+
+DESCRIBED = sorted(abi.SEMANTIC, key=lambda record: record.__name__)
+
+
+@pytest.mark.parametrize("record", DESCRIBED)
+def test_semantic_names_a_real_record_and_only_its_own_fields(record):
+    assert record.__name__ in abi.SIZEOF
+    assert set(abi.SEMANTIC[record]) <= laid_out(record)
+
+
+@pytest.mark.parametrize("written", WRITTEN)
+def test_a_narrowing_resolves_to_an_enum_or_to_nothing_but_never_to_a_typo(written):
+    named = enum_named_by(written)
+    if named is None:
+        assert written not in abi.PY_ENUM or not written.endswith(SUFFIXES)
+    else:
+        assert written in abi.PY_ENUM
+
+
+@pytest.mark.parametrize("key", sorted(abi.DOC))
+def test_every_doc_key_names_a_real_member_or_field(key):
+    owner, _, member = key.rpartition(".")
+    target = getattr(abi, owner)
+    if isinstance(target, type) and issubclass(target, enum.IntEnum | enum.IntFlag):
+        assert member in target.__members__
+    else:
+        assert member in laid_out(target)
+
+
+TRANSCRIBED = sorted(
+    spelling
+    for spelling in abi.PY_ENUM
+    # A mask beside an index enum holds 1 << index, so it disagrees on purpose.
+    if abi.PY_ENUM[spelling]
+    is abi.PY_ENUM.get(
+        spelling.removesuffix("_id_t").removesuffix("_mask_t") + "_t", object()
+    )
+    or not spelling.endswith(SUFFIXES)
+)
+
+
+@pytest.mark.parametrize("spelling", TRANSCRIBED)
+def test_a_class_agrees_with_the_flat_constants_it_was_built_from(spelling):
+    cls = abi.PY_ENUM[spelling]
+    seen = 0
+    for name, member in cls.__members__.items():
+        flat = getattr(abi, name, None)
+        if isinstance(flat, int):
+            seen += 1
+            assert int(flat) == int(member)
+    assert seen
+
+
+def test_a_mask_over_an_index_enum_is_one_bit_per_index():
+    assert abi.PY_ENUM["tmc2209_line_mask_t"] is abi.Tmc2209LineMask
+    for line in abi.Tmc2209Line:
+        if line.name.endswith("_COUNT"):
+            continue
+        assert int(abi.Tmc2209LineMask[line.name]) == 1 << int(line)
+    assert int(abi.Tmc2209LineMask(abi.TMC2209_LINES_ALL)) == abi.TMC2209_LINES_ALL
+
+
+def test_a_mask_over_a_bit_enum_is_that_enum_itself():
+    assert abi.PY_ENUM["tmc2209_condition_mask_t"] is abi.Tmc2209Condition
+    assert issubclass(abi.Tmc2209Condition, enum.IntFlag)
+    assert abi.Tmc2209Condition(abi.TMC2209_CONDITIONS_LATCHED) == (
+        abi.Tmc2209Condition.DRIVER_RESET
+        | abi.Tmc2209Condition.DRIVER_FAULT
+        | abi.Tmc2209Condition.UNDERVOLTAGE
+    )
+
+
+def test_a_level_is_an_enumeration_and_not_a_flag_set():
+    assert abi.PY_ENUM["tmc2209_level_id_t"] is abi.Tmc2209Level
+    assert not issubclass(abi.Tmc2209Level, enum.IntFlag)
+    assert (abi.Tmc2209Level.LOW, abi.Tmc2209Level.HIGH) == (0, 1)
 
 
 def test_the_register_table_is_the_librarys():
