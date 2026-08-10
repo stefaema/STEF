@@ -386,18 +386,3 @@ class FirmwareLink:
         payload = fw_api.arguments(spec, args, kwargs)
         reply = self._broker.request(spec.ns, spec.method, payload, timeout)
         return fw_api.result(spec, reply)
-
-
-# ── Finding the board ────────────────────────────────────────────────────────
-
-
-def find_port() -> str:
-    """Return the one attached ESP32's port, or say why there is no one answer."""
-    from transport.temp_esp32_finder import find_candidates
-
-    matches = [port.device for port, match in find_candidates() if match is not None]
-    if not matches:
-        raise LinkError("no ESP32-like USB device found")
-    if len(matches) > 1:
-        raise LinkError(f"several candidates, name one: {', '.join(matches)}")
-    return matches[0]
