@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ _("STEF - Diagnostics") }}</title>
+<script>
+  (function () {
+    var stored = null;
+    try { stored = localStorage.getItem("stef.theme"); } catch (e) {}
+    if (stored !== "light" && stored !== "dark") {
+      stored = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.classList.toggle("dark", stored === "dark");
+  })();
+</script>
+<link rel="stylesheet" href="/web/tailwind.css">
+</head>
+<body class="h-full text-sm text-gray-900 dark:text-white">
+
+<div class="app-grid">
+
+  <header class="area-header flex items-center gap-5 px-4 bg-surface border-b border-gray-200 dark:border-gray-700">
+    <div class="flex items-center gap-3">
+{% include "_logo.html" %}
+      <span class="flex items-baseline gap-2">
+        <span class="text-lg font-bold tracking-wide">STEF</span>
+        <span class="text-xs text-gray-500 dark:text-gray-400">{{ _("Film Transport and Scanning System") }}</span>
+      </span>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <div id="theme" class="inline-flex gap-0.5 p-0.5 bg-inset border border-gray-200 dark:border-gray-700 rounded-lg">
+      <button type="button" data-theme="light" class="px-3 py-1 text-xs rounded-md cursor-pointer">{{ _("Light") }}</button>
+      <button type="button" data-theme="dark" class="px-3 py-1 text-xs rounded-md cursor-pointer">{{ _("Dark") }}</button>
+    </div>
+  </header>
+
+  <nav class="area-rail flex flex-col gap-1 p-2 bg-surface border-r border-gray-200 dark:border-gray-700">
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="theaters">
+        {{ _("Operation") }}
+      </span>
+      <a href="/diagnostics" class="flex items-center gap-3 px-3 py-2 rounded-lg font-medium text-gray-900 bg-gray-200 dark:text-white dark:bg-gray-700" aria-current="page" data-icon="vital_signs">
+        {{ _("Diagnostics") }}
+      </a>
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="list_alt">
+        {{ _("Log") }}
+      </span>
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="settings">
+        {{ _("Settings") }}
+      </span>
+    <div class="mt-auto pt-3 px-3 border-t border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      <span class="app-version">{{ _("Firmware not queried") }}</span>
+    </div>
+  </nav>
+
+  <main class="area-main overflow-auto p-5 flex flex-col gap-4"></main>
+
+  <section class="area-prompt flex items-center gap-2 px-5 py-2 bg-surface border-t border-gray-200 dark:border-gray-700">
+    <span class="font-mono text-gray-500">&gt;</span>
+    <input class="prompt-field flex-1 min-w-0 p-2 font-mono text-sm bg-inset border border-gray-300 rounded-lg text-gray-900 read-only:bg-transparent read-only:border-transparent read-only:text-gray-500 dark:border-gray-600 dark:text-white" type="text" readonly aria-label="{{ _("Command") }}">
+    <button class="prompt-send inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-900 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700" disabled>{{ _("Send") }} &crarr;</button>
+  </section>
+
+  <div class="log-resizer area-log-handle h-1.5 cursor-row-resize bg-gray-300 hover:bg-blue-600 dark:bg-gray-700" role="separator" aria-orientation="horizontal" title="{{ _("Drag to resize") }}"></div>
+  <section class="area-log flex flex-col bg-sunken border-t border-gray-200 dark:border-gray-700">
+    <div class="flex items-center gap-3 px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+      <span class="text-xs font-semibold uppercase tracking-widest text-gray-600 dark:text-gray-400">{{ _("Log") }}</span>
+      <div class="log-chips flex gap-1"></div>
+      <div class="flex-1"></div>
+      <button class="log-pause px-3 py-1.5 text-xs rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-white">{{ _("Pause") }}</button>
+      <button class="log-clear px-3 py-1.5 text-xs rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-white">{{ _("Clear") }}</button>
+      <button class="log-export px-3 py-1.5 text-xs rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-white">{{ _("Export") }}</button>
+    </div>
+    <div class="log-row-gui shrink-0 px-4 py-1.5 bg-inset border-b border-gray-200 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      <span>{{ _("Timestamp") }}</span>
+      <span>{{ _("Module") }}</span>
+      <span>{{ _("Type") }}</span>
+      <span>{{ _("Message") }}</span>
+    </div>
+    <div class="log-body flex-1 overflow-auto py-1 font-mono text-xs tabular-nums"></div>
+  </section>
+</div>
+
+<div class="toasts fixed bottom-4 right-4 z-[60] flex flex-col gap-2"></div>
+
+<script>window.STEF_TEXT = {{ text|tojson }};</script>
+<script src="/web/vendor/material-symbols/icons.js"></script>
+<script src="/web/app/diagnostics.js"></script>
+</body>
+</html>
