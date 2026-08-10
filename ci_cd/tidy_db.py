@@ -21,6 +21,7 @@ GCC_ONLY = {
 
 @functools.cache
 def system_includes(driver: str) -> tuple[str, ...]:
+    """Return the flags that put the driver's own header search list in clang's hands."""
     probe = subprocess.run(
         [driver, "-xc", "-E", "-v", "-"],
         input="",
@@ -42,6 +43,7 @@ def system_includes(driver: str) -> tuple[str, ...]:
 
 
 def sources() -> list[Path]:
+    """Return every directory holding a compile database, host builds and firmware."""
     dirs = [p.parent for p in sorted(CICD_BUILD.glob("*/*/compile_commands.json"))]
     firmware = ROOT / "firmware" / "src" / "build"
     if (firmware / "compile_commands.json").exists():
@@ -50,6 +52,7 @@ def sources() -> list[Path]:
 
 
 def rewritten_for_clang(dbs: list[Path]) -> tuple[Path, set[str]] | None:
+    """Merge the databases into one clang can parse, returning it and the files it covers."""
     merged: dict[str, dict] = {}
     for src in dbs:
         db = src / "compile_commands.json"
