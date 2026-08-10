@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass
 
-from shared.bench_api.state import Level
+from shared.bench_api.results import Level
 
 
 @dataclass(frozen=True, slots=True)
-class Event:
+class LogEvent:
     """One line on the log: who said it, how loud, and when."""
 
     time: float

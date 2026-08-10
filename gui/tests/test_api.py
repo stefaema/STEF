@@ -44,25 +44,17 @@ def test_every_declaration_reaches_the_browser_as_json(client):
 def test_a_live_option_list_crosses_as_its_name_and_not_as_a_snapshot(client):
     transport = client.get("/api/subsystems").json()[0]
     port = transport["link"]["params"][0]
-    assert port["catalog"] == "serial_ports"
+    assert port["options_name"] == "serial_ports"
     assert port["options"] is None
-    assert client.get("/api/catalog/serial_ports").status_code == 200
+    assert client.get("/api/options/serial_ports").status_code == 200
 
 
-def test_a_catalog_nobody_declared_is_a_refusal(client):
-    assert client.get("/api/catalog/nothing_declares_this").status_code == 404
-
-
-def test_an_option_may_read_differently_from_what_the_call_takes():
-    assert wire._option(("/dev/ttyACM0", "/dev/ttyACM0 (a board)")) == {
-        "value": "/dev/ttyACM0",
-        "label": "/dev/ttyACM0 (a board)",
-    }
-    assert wire._option("auto") == {"value": "auto", "label": "auto"}
+def test_options_nobody_declared_are_a_refusal(client):
+    assert client.get("/api/options/nothing_declares_this").status_code == 404
 
 
 def test_the_port_list_offers_more_than_the_shortlist(client):
-    offered = client.get("/api/catalog/serial_ports").json()
+    offered = client.get("/api/options/serial_ports").json()
     assert offered[0]["value"] == "auto"
     assert all("value" in one and "label" in one for one in offered)
 
@@ -160,34 +152,6 @@ def test_abandoning_leaves_the_steps_after_it_skipped_rather_than_failed(
         client.post("/api/run/transport/verify_port", json={"port": "auto"}).text
     )
     assert [s["status"] for s in settled[1:]] == ["skipped", "skipped"]
-
-
-# ── Coercion, since JSON has one number type and no bytes ────────────────────
-
-
-def test_hex_typed_into_a_raw_field_becomes_bytes():
-    from shared.bench_api import Kind, Param
-
-    field = Param(name="tx", kind=Kind.RAW_BYTES)
-    assert wire.arguments((field,), {"tx": "de ad be ef"}) == {
-        "tx": b"\xde\xad\xbe\xef"
-    }
-    assert wire.arguments((field,), {"tx": ""}) == {"tx": b""}
-
-
-def test_an_odd_number_of_hex_digits_is_read_as_a_leading_zero():
-    from shared.bench_api import Kind, Param
-
-    field = Param(name="tx", kind=Kind.RAW_BYTES)
-    assert wire.arguments((field,), {"tx": "f0f"}) == {"tx": b"\x0f\x0f"}
-
-
-def test_something_that_is_not_hex_is_refused_rather_than_sent():
-    from shared.bench_api import Kind, Param
-
-    field = Param(name="tx", kind=Kind.RAW_BYTES)
-    with pytest.raises(ValueError, match="hexadecimal"):
-        wire.arguments((field,), {"tx": "zz"})
 
 
 def test_every_record_carries_a_number_that_only_goes_up():

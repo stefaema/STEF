@@ -1,4 +1,4 @@
-"""What a subsystem is doing, and how a run turned out."""
+"""What a subsystem is doing."""
 
 import enum
 
@@ -9,21 +9,4 @@ class SubsystemState(enum.Enum):
     DOWN = "down"
     LINKING = "linking"
     UP = "up"
-    ERROR = "error"
-
-
-class Status(enum.Enum):
-    """How one step of a bench test turned out."""
-
-    PASSED = "passed"
-    WARNED = "warned"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
-
-class Level(enum.Enum):
-    """How much attention a result wants."""
-
-    OK = "ok"
-    WARN = "warn"
     ERROR = "error"

@@ -12,7 +12,7 @@ from shared.bench_api.tests.fixture.payloads import (
 
 
 def devices():
-    """Return the device list, as a live catalog would."""
+    """Return the device list, as one that must be fetched would."""
     return ("capstan", "supply", "takeup")
 
 

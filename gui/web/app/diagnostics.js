@@ -158,13 +158,13 @@
     });
   }
 
-  var catalogs = {};
+  var fetched = {};
 
-  function catalog(name) {
-    if (catalogs[name]) return Promise.resolve(catalogs[name]);
-    return api("/api/catalog/" + encodeURIComponent(name)).then(function (options) {
-      catalogs[name] = options;
-      return options;
+  function options(name) {
+    if (fetched[name]) return Promise.resolve(fetched[name]);
+    return api("/api/options/" + encodeURIComponent(name)).then(function (list) {
+      fetched[name] = list;
+      return list;
     });
   }
 
@@ -460,9 +460,9 @@
       },
     });
 
-    function fill(options) {
+    function fill(list) {
       clear(select);
-      (options || []).forEach(function (option) {
+      (list || []).forEach(function (option) {
         select.append(
           el("option", {
             value: option.value,
@@ -472,27 +472,27 @@
           })
         );
       });
-      if (values[spec.name] == null && options && options.length) {
-        values[spec.name] = options[0].value;
-        select.value = String(options[0].value);
+      if (values[spec.name] == null && list && list.length) {
+        values[spec.name] = list[0].value;
+        select.value = String(list[0].value);
       }
     }
 
     var box = fieldBox(spec, select);
-    if (spec.catalog) {
+    if (spec.options_name) {
       var row = el("div", { class: "flex items-center gap-2" });
       select.classList.add("flex-1");
       var refresh = el("button", {
         class: CLS.btnQuiet,
         title: (T.link || {}).refresh,
         onclick: function () {
-          delete catalogs[spec.catalog];
-          catalog(spec.catalog).then(fill);
+          delete fetched[spec.options_name];
+          options(spec.options_name).then(fill);
         },
       }, icon("sync", "size-4"));
       box = fieldBox(spec, row);
       row.append(select, refresh);
-      catalog(spec.catalog).then(fill);
+      options(spec.options_name).then(fill);
     } else {
       fill(spec.options);
     }

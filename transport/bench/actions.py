@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 from shared import bench_api, fw_api
-from shared.bench_api import Level, Result, Table, blocked
+from shared.bench_api import Level, Option, Result, Table, blocked
 from shared.bench_api.stef import STEF
 
 SUMMARY = 140
@@ -63,7 +63,7 @@ def connected(*_: Any, **__: Any) -> Any:
     return None
 
 
-def devices() -> tuple[tuple[int, str], ...]:
+def devices() -> tuple[Option, ...]:
     """Return the board's driver table, as the names each index stands for.
 
     Asked rather than declared. The firmware's table carries the names, growing
@@ -77,7 +77,7 @@ def devices() -> tuple[tuple[int, str], ...]:
     except Exception:  # noqa: BLE001
         return ()
     return tuple(
-        (index, _as_text(entry.name) or str(index))
+        Option(index, _as_text(entry.name) or str(index))
         for index, entry in enumerate(reply.devs)
     )
 

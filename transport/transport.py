@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from shared import bench_api
-from shared.bench_api import READY, Readiness, SubsystemState, blocked
+from shared.bench_api import READY, Option, Readiness, SubsystemState, blocked
 from transport import fw_image, fw_link, fw_probe
 
 AUTO = "auto"
 
 
-def serial_ports() -> tuple[tuple[str, str], ...]:
+def serial_ports() -> tuple[Option, ...]:
     """Return every attached port, each with a label saying what it looks like.
 
     Every port, not only the shortlist. What the descriptor settles is what
@@ -21,7 +21,10 @@ def serial_ports() -> tuple[tuple[str, str], ...]:
     recommendation rather than a filter.
     """
     ranked = sorted(fw_probe.candidates(), key=lambda c: (not c.plausible, c.device))
-    return ((AUTO, AUTO), *((c.device, _label(c)) for c in ranked))
+    return (
+        Option(AUTO, AUTO),
+        *(Option(c.device, _label(c)) for c in ranked),
+    )
 
 
 def _label(candidate: fw_probe.Candidate) -> str:

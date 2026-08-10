@@ -88,12 +88,13 @@ def test_a_character_field_inside_a_repeating_member_reads_as_text_too(sys_specs
 
 def test_a_driver_is_chosen_by_name_and_never_by_a_bare_number():
     from shared import bench_api
+    from shared.bench_api.params import options_name
 
     bench_api.load("transport.bench")
     read = bench_api.REGISTRY.subsystem("transport").actions["raw.read"]
-    idx = next(p for p in read.params if p.name == "idx")
-    assert idx.kind is bench_api.Kind.CHOICE
-    assert idx.catalog == "devices"
+    idx = next(p for p in read.params if p["name"] == "idx")
+    assert idx["kind"] == "choice"
+    assert options_name(idx) == "devices"
 
 
 def test_the_driver_list_is_empty_rather_than_wrong_while_nothing_is_connected():

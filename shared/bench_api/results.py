@@ -1,8 +1,24 @@
 """One vocabulary for what a call found, whoever made it."""
 
+import enum
 from dataclasses import dataclass
 
-from shared.bench_api.state import Level, Status
+
+class StepStatus(enum.Enum):
+    """How one step of a bench test turned out."""
+
+    PASSED = "passed"
+    WARNED = "warned"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class Level(enum.Enum):
+    """How much attention a result wants."""
+
+    OK = "ok"
+    WARN = "warn"
+    ERROR = "error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,9 +42,9 @@ class Result:
 
 
 @dataclass(frozen=True, slots=True)
-class Outcome:
+class StepOutcome:
     """How one step of a bench test settled."""
 
-    status: Status
+    status: StepStatus
     detail: str
     value: Result | None = None
