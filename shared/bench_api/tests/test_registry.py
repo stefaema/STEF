@@ -27,6 +27,8 @@ def test_a_bench_test_takes_its_id_from_its_own_name(rig):
         "ramp",
         "sweep",
         "otp",
+        "reflash",
+        "probe",
         "identify_board",
     }
     assert rig.bench_tests["identify_board"].qualified == "rig.identify_board"
@@ -34,7 +36,7 @@ def test_a_bench_test_takes_its_id_from_its_own_name(rig):
 
 def test_title_and_description_come_from_the_docstring(rig):
     ramp = rig.bench_tests["ramp"]
-    assert ramp.title == "Acceleration ramp."
+    assert ramp.title == "Acceleration ramp"
     assert ramp.description.startswith("Emits a profile")
 
 
@@ -45,9 +47,9 @@ def test_steps_are_collected_in_the_order_they_were_defined(rig):
         "counted",
     ]
     assert [s.title for s in rig.bench_tests["general"].steps] == [
-        "Protocol version.",
-        "Firmware state.",
-        "Board table.",
+        "Protocol version",
+        "Firmware state",
+        "Board table",
     ]
 
 
@@ -61,9 +63,9 @@ def test_hazard_is_carried_from_the_decorator(rig):
 # ── Running one ──────────────────────────────────────────────────────────────
 
 
-def outcomes(test):
+def outcomes(test, **args):
     """Return each outcome of one run as a status and detail pair."""
-    return [(o.status, o.detail) for o in test.run(None)]
+    return [(o.status, o.detail) for o in test.run(None, **args)]
 
 
 def test_the_class_and_generator_forms_are_indistinguishable(rig):
@@ -94,6 +96,12 @@ def test_a_run_yields_as_it_goes_rather_than_all_at_once(rig):
     assert next(running).detail == "idle, ready"
 
 
+def test_a_title_is_a_label_and_not_a_sentence(rig):
+    assert rig.bench_tests["general"].title == "General check"
+    assert rig.bench_tests["general"].description.startswith("Reads the version")
+    assert rig.actions["raw.read"].effect == "Read one register."
+
+
 def test_a_link_test_and_a_bench_test_differ_only_in_needing_the_link(rig):
     link_test = rig.bench_tests["identify_board"]
     bench = rig.bench_tests["general"]
@@ -102,6 +110,54 @@ def test_a_link_test_and_a_bench_test_differ_only_in_needing_the_link(rig):
     assert bench.needs_link is True
     assert rig.link_tests == (link_test,)
     assert outcomes(link_test) and outcomes(bench)
+
+
+# ── The form a routine carries ───────────────────────────────────────────────
+
+
+def test_a_bench_test_carries_the_form_it_declared(rig):
+    assert [p.name for p in rig.bench_tests["reflash"].params] == ["image"]
+    assert rig.bench_tests["reflash"].params[0].resolved() == ("auto", "v1", "v2")
+    assert rig.bench_tests["general"].params == ()
+
+
+def test_the_form_reaches_the_class_through_its_constructor(rig):
+    assert outcomes(rig.bench_tests["reflash"], image="v1") == [
+        (Status.PASSED, "chose v1"),
+        (Status.PASSED, "wrote v1"),
+    ]
+
+
+def test_the_form_reaches_the_generator_through_its_call(rig):
+    assert outcomes(rig.bench_tests["probe"], slot="b")[0] == (Status.PASSED, "slot b")
+
+
+def test_a_routine_whose_receiver_does_not_take_a_declared_param_is_refused(declaring):
+    with pytest.raises(DeclarationError) as raised:
+        declaring(
+            "@bench_api.bench_test(params=(bench_api.choice('image', ('v1',)),))\n"
+            "class Writer:\n"
+            "    @bench_api.step\n"
+            "    def only(self, bench): ...\n"
+        )
+    assert "does not take image" in str(raised.value)
+
+
+# ── Ending a run early ───────────────────────────────────────────────────────
+
+
+def test_abandoning_settles_the_step_and_skips_the_rest(rig):
+    assert outcomes(rig.bench_tests["reflash"], image="auto") == [
+        (Status.PASSED, "already running v2"),
+        (Status.SKIPPED, ""),
+    ]
+
+
+def test_abandoning_a_generator_settles_without_failing(rig):
+    assert outcomes(rig.bench_tests["probe"], slot="a") == [
+        (Status.PASSED, "slot a"),
+        (Status.PASSED, "nothing further to read"),
+    ]
 
 
 # ── load() ───────────────────────────────────────────────────────────────────
