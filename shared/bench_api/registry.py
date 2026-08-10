@@ -17,6 +17,24 @@ class DeclarationError(Exception):
     """A declaration whose failure mode would otherwise be silence."""
 
 
+class Abandoned(Exception):
+    """Raised by a step to end its run early without failing it.
+
+    A routine that finds there is nothing left to do has not failed, and saying
+    so by raising is the only way a step can speak for the steps after it.
+    """
+
+    def __init__(
+        self,
+        detail: str = "",
+        status: Status = Status.PASSED,
+        value: Any = None,
+    ) -> None:
+        """Take how this step settled, which is what the run stops on."""
+        super().__init__(detail)
+        self.outcome = Outcome(status, detail, value)
+
+
 @dataclass(frozen=True, slots=True)
 class Step:
     """One numbered thing a bench test does."""
@@ -35,6 +53,7 @@ class BenchTest:
     title: str
     description: str
     steps: tuple[Step, ...]
+    params: tuple[Param, ...]
     hazardous: bool
     needs_link: bool
     target: Any
@@ -44,12 +63,15 @@ class BenchTest:
         """Return the id the registry knows this by, which names its subsystem too."""
         return f"{self.subsystem}.{self.id}"
 
-    def run(self, bench: Any = None) -> Iterator[Outcome]:
+    def run(self, bench: Any = None, **args: Any) -> Iterator[Outcome]:
         """Yield each step's outcome in order, as the run reaches it.
 
-        One that raises before any step settles yields a single failure.
+        The form is applied where the routine starts, the constructor in the class
+        form and the call in the generator one, so no step is handed values it
+        does not use. One that raises before any step settles yields a single
+        failure.
         """
-        yield from _run_steps(self, bench)
+        yield from _run_steps(self, bench, args)
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,31 +212,40 @@ def load(package: Any) -> None:
 # ── Running one ──────────────────────────────────────────────────────────────
 
 
-def _run_steps(test: BenchTest, bench: Any) -> Iterator[Outcome]:
+def _run_steps(test: BenchTest, bench: Any, args: dict[str, Any]) -> Iterator[Outcome]:
     """Yield each step's outcome, or the one failure that stopped it starting."""
+    if not inspect.isclass(test.target):
+        yield from _run_generator(test, bench, args)
+        return
+
     try:
-        instance = test.target() if inspect.isclass(test.target) else None
+        instance = test.target(**args)
     except Exception as exc:
         yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
         return
 
-    if instance is None:
-        yield from _run_generator(test, bench)
-        return
-
-    for step in test.steps:
+    for reached, step in enumerate(test.steps):
         try:
             yield _as_outcome(step.run(instance, bench))
+        except Abandoned as stop:
+            yield stop.outcome
+            for _ in test.steps[reached + 1 :]:
+                yield Outcome(Status.SKIPPED, "")
+            return
         except Exception as exc:
             yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
             return
 
 
-def _run_generator(test: BenchTest, bench: Any) -> Iterator[Outcome]:
+def _run_generator(
+    test: BenchTest, bench: Any, args: dict[str, Any]
+) -> Iterator[Outcome]:
     """Yield what the generator form yields, so the two forms look alike."""
     try:
-        for produced in test.target(bench):
+        for produced in test.target(bench, **args):
             yield _as_outcome(produced)
+    except Abandoned as stop:
+        yield stop.outcome
     except Exception as exc:
         yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
 

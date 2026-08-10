@@ -28,6 +28,7 @@ from shared.bench_api.params import (
 from shared.bench_api.readiness import READY, Readiness, blocked
 from shared.bench_api.registry import (
     REGISTRY,
+    Abandoned,
     Action,
     BenchTest,
     DeclarationError,
@@ -43,6 +44,7 @@ from shared.bench_api.state import Level, Status, SubsystemState
 __all__ = [
     "READY",
     "REGISTRY",
+    "Abandoned",
     "Action",
     "BenchTest",
     "Button",

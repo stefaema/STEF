@@ -84,6 +84,43 @@ class Otp:
         raise PermissionError("OTP_READ is not in this firmware's access policy")
 
 
+@bench_api.bench_test(
+    hazardous=True,
+    params=(bench_api.choice("image", lambda: ("auto", "v1", "v2")),),
+)
+class Reflash:
+    """Reflash the board.
+
+    Carries a form, and stops early when there is nothing to write.
+    """
+
+    def __init__(self, image="auto"):
+        """Take the image the form chose, which the steps read off self."""
+        self.image = image
+
+    @bench_api.step
+    def compare(self, bench):
+        """Installed against chosen."""
+        if self.image == "auto":
+            raise bench_api.Abandoned("already running v2")
+        return Outcome(Status.PASSED, f"chose {self.image}")
+
+    @bench_api.step
+    def write(self, bench):
+        """Write the image."""
+        return Outcome(Status.PASSED, f"wrote {self.image}")
+
+
+@bench_api.bench_test(params=(bench_api.choice("slot", ("a", "b")),))
+def probe(bench, slot):
+    """Probe one slot.
+
+    The generator form, carrying a form of its own.
+    """
+    yield Outcome(Status.PASSED, f"slot {slot}")
+    raise bench_api.Abandoned("nothing further to read")
+
+
 @bench_api.link_test
 class IdentifyBoard:
     """Identify the board.

@@ -1,7 +1,8 @@
 """What the whole machine is doing, until the orchestrator exists to say so.
 
-Temporary, and named as such in gui/docs/benchapi.md. `bench_api` never imports
-this; the GUI reads it in one place.
+Temporary. It belongs to whatever coordinates the three subsystems, which is the
+orchestrator, which is not designed yet. `bench_api` never imports this; the GUI
+reads it in one place, so it is one file to delete and one call site to repoint.
 """
 
 import enum
