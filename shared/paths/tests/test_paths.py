@@ -24,7 +24,7 @@ def test_a_named_home_holds_every_root_under_one_directory(clean_env, monkeypatc
 
     assert paths.config_dir() == clean_env / "local/config"
     assert paths.state_dir() == clean_env / "local/state"
-    assert paths.firmware_dir() == clean_env / "local/firmware"
+    assert paths.firmware_bins() == clean_env / "local/firmware"
 
 
 def test_without_a_home_each_root_follows_its_own_xdg_variable(clean_env, monkeypatch):
@@ -34,7 +34,7 @@ def test_without_a_home_each_root_follows_its_own_xdg_variable(clean_env, monkey
 
     assert paths.config_dir() == clean_env / "cfg" / paths.APP
     assert paths.state_dir() == clean_env / "st" / paths.APP
-    assert paths.firmware_dir() == clean_env / "dt" / paths.APP / "firmware"
+    assert paths.firmware_bins() == clean_env / "dt" / paths.APP / "firmware"
 
 
 def test_without_xdg_either_the_defaults_are_the_spec_s(clean_env):
@@ -42,7 +42,7 @@ def test_without_xdg_either_the_defaults_are_the_spec_s(clean_env):
 
     assert paths.config_dir() == house / ".config" / paths.APP
     assert paths.state_dir() == house / ".local/state" / paths.APP
-    assert paths.firmware_dir() == house / ".local/share" / paths.APP / "firmware"
+    assert paths.firmware_bins() == house / ".local/share" / paths.APP / "firmware"
 
 
 def test_a_relative_root_is_not_a_root(clean_env, monkeypatch):

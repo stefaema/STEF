@@ -73,7 +73,7 @@ def data_dir() -> Path:
     return _xdg(*XDG_DATA) / APP
 
 
-def firmware_dir() -> Path:
+def firmware_bins() -> Path:
     """Return where the flashable images are kept, one directory per version."""
     return data_dir() / FIRMWARE
 
