@@ -14,7 +14,12 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           buildInputs = [
-            (pkgs.python3.withPackages (ps: [ ps.libclang ps.pyserial ps.pytest ]))
+            (pkgs.python3.withPackages (ps: [
+              (ps.toPythonModule pkgs.esptool)
+              ps.libclang
+              ps.pyserial
+              ps.pytest
+            ]))
             pkgs.gcc
             pkgs.cmake
             pkgs.ninja
