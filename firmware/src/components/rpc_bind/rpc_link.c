@@ -24,6 +24,7 @@
 #define RPC_TXQ_DEPTH   6
 #define RPC_LOG_MAX     192  /**< one log line, ANSI stripped */
 #define RPC_USB_CHUNK   64   /**< a USB full-speed bulk packet */
+#define RPC_LOG_ERROR   1U   /**< the one level the link carries */
 /* clang-format on */
 
 /**
@@ -140,35 +141,42 @@ static uint8_t level_of(const char *line, size_t len)
     return 0;
 }
 
+/* Every line goes to the console; only an error is also put on the link. */
 static int log_to_link(const char *fmt, va_list ap)
 {
-    /* An ISR has no business queueing, and ESP_EARLY_LOGx is the only thing
-     * that gets here from one. Dropping is better than a crash inside a log. */
-    if (xPortInIsrContext()) {
-        return 0;
-    }
+    va_list console;
+    va_copy(console, ap);
+    int n = vprintf(fmt, console);
+    va_end(console);
 
-    char raw[RPC_LOG_MAX];
-    int  n = vsnprintf(raw, sizeof(raw), fmt, ap);
-    if (n <= 0) {
+    /* The level is in the format string, so refusing costs no formatting. */
+    if (level_of(fmt, strlen(fmt)) != RPC_LOG_ERROR) {
         return n;
     }
 
-    size_t raw_len = ((size_t)n < sizeof(raw)) ? (size_t)n : sizeof(raw) - 1U;
+    /* An ISR has no business queueing, and ESP_EARLY_LOGx is the only thing
+     * that gets here from one. Dropping is better than a crash inside a log. */
+    if (xPortInIsrContext()) {
+        return n;
+    }
 
-    char   text[RPC_LOG_MAX];
-    size_t len = strip_ansi(raw, raw_len, text, sizeof(text));
+    /* Formatted into the frame it ships in; the text is the whole payload. */
+    rpc_buf_t buf;
+    char     *text = rpc_payload(&buf);
+
+    int written = vsnprintf(text, RPC_LOG_MAX, fmt, ap);
+    if (written <= 0) {
+        return n;
+    }
+
+    size_t raw_len = ((size_t)written < RPC_LOG_MAX) ? (size_t)written : RPC_LOG_MAX - 1U;
+    size_t len     = strip_ansi(text, raw_len, text, RPC_LOG_MAX);
     if (len == 0) {
         return n;
     }
 
-    /* The text is the whole payload, so its length is the frame's and no count
-     * has to travel with it. */
-    rpc_buf_t buf;
-    memcpy(rpc_payload(&buf), text, len);
-
     size_t frame_len =
-        rpc_frame_seal_log(&buf, level_of(text, len), (uint32_t)(esp_timer_get_time() / 1000), len);
+        rpc_frame_seal_log(&buf, RPC_LOG_ERROR, (uint32_t)(esp_timer_get_time() / 1000), len);
     if (frame_len > 0) {
         /* Never wait. A full queue means the PC is not draining, and a log is
          * not worth stalling the task that produced it. */
