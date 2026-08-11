@@ -5,7 +5,7 @@ would collect it.
 """
 
 from shared import bench_api
-from shared.bench_api import Outcome, Status
+from shared.bench_api import StepOutcome, StepStatus
 
 
 @bench_api.bench_test
@@ -18,17 +18,17 @@ class General:
     @bench_api.step
     def version(self, bench):
         """Protocol version."""
-        return Outcome(Status.PASSED, "protocol 1")
+        return StepOutcome(StepStatus.PASSED, "protocol 1")
 
     @bench_api.step
     def state(self, bench):
         """Firmware state."""
-        return Outcome(Status.PASSED, "idle, ready")
+        return StepOutcome(StepStatus.PASSED, "idle, ready")
 
     @bench_api.step
     def devices(self, bench):
         """Board table."""
-        return Outcome(Status.WARNED, "1 device, expected 3")
+        return StepOutcome(StepStatus.WARNED, "1 device, expected 3")
 
 
 @bench_api.bench_test(hazardous=True)
@@ -46,18 +46,18 @@ class Ramp:
     @bench_api.step
     def enable(self, bench):
         """Enable the stage."""
-        return Outcome(Status.PASSED, "stage enabled")
+        return StepOutcome(StepStatus.PASSED, "stage enabled")
 
     @bench_api.step
     def run(self, bench):
         """Run of 4000 pulses."""
         self.emitted = 4000
-        return Outcome(Status.PASSED, f"emitted {self.emitted}")
+        return StepOutcome(StepStatus.PASSED, f"emitted {self.emitted}")
 
     @bench_api.step
     def counted(self, bench):
         """Pulses emitted."""
-        return Outcome(Status.PASSED, f"emitted {self.emitted}, running 0")
+        return StepOutcome(StepStatus.PASSED, f"emitted {self.emitted}, running 0")
 
 
 @bench_api.bench_test
@@ -66,9 +66,9 @@ def sweep(bench):
 
     The generator form.
     """
-    yield Outcome(Status.PASSED, "protocol 1")
-    yield Outcome(Status.PASSED, "idle, ready")
-    yield Outcome(Status.WARNED, "1 device, expected 3")
+    yield StepOutcome(StepStatus.PASSED, "protocol 1")
+    yield StepOutcome(StepStatus.PASSED, "idle, ready")
+    yield StepOutcome(StepStatus.WARNED, "1 device, expected 3")
 
 
 @bench_api.bench_test
@@ -103,12 +103,12 @@ class Reflash:
         """Installed against chosen."""
         if self.image == "auto":
             raise bench_api.Abandoned("already running v2")
-        return Outcome(Status.PASSED, f"chose {self.image}")
+        return StepOutcome(StepStatus.PASSED, f"chose {self.image}")
 
     @bench_api.step
     def write(self, bench):
         """Write the image."""
-        return Outcome(Status.PASSED, f"wrote {self.image}")
+        return StepOutcome(StepStatus.PASSED, f"wrote {self.image}")
 
 
 @bench_api.bench_test(params=(bench_api.choice("slot", ("a", "b")),))
@@ -117,7 +117,7 @@ def probe(bench, slot):
 
     The generator form, carrying a form of its own.
     """
-    yield Outcome(Status.PASSED, f"slot {slot}")
+    yield StepOutcome(StepStatus.PASSED, f"slot {slot}")
     raise bench_api.Abandoned("nothing further to read")
 
 
@@ -131,4 +131,4 @@ class IdentifyBoard:
     @bench_api.step
     def descriptor(self, bench):
         """USB descriptor."""
-        return Outcome(Status.PASSED, "one board")
+        return StepOutcome(StepStatus.PASSED, "one board")

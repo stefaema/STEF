@@ -3,7 +3,7 @@
 import pytest
 
 from shared import bench_api
-from shared.bench_api import Status
+from shared.bench_api import StepStatus
 from transport import fw_link, fw_probe
 
 
@@ -49,7 +49,7 @@ def descriptor_step(verify, one):
 def test_espressif_silicon_is_the_one_thing_a_descriptor_settles(verify, only):
     one = only(candidate("/dev/ttyACM0", 0x303A, "USB JTAG/serial debug unit"))
     settled = descriptor_step(verify, one)
-    assert settled.status is Status.PASSED
+    assert settled.status is StepStatus.PASSED
     assert "Espressif silicon" in settled.detail
 
 
@@ -58,7 +58,7 @@ def test_a_bridge_passes_without_claiming_anything_about_what_is_behind_it(
 ):
     one = only(candidate("/dev/ttyUSB0", 0x10C4, "CP2102 UART Bridge"))
     settled = descriptor_step(verify, one)
-    assert settled.status is Status.PASSED
+    assert settled.status is StepStatus.PASSED
     assert settled.value is not None
     assert "never what is behind it" in (settled.value.note or "")
 
@@ -66,7 +66,7 @@ def test_a_bridge_passes_without_claiming_anything_about_what_is_behind_it(
 def test_a_port_the_descriptor_does_not_recognise_is_not_a_pass(verify, only):
     one = only(candidate("/dev/ttyS1", None, "n/a"))
     settled = descriptor_step(verify, one)
-    assert settled.status is Status.WARNED
+    assert settled.status is StepStatus.WARNED
     assert "does not look like a board" in settled.detail
 
 
@@ -74,7 +74,7 @@ def test_an_unrecognised_port_is_still_asked_rather_than_refused(verify, only):
     one = only(candidate("/dev/ttyS1", None, "n/a"))
     reached = [o.status for o in verify.run(None, port=one.device)]
     assert len(reached) == 3
-    assert reached[0] is Status.WARNED
+    assert reached[0] is StepStatus.WARNED
 
 
 def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
@@ -82,5 +82,5 @@ def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
 ):
     monkeypatch.setattr(fw_probe, "candidates", lambda: ())
     settled = list(verify.run(None, port="/dev/ttyNOPE"))
-    assert settled[0].status is Status.FAILED
-    assert [o.status for o in settled[1:]] == [Status.SKIPPED, Status.SKIPPED]
+    assert settled[0].status is StepStatus.FAILED
+    assert [o.status for o in settled[1:]] == [StepStatus.SKIPPED, StepStatus.SKIPPED]

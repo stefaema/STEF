@@ -1,0 +1,68 @@
+# The base configuration raw.bringup writes to the capstan driver.
+#
+# One table per owned register.
+#
+# This is a bench baseline, not a tuned machine setting. It puts the driver in a
+# state other routines can start from.
+
+[gconf]
+i_scale_analog = false    # current from IHOLD_IRUN, not from the VREF pin
+internal_rsense = false
+en_spreadcycle = false    # StealthChop, quiet and low speed
+shaft = false
+index_otpw = false
+index_step = false
+pdn_disable = true        # or the UART pin keeps its standstill function
+mstep_reg_select = true   # or mres comes from the MS1/MS2 straps
+multistep_filt = true
+test_mode = false
+
+[slaveconf]
+value = 0x200             # SENDDELAY 2, 24 bit times before a reply. The reset
+                          # default is 0, too fast to share the bus
+
+# A 1.5 A motor on 0.11 ohm sense resistors. With vsense off, full scale is
+# 1.77 A RMS and one step of CS is 57 mA:
+#
+#   IRMS = (CS+1)/32 * 0.325 / (0.11 + 0.02) / sqrt(2)
+#
+# 1.5 A is taken as the sine peak, which is how the rating usually comes. irun
+# 16 is 0.94 A RMS, 1.33 A peak, under the rating either way it was meant.
+[ihold_irun]
+ihold = 8                 # 0.50 A RMS at standstill, where the heat accumulates
+irun = 16                 # 0.94 A RMS
+iholddelay = 8
+
+[tpowerdown]
+value = 20                # roughly 350 ms from standstill to hold current
+
+[tpwmthrs]
+value = 500               # above this TSTEP, leave StealthChop
+
+[tcoolthrs]
+value = 1000              # below this TSTEP, StallGuard reads are meaningless
+
+[vactual]
+value = 0                 # must be zero, bringup refuses a moving configuration
+
+[sgthrs]
+value = 80                # StallGuard trip point, meaningless until calibrated
+
+[coolconf]
+semin = 0                 # zero disables CoolStep
+seup = 0
+semax = 0
+sedn = 0
+seimin = false
+
+[chopconf]
+toff = 3
+hstrt = 5
+hend = 0
+tbl = 2
+vsense = false
+mres = 4                  # 16 microsteps
+intpol = true
+dedge = false
+diss2g = false
+diss2vs = false

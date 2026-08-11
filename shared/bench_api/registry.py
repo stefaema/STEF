@@ -7,10 +7,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from shared.bench_api.params import Param
+from shared.bench_api.derive import values_to_dataclass
+from shared.bench_api.params import ParamSpec
 from shared.bench_api.readiness import Readiness
-from shared.bench_api.results import Outcome
-from shared.bench_api.state import Status
+from shared.bench_api.results import StepOutcome, StepStatus
 
 
 class DeclarationError(Exception):
@@ -27,12 +27,12 @@ class Abandoned(Exception):
     def __init__(
         self,
         detail: str = "",
-        status: Status = Status.PASSED,
+        status: StepStatus = StepStatus.PASSED,
         value: Any = None,
     ) -> None:
         """Take how this step settled, which is what the run stops on."""
         super().__init__(detail)
-        self.outcome = Outcome(status, detail, value)
+        self.outcome = StepOutcome(status, detail, value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,14 +46,14 @@ class Step:
 
 @dataclass(frozen=True, slots=True)
 class BenchTest:
-    """A routine an operator runs by hand to find out whether the machine is well."""
+    """A routine an operator runs by hand to check behaviour."""
 
     id: str
     subsystem: str
     title: str
     description: str
     steps: tuple[Step, ...]
-    params: tuple[Param, ...]
+    params: tuple[ParamSpec, ...]
     hazardous: bool
     needs_link: bool
     target: Any
@@ -63,7 +63,7 @@ class BenchTest:
         """Return the id the registry knows this by, which names its subsystem too."""
         return f"{self.subsystem}.{self.id}"
 
-    def run(self, bench: Any = None, **args: Any) -> Iterator[Outcome]:
+    def run(self, bench: Any = None, **args: Any) -> Iterator[StepOutcome]:
         """Yield each step's outcome in order, as the run reaches it.
 
         The form is applied where the routine starts, the constructor in the class
@@ -76,22 +76,32 @@ class BenchTest:
 
 @dataclass(frozen=True, slots=True)
 class Action:
-    """One call an operator can make by hand, and the residue an annotation could not carry."""
+    """One call an operator can make by hand, and what it takes to make it."""
 
     name: str
     subsystem: str
     effect: str
     description: str
-    params: tuple[Param, ...]
+    params: tuple[ParamSpec, ...]
     hazardous: bool
     precondition: Callable[..., Readiness | None] | None
     digest: Callable[..., Any] | None
     target: Callable[..., Any]
+    argument_type: type | None
 
     @property
     def qualified(self) -> str:
         """Return the id the registry knows this by, which names its subsystem too."""
         return f"{self.subsystem}.{self.name}"
+
+    def call(self, values: dict[str, Any]) -> Any:
+        """Make the call, with the values as the argument object it takes.
+
+        A target annotated with no dataclass takes none, so the values it was
+        handed were never going anywhere and the call is made bare.
+        """
+        args = values_to_dataclass(self.argument_type, values)
+        return self.target() if args is None else self.target(args)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +109,7 @@ class Link:
     """How a subsystem is reached, and whether it may be reached right now."""
 
     subsystem: str
-    params: tuple[Param, ...]
+    params: tuple[ParamSpec, ...]
     target: type
 
 
@@ -212,7 +222,9 @@ def load(package: Any) -> None:
 # ── Running one ──────────────────────────────────────────────────────────────
 
 
-def _run_steps(test: BenchTest, bench: Any, args: dict[str, Any]) -> Iterator[Outcome]:
+def _run_steps(
+    test: BenchTest, bench: Any, args: dict[str, Any]
+) -> Iterator[StepOutcome]:
     """Yield each step's outcome, or the one failure that stopped it starting."""
     if not inspect.isclass(test.target):
         yield from _run_generator(test, bench, args)
@@ -221,7 +233,7 @@ def _run_steps(test: BenchTest, bench: Any, args: dict[str, Any]) -> Iterator[Ou
     try:
         instance = test.target(**args)
     except Exception as exc:
-        yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
+        yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
         return
 
     for reached, step in enumerate(test.steps):
@@ -230,16 +242,16 @@ def _run_steps(test: BenchTest, bench: Any, args: dict[str, Any]) -> Iterator[Ou
         except Abandoned as stop:
             yield stop.outcome
             for _ in test.steps[reached + 1 :]:
-                yield Outcome(Status.SKIPPED, "")
+                yield StepOutcome(StepStatus.SKIPPED, "")
             return
         except Exception as exc:
-            yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
+            yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
             return
 
 
 def _run_generator(
     test: BenchTest, bench: Any, args: dict[str, Any]
-) -> Iterator[Outcome]:
+) -> Iterator[StepOutcome]:
     """Yield what the generator form yields, so the two forms look alike."""
     try:
         for produced in test.target(bench, **args):
@@ -247,15 +259,15 @@ def _run_generator(
     except Abandoned as stop:
         yield stop.outcome
     except Exception as exc:
-        yield Outcome(Status.FAILED, f"{type(exc).__name__}: {exc}")
+        yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
 
 
-def _as_outcome(produced: Any) -> Outcome:
-    """Return what a step handed back as an Outcome, allowing a bare status."""
-    if isinstance(produced, Outcome):
+def _as_outcome(produced: Any) -> StepOutcome:
+    """Return what a step handed back as a StepOutcome, allowing a bare status."""
+    if isinstance(produced, StepOutcome):
         return produced
-    if isinstance(produced, Status):
-        return Outcome(produced, "")
+    if isinstance(produced, StepStatus):
+        return StepOutcome(produced, "")
     if produced is None:
-        return Outcome(Status.PASSED, "")
-    raise DeclarationError(f"a step yielded {produced!r}, which is not an Outcome")
+        return StepOutcome(StepStatus.PASSED, "")
+    raise DeclarationError(f"a step yielded {produced!r}, which is not a StepOutcome")

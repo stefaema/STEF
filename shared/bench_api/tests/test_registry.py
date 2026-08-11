@@ -1,9 +1,12 @@
 """What the decorators register, how a run yields, and what fails at import."""
 
+import dataclasses
+
 import pytest
 
 from shared import bench_api
-from shared.bench_api import DeclarationError, Status
+from shared.bench_api import DeclarationError, StepStatus
+from shared.bench_api.params import current_options
 
 # ── What got declared ────────────────────────────────────────────────────────
 
@@ -18,7 +21,7 @@ def test_a_subsystem_carries_its_id_and_its_prose(rig):
 def test_a_link_carries_its_form_and_finds_its_own_subsystem(rig):
     assert rig.link is not None
     assert rig.link.subsystem == "rig"
-    assert [p.name for p in rig.link.params] == ["port"]
+    assert [p["name"] for p in rig.link.params] == ["port"]
 
 
 def test_a_bench_test_takes_its_id_from_its_own_name(rig):
@@ -76,7 +79,7 @@ def test_the_class_and_generator_forms_are_indistinguishable(rig):
 
 def test_a_class_lets_its_steps_share_state(rig):
     assert outcomes(rig.bench_tests["ramp"])[2] == (
-        Status.PASSED,
+        StepStatus.PASSED,
         "emitted 4000, running 0",
     )
 
@@ -85,7 +88,7 @@ def test_a_test_that_raises_settles_as_failed_with_no_step_outcomes(rig):
     settled = outcomes(rig.bench_tests["otp"])
     assert len(settled) == 1
     status, detail = settled[0]
-    assert status is Status.FAILED
+    assert status is StepStatus.FAILED
     assert detail.startswith("PermissionError:")
     assert "access policy" in detail
 
@@ -116,20 +119,23 @@ def test_a_link_test_and_a_bench_test_differ_only_in_needing_the_link(rig):
 
 
 def test_a_bench_test_carries_the_form_it_declared(rig):
-    assert [p.name for p in rig.bench_tests["reflash"].params] == ["image"]
-    assert rig.bench_tests["reflash"].params[0].resolved() == ("auto", "v1", "v2")
+    assert [p["name"] for p in rig.bench_tests["reflash"].params] == ["image"]
+    assert current_options(rig.bench_tests["reflash"].params[0]) == ("auto", "v1", "v2")
     assert rig.bench_tests["general"].params == ()
 
 
 def test_the_form_reaches_the_class_through_its_constructor(rig):
     assert outcomes(rig.bench_tests["reflash"], image="v1") == [
-        (Status.PASSED, "chose v1"),
-        (Status.PASSED, "wrote v1"),
+        (StepStatus.PASSED, "chose v1"),
+        (StepStatus.PASSED, "wrote v1"),
     ]
 
 
 def test_the_form_reaches_the_generator_through_its_call(rig):
-    assert outcomes(rig.bench_tests["probe"], slot="b")[0] == (Status.PASSED, "slot b")
+    assert outcomes(rig.bench_tests["probe"], slot="b")[0] == (
+        StepStatus.PASSED,
+        "slot b",
+    )
 
 
 def test_a_routine_whose_receiver_does_not_take_a_declared_param_is_refused(declaring):
@@ -148,15 +154,15 @@ def test_a_routine_whose_receiver_does_not_take_a_declared_param_is_refused(decl
 
 def test_abandoning_settles_the_step_and_skips_the_rest(rig):
     assert outcomes(rig.bench_tests["reflash"], image="auto") == [
-        (Status.PASSED, "already running v2"),
-        (Status.SKIPPED, ""),
+        (StepStatus.PASSED, "already running v2"),
+        (StepStatus.SKIPPED, ""),
     ]
 
 
 def test_abandoning_a_generator_settles_without_failing(rig):
     assert outcomes(rig.bench_tests["probe"], slot="a") == [
-        (Status.PASSED, "slot a"),
-        (Status.PASSED, "nothing further to read"),
+        (StepStatus.PASSED, "slot a"),
+        (StepStatus.PASSED, "nothing further to read"),
     ]
 
 
@@ -343,3 +349,73 @@ def impossible(args: Unrenderable): ...
 """
         )
     assert "Unrenderable.when" in str(caught.value)
+
+
+# ── The parameter dictionaries ───────────────────────────────────────────────
+
+
+def test_a_param_of_a_kind_no_control_renders_is_refused(declaring):
+    with pytest.raises(bench_api.ParamError) as caught:
+        declaring(
+            "@bench_api.bench_test(params=({'name': 'image', 'kind': 'integr'},))\n"
+            "class Misspelt:\n"
+            "    @bench_api.step\n"
+            "    def only(self, bench): ...\n"
+        )
+    assert "'integr'" in str(caught.value)
+
+
+def test_a_param_carrying_a_key_its_kind_has_no_use_for_is_refused(declaring):
+    with pytest.raises(bench_api.ParamError) as caught:
+        declaring(
+            "@bench_api.bench_test(params=("
+            "{'name': 'image', 'kind': 'integer', 'maximum': 3},))\n"
+            "class Astray:\n"
+            "    @bench_api.step\n"
+            "    def only(self, bench): ...\n"
+        )
+    assert "carries no maximum" in str(caught.value)
+
+
+def test_a_choice_declaring_no_options_is_refused(declaring):
+    with pytest.raises(bench_api.ParamError) as caught:
+        declaring(
+            "@bench_api.bench_test(params=({'name': 'image', 'kind': 'choice'},))\n"
+            "class Empty:\n"
+            "    @bench_api.step\n"
+            "    def only(self, bench): ...\n"
+        )
+    assert "needs options" in str(caught.value)
+
+
+def test_a_column_of_a_group_is_refused_on_the_same_terms(declaring):
+    with pytest.raises(bench_api.ParamError) as caught:
+        declaring(
+            "@bench_api.bench_test(params=(bench_api.group('ops', columns=("
+            "{'name': 'reg', 'kind': 'integr'},)),))\n"
+            "class Nested:\n"
+            "    @bench_api.step\n"
+            "    def only(self, bench): ...\n"
+        )
+    assert "'integr'" in str(caught.value)
+
+
+# ── Making the call ──────────────────────────────────────────────────────────
+
+
+def test_an_action_is_called_with_the_argument_object_its_annotation_names(rig):
+    read = rig.actions["raw.read"]
+    assert read.argument_type is not None
+    seen = []
+    object.__setattr__(read, "target", seen.append)
+    read.call({"idx": 2, "reg": 3, "nothing_declares_this": 9})
+    assert dataclasses.asdict(seen[0]) == {"idx": 2, "reg": 3}
+
+
+def test_an_action_annotating_nothing_is_called_bare(rig):
+    version = rig.actions["sys.version"]
+    assert version.argument_type is None
+    seen = []
+    object.__setattr__(version, "target", lambda: seen.append("called"))
+    version.call({"ignored": 1})
+    assert seen == ["called"]

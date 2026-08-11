@@ -256,12 +256,6 @@
   align-items: baseline;
 }
 
-@utility picker-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 340px);
-  gap: 12px;
-}
-
 @utility accent-top {
   box-shadow: inset 0 3px 0 var(--color-blue-700);
 }

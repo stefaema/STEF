@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import traceback
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -34,7 +34,7 @@ ROSTER = ("transport", "capture", "detect")
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     """Import every declaration before the first request can ask for one."""
     wake()
     yield
@@ -148,16 +148,16 @@ def declarations() -> list[dict[str, Any]]:
     return found
 
 
-@app.get("/api/catalog/{name}")
-async def catalog(name: str) -> list[dict[str, Any]]:
+@app.get("/api/options/{name}")
+async def options_for(name: str) -> list[dict[str, Any]]:
     """Return a live option list, fetched afresh because the world moves.
 
     Off the loop, since a list may come from the hardware rather than from here.
     """
     try:
-        return await asyncio.to_thread(wire.catalog, name)
+        return await asyncio.to_thread(wire.options_for, name)
     except KeyError as exc:
-        raise HTTPException(404, f"no catalog {name!r}") from exc
+        raise HTTPException(404, f"no options {name!r}") from exc
 
 
 # ── The link ─────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
     a remembered answer goes stale on the next replug.
     """
     link, declared = _link_of(name)
-    taken = wire.arguments(declared.params, values)
+    taken = bench_api.arguments(declared.params, values)
     try:
         verdict = await asyncio.to_thread(lambda: link.can_connect(**taken))
     except Exception as exc:  # noqa: BLE001
@@ -192,7 +192,7 @@ async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
 async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
     """Open the link, atomically, and say how it went."""
     link, declared = _link_of(name)
-    taken = wire.arguments(declared.params, values)
+    taken = bench_api.arguments(declared.params, values)
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"connect({shown})")
     try:
@@ -234,7 +234,7 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
             f"{test_id} opens the port itself, so it cannot run while the link "
             f"holds it. Disconnect first",
         )
-    taken = wire.arguments(test.params, values)
+    taken = bench_api.arguments(test.params, values)
     instance = owner(name)
 
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
@@ -280,17 +280,13 @@ async def call_action(
         if verdict is not None and not verdict:
             raise HTTPException(409, str(verdict))
 
-    taken = wire.arguments(declared.params, values)
+    taken = bench_api.arguments(declared.params, values)
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"{action_name}({shown})")
 
-    shape = _argument_shape(declared)
-    args = wire.instance(shape, taken)
     try:
         answer = await call_off_loop(
-            slot,
-            f"{name}.{action_name}",
-            (lambda: declared.target(args)) if shape else (lambda: declared.target()),
+            slot, f"{name}.{action_name}", lambda: declared.call(taken)
         )
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -301,15 +297,6 @@ async def call_action(
     packed = wire.result(answer) if answer is not None else None
     stream.say(name, "ok", "result", packed["summary"] if packed else action_name)
     return {"ok": True, "reason": None, "value": packed}
-
-
-def _argument_shape(declared: Any) -> type | None:
-    """Return the dataclass an action's target takes, where its annotation names one."""
-    import typing
-
-    hints = typing.get_type_hints(declared.target)
-    hints.pop("return", None)
-    return next(iter(hints.values()), None)
 
 
 # ── The stream everything reports on ─────────────────────────────────────────

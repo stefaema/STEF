@@ -18,18 +18,37 @@ from collections.abc import Callable
 from typing import Any
 
 from shared import bench_api, fw_api
-from shared.bench_api import Level, Result, Table, blocked
+from shared.bench_api import Level, Option, Result, Table, blocked
 from shared.bench_api.stef import STEF
 
 SUMMARY = 140
 DEVICE = "Which driver, by the name the board declares for it."
+REGISTER = "Which register to write, out of the ones the firmware owns."
 
-# A reply that carries one register and nothing else, and the codec that names
-# its bits. `read` and `poll_raw` are absent on purpose: which register they
-# answered is an argument, not a property of the method.
-DECODED = {
-    "raw.poll_pins": ("value", fw_api.tmc2209_ioin_decode),
+# The codec that names one register's bits, for each register that has one. The
+# rest are plain scalars, where the number is already the answer.
+CODEC = {
+    fw_api.TMC2209_GCONF: fw_api.tmc2209_gconf_decode,
+    fw_api.TMC2209_GSTAT: fw_api.tmc2209_gstat_decode,
+    fw_api.TMC2209_IFCNT: fw_api.tmc2209_ifcnt_decode,
+    fw_api.TMC2209_IOIN: fw_api.tmc2209_ioin_decode,
+    fw_api.TMC2209_IHOLD_IRUN: fw_api.tmc2209_ihold_irun_decode,
+    fw_api.TMC2209_VACTUAL: fw_api.tmc2209_vactual_decode,
+    fw_api.TMC2209_COOLCONF: fw_api.tmc2209_coolconf_decode,
+    fw_api.TMC2209_MSCURACT: fw_api.tmc2209_mscuract_decode,
+    fw_api.TMC2209_CHOPCONF: fw_api.tmc2209_chopconf_decode,
+    fw_api.TMC2209_DRV_STATUS: fw_api.tmc2209_drv_status_decode,
+    fw_api.TMC2209_PWM_SCALE: fw_api.tmc2209_pwm_scale_decode,
+    fw_api.TMC2209_PWM_AUTO: fw_api.tmc2209_pwm_auto_decode,
 }
+
+# A method whose reply is one register the method itself names.
+ANSWERS = {
+    "raw.poll_pins": fw_api.TMC2209_IOIN,
+}
+
+# A method whose reply is one register the caller named, in this argument.
+ANSWERS_WHAT_WAS_ASKED = {"raw.read", "raw.poll_raw"}
 
 HAZARDOUS = {
     "raw.move",
@@ -63,7 +82,7 @@ def connected(*_: Any, **__: Any) -> Any:
     return None
 
 
-def devices() -> tuple[tuple[int, str], ...]:
+def devices() -> tuple[Option, ...]:
     """Return the board's driver table, as the names each index stands for.
 
     Asked rather than declared. The firmware's table carries the names, growing
@@ -77,8 +96,25 @@ def devices() -> tuple[tuple[int, str], ...]:
     except Exception:  # noqa: BLE001
         return ()
     return tuple(
-        (index, _as_text(entry.name) or str(index))
+        Option(index, _as_text(entry.name) or str(index))
         for index, entry in enumerate(reply.devs)
+    )
+
+
+def owned_registers() -> tuple[Option, ...]:
+    """Return the registers a batch may name, which is the ones the firmware owns.
+
+    `tmc2209_write` takes owned registers and refuses the rest, so offering all
+    twenty-three is offering a refusal. Which ones those are is asked of the
+    library rather than listed here, since the library is what will refuse.
+
+    Asked once, at declaration. The table is compiled into the library, so unlike
+    the board's driver table this cannot answer differently later.
+    """
+    return tuple(
+        Option(int(reg), reg.name.removeprefix("TMC2209_"))
+        for reg in fw_api.Tmc2209Reg
+        if fw_api.tmc2209_reg_class(int(reg)) == fw_api.TMC2209_CLASS_OWNED
     )
 
 
@@ -107,7 +143,9 @@ def text_fields(struct_type: Any) -> frozenset[str]:
     )
 
 
-def as_result(name: str, reply: Any, struct: Any = None) -> Result:
+def as_result(
+    name: str, reply: Any, struct: Any = None, register: Any = None
+) -> Result:
     """Return whatever a method answered in the one vocabulary every caller reads."""
     if reply is None:
         return Result(level=Level.OK, summary=f"{name} returned")
@@ -133,7 +171,7 @@ def as_result(name: str, reply: Any, struct: Any = None) -> Result:
             continue
         fields.append((f.name, _render(value)))
 
-    named, note = _decoded(name, reply)
+    named, note = _decoded(name, reply, ANSWERS.get(name, register))
     shown_fields = named or tuple(fields)
 
     shown = ", ".join(f"{k}={v}" for k, v in shown_fields)
@@ -149,28 +187,64 @@ def as_result(name: str, reply: Any, struct: Any = None) -> Result:
     )
 
 
-def _decoded(name: str, reply: Any) -> tuple[tuple[tuple[str, str], ...], str | None]:
+def asked_register(name: str, args: Any) -> Any | None:
+    """Return the register a call asked for, for the methods that answer per register.
+
+    Only these need telling. A method that always answers the same register names
+    it in `ANSWERS`, which `as_result` reads for itself, so a caller holding no
+    arguments still gets the decode.
+    """
+    if name in ANSWERS_WHAT_WAS_ASKED:
+        return getattr(args, "reg", None)
+    return None
+
+
+def _decoded(
+    name: str, reply: Any, register: Any
+) -> tuple[tuple[tuple[str, str], ...], str | None]:
     """Return a raw register reply as the named bits it stands for.
 
-    `rpc_raw_poll_pins_ret` says it carries IOIN as it came off the wire and
-    that the PC decodes it with the same codec the firmware would have used. The
-    codec is generated alongside the ABI, so running it here costs nothing and
-    showing the number alone would make an operator do it by hand.
+    A TMC2209 register is a packed bitfield, so the number that came off the wire
+    is the encoding of the answer rather than the answer. The codec that unpacks
+    it is generated alongside the ABI and is the one the firmware would have
+    used, so running it here costs nothing and leaving it undone makes an
+    operator do it by hand against the datasheet.
     """
-    entry = DECODED.get(name)
-    if entry is None:
+    label = _register_label(register)
+    if label is None:
         return (), None
-    field, decoder = entry
-    raw = getattr(reply, field, None)
+    raw = getattr(reply, "value", None)
     if not isinstance(raw, int):
         return (), None
-    struct = decoder(raw)
-    fields = tuple(
-        (member, _render(getattr(struct, member)))
-        for member, *_ in type(struct)._fields_
+
+    codec = CODEC.get(register)
+    if codec is None:
+        # A scalar register, where the number is already the answer. Naming it
+        # after the register is the whole of what this can add.
+        return ((label, _render(raw)),), None
+
+    note = f"{label} 0x{raw:08x}, decoded with the firmware's own codec"
+    decoded = codec(raw)
+    members = getattr(type(decoded), "_fields_", None)
+    if members is None:
+        # A codec answering one number rather than a struct, which is the two
+        # registers whose width or sign the raw word does not carry.
+        return ((label, _render(decoded)),), note
+    return tuple(
+        (member, _render(getattr(decoded, member)))
+        for member, *_ in members
         if not member.startswith("_")
-    )
-    return fields, f"{field} 0x{raw:08x}, decoded with the firmware's own codec"
+    ), note
+
+
+def _register_label(register: Any) -> str | None:
+    """Return the short name of a register, or None where it names none."""
+    if register is None:
+        return None
+    try:
+        return fw_api.Tmc2209Reg(register).name.removeprefix("TMC2209_")
+    except ValueError:
+        return None
 
 
 def _as_text(raw: bytes) -> str:
@@ -239,7 +313,10 @@ def _caller(spec: fw_api.MethodSpec) -> Callable[[Any], Result]:
 
     def call(args=None):
         bound = getattr(getattr(firmware(), namespace), method)
-        return as_result(spec.name, bound(**_values(args)), spec.wire[1])
+        reply = bound(**_values(args))
+        return as_result(
+            spec.name, reply, spec.wire[1], asked_register(spec.name, args)
+        )
 
     call.__name__ = spec.name.replace(".", "_")
     call.__qualname__ = call.__name__
@@ -247,6 +324,28 @@ def _caller(spec: fw_api.MethodSpec) -> Callable[[Any], Result]:
     call.__doc__ = spec.doc or f"Call {spec.name}."
     call.__annotations__ = {} if spec.args is None else {"args": spec.args}
     return call
+
+
+def _declared(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
+    """Return the residue an annotation cannot carry, for the fields that have any.
+
+    An index is a number until the board says which driver each one is, and a
+    batch element names a register out of a set narrower than the type allows.
+    """
+    params: list[Any] = []
+    if "idx" in spec.fields:
+        params.append(bench_api.choice("idx", devices, hint=DEVICE))
+    if "ops" in spec.fields:
+        params.append(
+            bench_api.group(
+                "ops",
+                columns=(
+                    bench_api.integer("value"),
+                    bench_api.choice("reg", owned_registers(), hint=REGISTER),
+                ),
+            )
+        )
+    return tuple(params)
 
 
 def declare() -> tuple[str, ...]:
@@ -258,11 +357,7 @@ def declare() -> tuple[str, ...]:
                 spec.name,
                 hazardous=spec.name in HAZARDOUS,
                 precondition=connected,
-                params=(
-                    (bench_api.choice("idx", devices, hint=DEVICE),)
-                    if "idx" in spec.fields
-                    else ()
-                ),
+                params=_declared(spec),
             )(_caller(spec))
             declared.append(spec.name)
     return tuple(declared)

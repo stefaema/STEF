@@ -4,8 +4,7 @@ UI-scoped: a direct channel from the screen to each subsystem, with as little
 coupling as the two ends can get away with.
 
 A subsystem gets that channel by importing `bench_api` and decorating what it
-already has. Nothing is registered by hand, nothing is subclassed, nothing moves
-to a new file. A decorator runs when its module is imported, so the walk is the
+already has. A decorator runs when its module is imported, so the walk is the
 registration:
 
 ```python
@@ -53,7 +52,7 @@ def set_target(args: TargetArgs): ...
 live. The rest lives under `bench/`.
 
 A bench test comes in two forms, a class of `@step` methods or a generator, and
-`run()` yields one `Outcome` per step as the run reaches it. It lives on the
+`run()` yields one `StepOutcome` per step as the run reaches it. It lives on the
 registry's record rather than on the decorated class, so both forms look the
 same to whoever calls them. The docstring is the prose: first line the title,
 the rest the description, for the test and for each step.
@@ -96,33 +95,38 @@ zero-argument callable instead of a sequence, and called each time they are
 drawn. Anything fixed at import would be a snapshot of the world as it was when
 the process started.
 
+A parameter is a dictionary, and every conversion its kind implies lives beside
+it: what the control starts at, how an option is labelled, and what a submitted
+value becomes back in Python. A second renderer costs no second copy of them.
+
 ## Layout
 
 | file | what it answers |
 | --- | --- |
 | `decorators.py` | the six declarations, and the errors they raise at import |
 | `registry.py` | what the decorators build, and where it lands |
-| `derive.py` | how an annotated dataclass becomes the form that calls it |
-| `params.py` | the six kinds of control a form is built from |
+| `derive.py` | the dataclass a call takes, mapped to controls and rebuilt from them |
+| `params.py` | the six kinds of control, and every conversion a kind implies |
 | `readiness.py` | may this proceed, and why not when it may not |
-| `results.py` | what a call found, whoever made it |
+| `results.py` | what a call found and how a step settled, whoever made it |
 | `digest.py` | what a call will put on the wire, before it goes |
 | `events.py` | one record on the stream every subsystem writes to |
-| `state.py` | what a subsystem is doing, and how a run turned out |
+| `state.py` | what a subsystem is doing |
 | `stef.py` | what the whole machine is doing. Placeholder until an orchestrator says |
 
-Everything that crosses is a frozen record, so nothing here can be spelled in
-`ctypes` and no subsystem hands the screen something only it can interpret.
+What crosses is a dictionary or a frozen record, so nothing here can be spelled
+in `ctypes` and no subsystem hands the screen something only it can interpret.
 `Readiness` is truthy when a control may be used and carries the reason when it
 may not, so a disabled button explains itself. `SubsystemState` is read off the
 link when asked rather than tracked beside it, since a flag maintained in
 parallel is a flag that goes stale.
 
-Five things fail at import, each because its failure mode is otherwise silence:
+Six things fail at import, each because its failure mode is otherwise silence:
 a declaration in a package with no `@subsystem`, a duplicate id, a
 `@bench_test` class with no `@step`, a `params` entry naming a field the call
-does not take, and a declared param that its receiver does not take, whether
-that receiver is `connect` and `can_connect` or a routine's own constructor.
+does not take, a declared param that its receiver does not take, whether that
+receiver is `connect` and `can_connect` or a routine's own constructor, and a
+param naming a kind, or carrying a key, that no control renders.
 
 Bench test callables must not be named `test_*` or sit in a `tests/` directory,
 or pytest collects them and fails on absent hardware.

@@ -6,8 +6,8 @@ import typing
 from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
-from shared.bench_api.derive import params_for, with_declared
-from shared.bench_api.params import Param
+from shared.bench_api.derive import dataclass_to_params, with_declared
+from shared.bench_api.params import ParamSpec, validated
 from shared.bench_api.registry import (
     REGISTRY,
     Action,
@@ -80,13 +80,13 @@ def _package_of(target: type) -> str:
     return getattr(module, "__package__", None) or target.__module__
 
 
-def link(params: Sequence[Param] = ()) -> Callable[[C], C]:
+def link(params: Sequence[ParamSpec] = ()) -> Callable[[C], C]:
     """Declare how a subsystem is reached, and the form that reaches it.
 
     The parameters are checked against `connect` and `can_connect` at import, so
     renaming one on one side only fails there and not on the first click.
     """
-    declared = tuple(params)
+    declared = validated(params)
 
     def declare(target: C) -> C:
         owner = REGISTRY.owner_of(target.__module__)
@@ -104,14 +104,14 @@ def link(params: Sequence[Param] = ()) -> Callable[[C], C]:
 
 
 def _must_take(
-    receiver: Callable[..., Any], declared: Sequence[Param], who: str
+    receiver: Callable[..., Any], declared: Sequence[ParamSpec], who: str
 ) -> None:
     """Refuse a form whose receiver does not take every parameter it declares.
 
     Renaming one end only fails at import rather than on the first click.
     """
     takes = set(inspect.signature(receiver).parameters) - {"self"}
-    missing = sorted({p.name for p in declared} - takes)
+    missing = sorted({p["name"] for p in declared} - takes)
     if missing:
         raise DeclarationError(f"{who} does not take {', '.join(missing)}")
 
@@ -145,7 +145,7 @@ def _receiver(target: Any) -> Callable[..., Any]:
 
 
 def _declare_test(
-    target: Any, hazardous: bool, needs_link: bool, params: Sequence[Param]
+    target: Any, hazardous: bool, needs_link: bool, params: Sequence[ParamSpec]
 ) -> Any:
     """Register a bench test in either of its two forms, class or generator."""
     owner = REGISTRY.owner_of(target.__module__)
@@ -153,7 +153,7 @@ def _declare_test(
     steps = _steps_of(target) if inspect.isclass(target) else ()
     if inspect.isclass(target) and not steps:
         raise DeclarationError(f"{target.__name__} declares no @step")
-    declared = tuple(params)
+    declared = validated(params)
     if declared:
         _must_take(_receiver(target), declared, target.__name__)
 
@@ -174,7 +174,7 @@ def _declare_test(
 
 
 def bench_test(
-    target: Any = None, *, hazardous: bool = False, params: Sequence[Param] = ()
+    target: Any = None, *, hazardous: bool = False, params: Sequence[ParamSpec] = ()
 ) -> Any:
     """Declare a routine an operator runs against a subsystem that is already up."""
     if target is not None:
@@ -187,7 +187,7 @@ def bench_test(
 
 
 def link_test(
-    target: Any = None, *, hazardous: bool = False, params: Sequence[Param] = ()
+    target: Any = None, *, hazardous: bool = False, params: Sequence[ParamSpec] = ()
 ) -> Any:
     """Declare a routine that runs before there is a link."""
     if target is not None:
@@ -205,7 +205,7 @@ def action(
     name: str,
     *,
     hazardous: bool = False,
-    params: Sequence[Param] = (),
+    params: Sequence[ParamSpec] = (),
     precondition: Callable[..., Any] | None = None,
     digest: Callable[..., Any] | None = None,
 ) -> Callable[..., Any]:
@@ -213,13 +213,13 @@ def action(
 
     The form derives from the arguments; this carries the residue.
     """
-    declared = tuple(params)
+    declared = validated(params)
 
     def declare(function: Callable[..., Any]) -> Callable[..., Any]:
         owner = REGISTRY.owner_of(function.__module__)
         summary, body = _titles(function)
         shape = _argument_type(function)
-        derived = params_for(shape) if shape is not None else ()
+        derived = dataclass_to_params(shape) if shape is not None else ()
         REGISTRY.add_action(
             Action(
                 name=name,
@@ -231,6 +231,7 @@ def action(
                 precondition=precondition,
                 digest=digest,
                 target=function,
+                argument_type=shape,
             )
         )
         return function

@@ -75,7 +75,7 @@ def test_a_package_carries_its_builtin_beside_its_code():
 
 
 def test_the_builtin_tree_is_reachable_by_name():
-    capstan = paths.builtin("transport", "devices", "capstan.toml")
+    capstan = paths.builtin("transport", "devices", "capstan_base.toml")
     assert capstan.is_file()
     assert capstan.parent.name == "devices"
 
@@ -91,22 +91,22 @@ def test_a_package_that_is_not_there_says_so():
 def test_a_file_has_one_name_under_two_roots(clean_env, monkeypatch):
     monkeypatch.setenv(paths.ENV_HOME, str(clean_env / "local"))
 
-    shipped, mine = paths.layered("transport", "devices", "capstan.toml")
-    assert shipped == paths.builtin_dir("transport") / "devices/capstan.toml"
-    assert mine == clean_env / "local/config/devices/capstan.toml"
+    shipped, mine = paths.layered("transport", "devices", "capstan_base.toml")
+    assert shipped == paths.builtin_dir("transport") / "devices/capstan_base.toml"
+    assert mine == clean_env / "local/config/devices/capstan_base.toml"
 
 
 def test_the_shipped_file_is_offered_before_yours(clean_env, monkeypatch):
     monkeypatch.setenv(paths.ENV_HOME, str(clean_env / "local"))
-    assert paths.readable("transport", "devices", "capstan.toml") == [
-        paths.builtin("transport", "devices", "capstan.toml")
+    assert paths.readable("transport", "devices", "capstan_base.toml") == [
+        paths.builtin("transport", "devices", "capstan_base.toml")
     ]
 
-    mine = paths.ensure_parent(clean_env / "local/config/devices/capstan.toml")
+    mine = paths.ensure_parent(clean_env / "local/config/devices/capstan_base.toml")
     mine.write_text("")
 
-    found = paths.readable("transport", "devices", "capstan.toml")
-    assert found == [paths.builtin("transport", "devices", "capstan.toml"), mine]
+    found = paths.readable("transport", "devices", "capstan_base.toml")
+    assert found == [paths.builtin("transport", "devices", "capstan_base.toml"), mine]
 
 
 def test_a_file_neither_root_holds_is_not_readable(clean_env, monkeypatch):
