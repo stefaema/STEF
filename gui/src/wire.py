@@ -138,7 +138,7 @@ def options_for(name: str) -> list[dict[str, Any]]:
     """
     for item in bench_api.REGISTRY.subsystems.values():
         for params in _every_form(item):
-            for entry in params:
+            for entry in _with_columns(params):
                 if options_name(entry) == name:
                     return list(choices(entry))
     raise KeyError(name)
@@ -150,3 +150,17 @@ def _every_form(item: Subsystem) -> list[tuple[ParamSpec, ...]]:
     forms += [t.params for t in item.bench_tests.values()]
     forms += [a.params for a in item.actions.values()]
     return forms
+
+
+def _with_columns(params: tuple[ParamSpec, ...]) -> list[ParamSpec]:
+    """Return one form's controls, counting a group's columns as controls too.
+
+    A column is drawn by the same code as a top-level control and may fetch its
+    list the same way, so a walk that stops at the top would answer 404 for a
+    name the screen is going to ask for.
+    """
+    found: list[ParamSpec] = []
+    for entry in params:
+        found.append(entry)
+        found += _with_columns(tuple(entry.get("columns", ())))
+    return found

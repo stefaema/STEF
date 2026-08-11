@@ -1,5 +1,6 @@
 """What crosses to the browser, and what the browser is not allowed to do."""
 
+import dataclasses
 import json
 
 import pytest
@@ -51,6 +52,28 @@ def test_a_live_option_list_crosses_as_its_name_and_not_as_a_snapshot(client):
 
 def test_options_nobody_declared_are_a_refusal(client):
     assert client.get("/api/options/nothing_declares_this").status_code == 404
+
+
+def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
+    # A column is drawn by the code that draws a top-level control, so it fetches
+    # the same way, and a walk that stopped at the top would 404 what it asked for.
+    from shared import bench_api
+
+    def gears():
+        """Return what is on the shaft right now."""
+        return ("high", "low")
+
+    record = bench_api.REGISTRY.subsystem("transport")
+    declared = record.actions["raw.write"]
+    column = bench_api.choice("gear", gears)
+    patched = (*declared.params, bench_api.group("rows", columns=(column,)))
+    record.actions["raw.write"] = dataclasses.replace(declared, params=patched)
+    try:
+        offered = client.get("/api/options/gears")
+        assert offered.status_code == 200
+        assert [one["value"] for one in offered.json()] == ["high", "low"]
+    finally:
+        record.actions["raw.write"] = declared
 
 
 def test_the_port_list_offers_more_than_the_shortlist(client):

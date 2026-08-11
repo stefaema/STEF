@@ -225,6 +225,9 @@
   .z-\[60\] {
     z-index: 60;
   }
+  .-mx-4 {
+    margin-inline: calc(var(--spacing) * -4);
+  }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
   }
@@ -270,11 +273,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     align-items: baseline;
-  }
-  .picker-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 220px) minmax(0, 340px);
-    gap: 12px;
   }
   .clamp-2 {
     display: -webkit-box;
@@ -338,9 +336,6 @@
   .max-h-24 {
     max-height: calc(var(--spacing) * 24);
   }
-  .max-h-96 {
-    max-height: calc(var(--spacing) * 96);
-  }
   .w-1\.5 {
     width: calc(var(--spacing) * 1.5);
   }
@@ -356,8 +351,17 @@
   .w-full {
     width: 100%;
   }
+  .w-max {
+    width: max-content;
+  }
   .min-w-0 {
     min-width: 0px;
+  }
+  .min-w-56 {
+    min-width: calc(var(--spacing) * 56);
+  }
+  .min-w-full {
+    min-width: 100%;
   }
   .flex-1 {
     flex: 1;
@@ -441,6 +445,9 @@
   }
   .overflow-hidden {
     overflow: hidden;
+  }
+  .overflow-x-auto {
+    overflow-x: auto;
   }
   .rounded {
     border-radius: 0.25rem;
@@ -604,9 +611,6 @@
   }
   .pt-3 {
     padding-top: calc(var(--spacing) * 3);
-  }
-  .pr-1 {
-    padding-right: var(--spacing);
   }
   .pb-4 {
     padding-bottom: calc(var(--spacing) * 4);

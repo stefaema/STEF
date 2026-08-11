@@ -90,11 +90,12 @@
     inputSm: "bg-surface border border-gray-300 text-gray-900 text-xs font-mono rounded block w-full px-2 py-1 dark:border-gray-600 dark:text-white",
     checkbox: "w-3.5 h-3.5 text-blue-600 bg-surface border-gray-400 rounded-sm focus:ring-blue-300 dark:border-gray-600",
 
+    divider: "-mx-4 border-t border-gray-300 dark:border-gray-700",
     well: "p-4 bg-inset border border-gray-300 dark:border-gray-700 rounded-lg",
     note: "px-3 py-2 text-sm text-gray-600 bg-inset border-l-4 border-gray-400 rounded-r-md dark:text-gray-300 dark:border-gray-600",
     noteError: "px-3 py-2 text-sm text-red-600 bg-inset border-l-4 border-red-500 rounded-r-md",
 
-    table: "w-full text-xs text-left border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden",
+    table: "w-max min-w-full text-xs text-left border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden",
     th: "px-2.5 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-500 bg-inset dark:text-gray-400",
     td: "px-2.5 py-1.5 border-t border-gray-300 dark:border-gray-700",
 
@@ -378,6 +379,8 @@
   }
 
   function kvTable(rows, heads) {
+    // A reply is as wide as whatever it found. The table is free to outgrow the
+    // column it sits in, and the box around it is what scrolls when it does.
     var table = el("table", { class: CLS.table });
     table.append(
       el("thead", {}, el("tr", {}, (heads || ["field", "value"]).map(function (h) {
@@ -398,7 +401,7 @@
       );
     });
     table.append(body);
-    return table;
+    return el("div", { class: "overflow-x-auto" }, table);
   }
 
   function renderResult(answer) {
@@ -503,16 +506,24 @@
     if (spec.kind === "choice") return choiceControl(spec, values, onChange);
 
     if (spec.kind === "boolean") {
+      // Two buttons rather than one input, so which side is on is drawn here and
+      // not by the browser. A form whose onChange redraws nothing still has to
+      // show the side it now holds.
       var group = el("div", { class: CLS.segmented });
+      var sides = [];
       [false, true].forEach(function (side) {
-        group.append(
-          el("button", {
-            type: "button",
-            class: seg(Boolean(values[spec.name]) === side),
-            text: side ? "True" : "False",
-            onclick: function () { values[spec.name] = side; onChange(); },
-          })
-        );
+        var button = el("button", {
+          type: "button",
+          class: seg(Boolean(values[spec.name]) === side),
+          text: side ? "True" : "False",
+          onclick: function () {
+            values[spec.name] = side;
+            sides.forEach(function (one) { one.node.className = seg(one.side === side); });
+            onChange();
+          },
+        });
+        sides.push({ side: side, node: button });
+        group.append(button);
       });
       return fieldBox(spec, group);
     }
@@ -611,41 +622,59 @@
       ))
     );
     var tbody = el("tbody");
-    rows.forEach(function (row, index) {
-      var cells = spec.columns.map(function (column) {
-        var cell = control(
-          Object.assign({}, column, { hint: null, unit: null }),
-          row,
-          function () {}
-        );
-        var label = cell.querySelector("label");
-        if (label) label.remove();
-        return el("td", { class: CLS.td }, cell);
-      });
-      var remove = el("button", { class: CLS.btnQuiet, title: (T.action || {}).remove_row }, icon("close", "size-4"));
-      remove.addEventListener("click", function () { rows.splice(index, 1); onChange(); });
-      cells.push(el("td", { class: CLS.td }, remove));
-      tbody.append(el("tr", {}, cells));
-    });
     table.append(tbody);
 
-    var wrapper = fieldBox(spec, table);
-    var add = el("button", { class: CLS.btn });
-    add.append(icon("play_arrow"), el("span", { text: (T.action || {}).add_row }));
-    add.addEventListener("click", function () {
-      var blank = {};
-      spec.columns.forEach(function (column) {
-        blank[column.name] =
-          column.kind === "boolean" ? false
-          : column.kind === "raw_bytes" ? ""
-          : column.kind === "choice" ? (column.options && column.options.length ? column.options[0].value : null)
-          : 0;
+    // How many rows there are is this control's own business. Adding one redraws
+    // the body here rather than waiting for a redraw of the form, which is a
+    // redraw a form whose onChange does nothing never gets.
+    function draw() {
+      clear(tbody);
+      rows.forEach(function (row, index) {
+        var cells = spec.columns.map(function (column) {
+          var cell = control(
+            Object.assign({}, column, { hint: null, unit: null }),
+            row,
+            function () {}
+          );
+          var label = cell.querySelector("label");
+          if (label) label.remove();
+          return el("td", { class: CLS.td }, cell);
+        });
+        var remove = el("button", { class: CLS.btnQuiet, title: (T.action || {}).remove_row }, icon("close", "size-4"));
+        remove.addEventListener("click", function () {
+          rows.splice(index, 1);
+          draw();
+          onChange();
+        });
+        cells.push(el("td", { class: CLS.td }, remove));
+        tbody.append(el("tr", {}, cells));
       });
-      rows.push(blank);
+    }
+    draw();
+
+    var wrapper = fieldBox(spec, el("div", { class: "overflow-x-auto" }, table));
+    var add = el("button", { class: CLS.btn });
+    add.append(icon("add"), el("span", { text: (T.action || {}).add_row }));
+    add.addEventListener("click", function () {
+      rows.push(blankRow(spec.columns));
+      draw();
       onChange();
     });
     wrapper.append(el("div", { class: "flex gap-2 items-center mt-2" }, add));
     return wrapper;
+  }
+
+  function blankRow(columns) {
+    var blank = {};
+    columns.forEach(function (column) {
+      var options = column.options || [];
+      blank[column.name] =
+        column.kind === "boolean" ? false
+        : column.kind === "raw_bytes" ? ""
+        : column.kind === "choice" ? (options.length ? options[0].value : null)
+        : 0;
+    });
+    return blank;
   }
 
   function formGrid(params, values, onChange) {
@@ -971,75 +1000,174 @@
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
+  function namespaceOf(item) {
+    var cut = item.name.indexOf(".");
+    return cut < 0 ? "" : item.name.slice(0, cut);
+  }
+
+  function methodOf(item) {
+    var cut = item.name.indexOf(".");
+    return cut < 0 ? item.name : item.name.slice(cut + 1);
+  }
+
+  function namespaceGroups(actions) {
+    var order = [];
+    var methods = {};
+    actions.forEach(function (item) {
+      var ns = namespaceOf(item);
+      if (!methods[ns]) { methods[ns] = []; order.push(ns); }
+      methods[ns].push(item);
+    });
+    return order.map(function (ns) { return { name: ns, methods: methods[ns] }; });
+  }
+
   function renderActions(container) {
     var sub = current();
     if (!sub.actions.length) {
-      container.append(el("div", { class: CLS.cardBody },
-        el("div", { class: CLS.hint, text: (T.action || {}).none })));
+      container.append(card((T.tool || {}).actions, el("div", { class: CLS.cardBody },
+        el("div", { class: CLS.hint, text: (T.action || {}).none }))));
       return;
     }
 
-    var grid = el("div", { class: "picker-grid p-4" });
-    var list = el("div", { class: "flex flex-col gap-0.5 max-h-96 overflow-auto pr-1" });
-    sub.actions.forEach(function (item) {
-      var on = state.action && state.action.name === item.name;
-      list.append(
-        el("button", {
-          class: "flex items-center gap-2 px-2 py-1.5 rounded text-left font-mono text-xs " + (
-            on ? "bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-white"
-               : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"),
-          onclick: function () { selectAction(item); },
-        },
-          item.hazardous ? icon("warning", "size-4 text-red-500") : el("span", { class: "size-4" }),
-          el("span", { class: "truncate", text: item.name })
-        )
-      );
-    });
+    // A refresh replaces every declaration, so the pick is held by name. Re-reading
+    // it rather than re-adopting is what keeps a half-filled form filled.
+    var groups = namespaceGroups(sub.actions);
+    var live = state.action && sub.actions.filter(function (one) {
+      return one.name === state.action.name;
+    })[0];
+    if (live) state.action = live;
+    else adoptAction(groups[0].methods[0]);
 
-    var panel = el("div", { class: "flex flex-col gap-3 min-w-0" });
-    if (!state.action) {
-      panel.append(el("div", { class: CLS.hint, text: (T.action || {}).pick }));
-    } else {
-      var item = state.action;
-      panel.append(el("div", { class: CLS.mono + " text-gray-900 dark:text-white", text: item.name }));
-      if (item.effect) panel.append(el("div", { class: CLS.hint, text: item.effect }));
-      if (item.description) {
-        panel.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
-      }
-      var form = formGrid(item.params, state.actionValues, function () {});
-      if (form) panel.append(form);
-
-      var gated = sub.state !== "up";
-      var call = el("button", {
-        class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
-        disabled: gated || state.actionBusy,
-        title: gated ? (T.action || {}).blocked : "",
-      });
-      var label = (T.action || {}).call;
-      call.append(icon("play_arrow"), el("span", { text: label }));
-      call.addEventListener("click", function () {
-        if (item.hazardous) arm(call, label, "play_arrow", function () { runAction(item); });
-        else runAction(item);
-      });
-      panel.append(el("div", { class: "flex items-center gap-2" }, call));
-
-      if (state.actionAnswer) {
-        panel.append(el("div", { class: CLS.label, text: (T.action || {}).reply }));
-        var answer = state.actionAnswer;
-        panel.append(answer.ok
-          ? renderResult(answer.value) || el("div", { class: CLS.note, text: "" })
-          : el("div", { class: CLS.noteError, text: answer.reason }));
-      }
-    }
-
-    grid.append(list, panel);
-    container.append(grid);
+    container.append(card((T.tool || {}).actions, picker(groups)));
+    container.append(methodCard(state.action, sub));
   }
 
-  function selectAction(item) {
+  function picker(groups) {
+    var chosen = namespaceOf(state.action);
+    var group = groups.filter(function (one) { return one.name === chosen; })[0];
+
+    var namespace = pickerBox(
+      (T.action || {}).namespace,
+      groups.map(function (one) {
+        return { value: one.name, label: one.name + " (" + one.methods.length + ")" };
+      }),
+      chosen,
+      function (picked) {
+        var next = groups.filter(function (one) { return one.name === picked; })[0];
+        selectAction(next.methods[0]);
+      }
+    );
+
+    var method = pickerBox(
+      (T.action || {}).method,
+      group.methods.map(function (one) {
+        return { value: one.name, label: methodOf(one) };
+      }),
+      state.action.name,
+      function (picked) {
+        selectAction(group.methods.filter(function (one) {
+          return one.name === picked;
+        })[0]);
+      }
+    );
+
+    // A namespace is never hazardous, only a method is, so the marker rides the
+    // method control and sits after the name rather than in front of it.
+    if (state.action.hazardous) {
+      method.append(el("span", {
+        class: "inline-flex items-center gap-1 mt-1 text-xs text-red-600",
+      }, icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous })));
+    }
+
+    return el("div", { class: "flex flex-wrap items-start gap-4 p-4" }, namespace, method);
+  }
+
+  function pickerBox(label, entries, chosen, onPick) {
+    var select = el("select", {
+      class: CLS.input + " font-mono",
+      onchange: function () { onPick(select.value); },
+    });
+    entries.forEach(function (entry) {
+      select.append(el("option", {
+        value: entry.value,
+        selected: entry.value === chosen,
+        text: entry.label,
+      }));
+    });
+    return el("div", { class: "flex flex-col min-w-56 flex-1" },
+      el("label", { class: CLS.label, text: label }),
+      select);
+  }
+
+  function methodCard(item, sub) {
+    var body = el("div", { class: "flex flex-col gap-4 p-4" });
+
+    if (item.effect) body.append(el("div", { class: CLS.hint, text: item.effect }));
+    if (item.description) {
+      body.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
+    }
+
+    var form = formGrid(item.params, state.actionValues, function () {});
+    body.append(
+      el("hr", { class: CLS.divider }),
+      el("div", {},
+        el("div", { class: CLS.label, text: (T.action || {}).arguments }),
+        form || el("div", { class: CLS.hint, text: (T.action || {}).no_arguments })),
+      el("hr", { class: CLS.divider }),
+      buttonRow(item, sub)
+    );
+
+    if (state.actionAnswer) {
+      var answer = state.actionAnswer;
+      body.append(
+        el("hr", { class: CLS.divider }),
+        el("div", {},
+          el("div", { class: CLS.label, text: (T.action || {}).reply }),
+          answer.ok
+            ? renderResult(answer.value) || el("div", { class: CLS.note, text: "" })
+            : el("div", { class: CLS.noteError, text: answer.reason }))
+      );
+    }
+
+    return card(item.qualified || item.name, body);
+  }
+
+  function buttonRow(item, sub) {
+    var gated = sub.state !== "up";
+    var run = el("button", {
+      class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
+      disabled: gated || state.actionBusy,
+      title: gated ? (T.action || {}).blocked : "",
+    });
+    var label = (T.action || {}).run;
+    run.append(
+      icon(state.actionBusy ? "progress_activity" : "play_arrow",
+        state.actionBusy ? "size-[18px] animate-spin" : "size-[18px]"),
+      el("span", { text: label })
+    );
+    run.addEventListener("click", function () {
+      if (item.hazardous) arm(run, label, "play_arrow", function () { runAction(item); });
+      else runAction(item);
+    });
+
+    var digest = el("button", {
+      class: CLS.btn,
+      disabled: !item.has_digest,
+      title: item.has_digest ? "" : (T.action || {}).no_digest,
+    });
+    digest.append(icon("receipt_long"), el("span", { text: (T.action || {}).digest }));
+
+    return el("div", { class: "flex items-center gap-2" }, run, digest);
+  }
+
+  function adoptAction(item) {
     state.action = item;
     state.actionValues = JSON.parse(JSON.stringify(item.values || {}));
     state.actionAnswer = null;
+  }
+
+  function selectAction(item) {
+    adoptAction(item);
     renderMain();
   }
 
@@ -1157,9 +1285,7 @@
     } else if (state.tool === "checks") {
       renderChecks(dom.main);
     } else {
-      var panel = el("div", {});
-      renderActions(panel);
-      dom.main.append(card((T.tool || {}).actions, panel));
+      renderActions(dom.main);
     }
   }
 
