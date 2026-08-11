@@ -1,0 +1,10 @@
+[project]
+name = "stef-config"
+version = "0.1.0"
+description = "The TOML this machine is configured by, as the dictionaries a caller reads"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["../.."]
+testpaths = ["tests"]
+cache_dir = "build/pytest"

@@ -1,0 +1,5 @@
+irun = 8
+
+[chopconf]
+toff = 3
+mres = 0
