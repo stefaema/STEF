@@ -15,3 +15,6 @@ __pycache__/
 
 #  Out of scope
 meta/
+
+# Bench notes, kept on disk and out of the tree.
+temp_todo.md
