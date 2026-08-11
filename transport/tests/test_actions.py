@@ -117,6 +117,61 @@ def test_a_register_nobody_declared_a_codec_for_stays_a_number():
     assert dict(reply.fields) == {"value": "42 (0x2a)"}
 
 
+# ── The register a reply carries ─────────────────────────────────────────────
+
+
+def read_of(register, raw):
+    """Return what `raw.read` maps to for one register, without a board to ask."""
+    spec = fw_api.namespaces()["raw"]["read"]
+    return actions.as_result(
+        spec.name,
+        spec.ret(value=raw),
+        spec.wire[1],
+        actions.asked_register(spec.name, spec.args(idx=0, reg=register)),
+    )
+
+
+def test_a_read_is_decoded_by_the_register_it_was_asked_for():
+    # Which codec applies is an argument here, not a property of the method, so
+    # it is the call's own arguments that pick it.
+    reply = read_of(fw_api.TMC2209_GCONF, 0x000000C1)
+    named = dict(reply.fields)
+    assert named["i_scale_analog"] == "true"
+    assert named["shaft"] == "false"
+    assert "GCONF 0x000000c1" in (reply.note or "")
+
+
+def test_two_registers_read_by_one_method_decode_differently():
+    gconf = dict(read_of(fw_api.TMC2209_GCONF, 0x000000C1).fields)
+    status = dict(read_of(fw_api.TMC2209_DRV_STATUS, 0xC0010000).fields)
+    assert "i_scale_analog" in gconf and "i_scale_analog" not in status
+    assert status["stst"] == "true"
+    assert status["cs_actual"] == "1"
+
+
+def test_a_codec_answering_one_number_gives_the_number_its_width_and_sign():
+    # VACTUAL is 24-bit signed. The raw word does not carry that, so undecoded
+    # this reads as 16777200 rather than as a reverse at 16 steps.
+    assert dict(read_of(fw_api.TMC2209_VACTUAL, 0x00FFFFF0).fields) == {
+        "VACTUAL": "-16"
+    }
+
+
+def test_a_scalar_register_keeps_its_number_and_takes_the_registers_name():
+    assert dict(read_of(fw_api.TMC2209_TSTEP, 0x2A).fields) == {"TSTEP": "42 (0x2a)"}
+
+
+def test_a_method_that_names_its_own_register_decodes_with_no_arguments_to_read():
+    spec = fw_api.namespaces()["raw"]["poll_pins"]
+    assert actions.asked_register(spec.name, None) is None
+    reply = actions.as_result(spec.name, spec.ret(value=0x210000C1), spec.wire[1])
+    assert dict(reply.fields)["enn"] == "true"
+
+
+def test_a_register_outside_the_table_is_left_as_the_number_it_came_as():
+    assert dict(read_of(0xFE, 0x2A).fields) == {"value": "42 (0x2a)"}
+
+
 def test_a_reply_that_carries_nothing_still_says_the_call_was_made():
     assert actions.as_result("raw.halt", None).summary == "raw.halt returned"
 
