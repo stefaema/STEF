@@ -6,7 +6,6 @@ from typing import Any
 
 from shared import bench_api
 from shared.bench_api import Level, Result, StepOutcome, StepStatus
-from transport.bench.actions import connected, firmware
 
 
 def _greeting(reply: Any) -> str:
@@ -21,16 +20,6 @@ def _fields(reply: Any) -> tuple[tuple[str, str], ...]:
         (name, getattr(reply, name).split(b"\0", 1)[0].decode("utf-8", "replace"))
         for name in ("project", "idf")
     )
-
-
-@bench_api.action("bench.hello", precondition=connected)
-def hello() -> Result:
-    """Say hello.
-
-    Takes no arguments, and answers with the version the board reports for itself.
-    """
-    reply = firmware().sys.version()
-    return Result(level=Level.OK, summary=_greeting(reply), fields=_fields(reply))
 
 
 @bench_api.bench_test
