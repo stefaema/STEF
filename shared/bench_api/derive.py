@@ -104,5 +104,30 @@ def values_to_dataclass(dataclass_type: type | None, values: dict[str, Any]) -> 
     """
     if dataclass_type is None or not dataclasses.is_dataclass(dataclass_type):
         return None
+    hints = typing.get_type_hints(dataclass_type)
     known = {f.name for f in dataclasses.fields(dataclass_type)}
-    return dataclass_type(**{k: v for k, v in values.items() if k in known})
+    return dataclass_type(
+        **{
+            name: _value_as(hints.get(name), value)
+            for name, value in values.items()
+            if name in known
+        }
+    )
+
+
+def _value_as(annotation: object, value: Any) -> Any:
+    """Return one control's value as the type the field it fills is annotated with.
+
+    A group is drawn from a nested dataclass and comes back as a list of plain
+    mappings, one per row, so the rows are built into that dataclass here. Every
+    other kind already holds what its field takes.
+    """
+    if typing.get_origin(annotation) is not list or not isinstance(value, list):
+        return value
+    (item,) = typing.get_args(annotation)
+    if not (isinstance(item, type) and dataclasses.is_dataclass(item)):
+        return value
+    return [
+        values_to_dataclass(item, row) if isinstance(row, dict) else row
+        for row in value
+    ]

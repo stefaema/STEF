@@ -9,6 +9,7 @@ from shared.bench_api import (
     DerivationError,
     dataclass_to_params,
     integer,
+    values_to_dataclass,
     with_declared,
 )
 from shared.bench_api.params import current_options, needs_fetch, options_name
@@ -172,3 +173,38 @@ def test_a_fixed_list_ships_inline_and_is_not_fetched():
     port = bench_api.choice("port", ("auto", "manual"))
     assert not needs_fetch(port)
     assert options_name(port) is None
+
+
+# ── And back ─────────────────────────────────────────────────────────────────
+
+
+def test_the_values_a_form_holds_rebuild_the_dataclass_it_derived_from():
+    built = values_to_dataclass(MoveArgs, {"idx": 1, "forward": True, "pulses": 200})
+    assert (built.idx, built.forward, built.pulses) == (1, True, 200)
+
+
+def test_a_field_no_control_filled_keeps_the_default_it_declared():
+    assert values_to_dataclass(WriteArgs, {"idx": 2}).ops == []
+
+
+def test_a_value_naming_no_field_is_dropped_rather_than_passed_on():
+    assert values_to_dataclass(ReadArgs, {"idx": 0, "reg": 1, "stray": 9}).idx == 0
+
+
+def test_a_groups_rows_come_back_as_the_dataclass_its_columns_derived_from():
+    # Every control holds what its field takes, except a group: its rows are
+    # mappings of column name to value, and the field is a list of records.
+    built = values_to_dataclass(
+        WriteArgs, {"idx": 0, "ops": [{"reg": Register.GSTAT, "value": 7}]}
+    )
+    assert built.ops == [Op(reg=Register.GSTAT, value=7)]
+
+
+def test_a_row_missing_a_column_keeps_that_columns_default():
+    (op,) = values_to_dataclass(WriteArgs, {"ops": [{"value": 3}]}).ops
+    assert op == Op(reg=Register.GCONF, value=3)
+
+
+def test_a_call_taking_no_argument_object_builds_nothing():
+    assert values_to_dataclass(None, {"idx": 0}) is None
+    assert values_to_dataclass(int, {"idx": 0}) is None
