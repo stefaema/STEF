@@ -101,23 +101,23 @@ def owned_registers() -> tuple[Option, ...]:
     )
 
 
-def text_fields(struct_type: Any) -> frozenset[str]:
+def text_fields(layout: Any) -> frozenset[str]:
     """Return the fields the firmware declared as characters rather than bytes.
 
     Both read back as `bytes`, so the dataclass alone cannot tell a name from a
     payload. The wire struct can.
     """
-    if struct_type is None:
+    if layout is None:
         return frozenset()
     return frozenset(
         name
-        for name, ctype, *_ in struct_type._fields_
+        for name, ctype, *_ in layout._fields_
         if getattr(ctype, "_type_", None) is ctypes.c_char
     )
 
 
 def as_result(
-    name: str, reply: Any, struct: Any = None, register: Any = None
+    name: str, reply: Any, layout: Any = None, register: Any = None
 ) -> Result:
     """Return whatever a method answered in the one vocabulary every caller reads."""
     if reply is None:
@@ -125,7 +125,7 @@ def as_result(
     if not dataclasses.is_dataclass(reply):
         return Result(level=Level.OK, summary=f"{name} -> {reply}")
 
-    texts = text_fields(struct)
+    texts = text_fields(layout)
     fields: list[tuple[str, str]] = []
     table: Table | None = None
     for f in dataclasses.fields(reply):
@@ -133,7 +133,7 @@ def as_result(
             continue
         value = getattr(reply, f.name)
         if isinstance(value, list):
-            built = _table(value, _element_texts(struct, f.name))
+            built = _table(value, _element_texts(layout, f.name))
             if built is not None and table is None:
                 table = built
                 continue
@@ -225,9 +225,9 @@ def _as_text(raw: bytes) -> str:
     return raw.split(b"\0", 1)[0].decode("utf-8", "replace")
 
 
-def _element_texts(struct: Any, field: str) -> frozenset[str]:
+def _element_texts(layout: Any, field: str) -> frozenset[str]:
     """Return the character fields of whatever a repeating member holds."""
-    flex = fw_api.FLEX.get(struct) if struct is not None else None
+    flex = fw_api.FLEX.get(layout) if layout is not None else None
     if flex is None or flex.field != field:
         return frozenset()
     return text_fields(flex.elem)
@@ -289,7 +289,7 @@ def _caller(
         bound = getattr(getattr(transport.firmware(), namespace), method)
         reply = bound(**values)
         found = as_result(
-            spec.name, reply, spec.wire[1], asked_register(spec.name, values)
+            spec.name, reply, spec.ret_layout, asked_register(spec.name, values)
         )
         yield StepOutcome(PASSED, found.summary, found)
 

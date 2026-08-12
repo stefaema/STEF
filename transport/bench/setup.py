@@ -162,33 +162,3 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
         yield StepOutcome(
             PASSED, f"{device_profile.register_name(int(reg))} holds {_hex(held)}"
         )
-
-
-# ── The least a routine can do ───────────────────────────────────────────────
-
-
-@bench_api.routine()
-def say_hello(values: dict[str, Any]) -> Iterator[StepOutcome]:
-    """Say hello.
-
-    One round trip over the open link, which is the least a routine can do and
-    still prove the board is there.
-    """
-    reply = transport.firmware().sys.version()
-    version = reply.version.split(b"\0", 1)[0].decode("utf-8", "replace")
-    line = f"Hello world, {version}"
-    yield StepOutcome(
-        PASSED,
-        line,
-        Result(
-            level=Level.OK,
-            summary=line,
-            fields=tuple(
-                (
-                    name,
-                    getattr(reply, name).split(b"\0", 1)[0].decode("utf-8", "replace"),
-                )
-                for name in ("project", "idf")
-            ),
-        ),
-    )

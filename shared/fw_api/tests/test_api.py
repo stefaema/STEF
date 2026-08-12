@@ -106,10 +106,8 @@ def test_no_terminator_became_a_method():
 
 def test_a_method_finds_the_payloads_its_own_name_predicts():
     raw = fw_api.namespaces()["raw"]
-    assert raw["poll_health"].wire == (
-        fw_api.rpc_dev_args,
-        fw_api.rpc_raw_poll_health_ret,
-    )
+    assert raw["poll_health"].args_layout is fw_api.rpc_dev_args
+    assert raw["poll_health"].ret_layout is fw_api.rpc_raw_poll_health_ret
     assert raw["poll_health"].args is fw_api.dataclass_for(fw_api.rpc_dev_args)
     assert raw["enable"].ret is None
 
@@ -119,7 +117,7 @@ def test_a_method_finds_the_payloads_its_own_name_predicts():
 
     sys_ns = fw_api.namespaces()["sys"]
     assert sys_ns["version"].args is None
-    assert sys_ns["version"].wire[1] is fw_api.rpc_sys_version_ret
+    assert sys_ns["version"].ret_layout is fw_api.rpc_sys_version_ret
 
 
 def test_binding_attaches_every_namespace_to_one_carrier():
@@ -157,7 +155,11 @@ def payload_records():
     found = set()
     for specs in fw_api.namespaces().values():
         for spec in specs.values():
-            found.update(record for record in spec.wire if record is not None)
+            found.update(
+                record
+                for record in (spec.args_layout, spec.ret_layout)
+                if record is not None
+            )
     nested = {
         flex.elem
         for record, flex in fw_api.FLEX.items()

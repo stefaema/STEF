@@ -267,16 +267,35 @@ def decode(struct_type: type, payload: bytes) -> Any:
 
 
 class MethodSpec(NamedTuple):
-    """One callable method, and the payload types its own name predicts."""
+    """One callable method, and the payload layouts its own name predicts.
+
+    The layouts are what the C declares, so the Python a caller handles is
+    derived from them here rather than stored beside them, where the two could
+    come to disagree.
+    """
 
     name: str
     ns: int
     method: int
-    args: type | None
-    ret: type | None
-    fields: tuple[str, ...]
-    wire: tuple[type | None, type | None] = (None, None)
+    args_layout: type | None = None
+    ret_layout: type | None = None
     doc: str | None = None
+
+    @property
+    def args(self) -> type | None:
+        """Return the dataclass a caller fills, or None where the method takes none."""
+        return None if self.args_layout is None else dataclass_for(self.args_layout)
+
+    @property
+    def ret(self) -> type | None:
+        """Return the dataclass a reply arrives as, or None where there is no reply."""
+        return None if self.ret_layout is None else dataclass_for(self.ret_layout)
+
+    @property
+    def fields(self) -> tuple[str, ...]:
+        """Return the arguments a caller may pass by position, in order."""
+        taken = self.args
+        return () if taken is None else tuple(f.name for f in dataclasses.fields(taken))
 
 
 LIBRARY_CALL = {"raw": "tmc2209_"}
@@ -299,13 +318,6 @@ def _prose(stem: str, attr: str, member: str) -> str | None:
     return note
 
 
-def _positional_fields(args_type: type | None) -> tuple[str, ...]:
-    """Return the arguments a caller may pass by position, in order."""
-    if args_type is None:
-        return ()
-    return tuple(f.name for f in dataclasses.fields(args_type))
-
-
 def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
     """Return one namespace's methods, keyed by the name they answer to."""
     specs: dict[str, MethodSpec] = {}
@@ -313,19 +325,13 @@ def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
         if member.name.endswith("_COUNT"):
             continue
         payload_stem = member.name.lower()
-        args_wire = getattr(abi, f"{payload_stem}_args", None)
-        ret_wire = getattr(abi, f"{payload_stem}_ret", None)
-        args = None if args_wire is None else dataclass_for(args_wire)
-        ret = None if ret_wire is None else dataclass_for(ret_wire)
         attr = member.name.removeprefix(f"RPC_{stem}_").lower()
         specs[attr] = MethodSpec(
             name=f"{stem.lower()}.{attr}",
             ns=ns,
             method=int(member),
-            args=args,
-            ret=ret,
-            fields=_positional_fields(args),
-            wire=(args_wire, ret_wire),
+            args_layout=getattr(abi, f"{payload_stem}_args", None),
+            ret_layout=getattr(abi, f"{payload_stem}_ret", None),
             doc=_prose(stem, attr, member.name),
         )
     return specs
@@ -365,18 +371,17 @@ def arguments(spec: MethodSpec, args: tuple[Any, ...], kwargs: dict[str, Any]) -
     if unknown:
         raise TypeError(f"{spec.name} has no argument {', '.join(sorted(unknown))}")
 
-    struct_type, _ = spec.wire
-    if spec.args is None or struct_type is None:
+    taken = spec.args
+    if taken is None or spec.args_layout is None:
         return b""
-    return encode(struct_type, spec.args(**values))
+    return encode(spec.args_layout, taken(**values))
 
 
 def result(spec: MethodSpec, payload: bytes) -> Any:
     """Return what the reply carried, as the dataclass this method promises."""
-    _, struct_type = spec.wire
-    if spec.ret is None or struct_type is None:
+    if spec.ret_layout is None:
         return None
-    return decode(struct_type, payload)
+    return decode(spec.ret_layout, payload)
 
 
 class Namespace:
