@@ -47,8 +47,8 @@ from shared.bench_api.records import (
     Subsystem,
     SubsystemState,
     Table,
-    as_field,
     blocked,
+    treat_as_field,
 )
 from shared.bench_api.registry import (
     REGISTRY,
@@ -108,7 +108,6 @@ __all__ = [
     "boolean",
     "checked_inputs",
     "choice",
-    "as_field",
     "coerced_values",
     "current_options",
     "group",
@@ -130,6 +129,7 @@ __all__ = [
     "routine_json",
     "run_routine",
     "subsystem_json",
+    "treat_as_field",
     "summary_and_body",
     "titled",
 ]

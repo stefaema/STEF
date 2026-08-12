@@ -15,7 +15,7 @@ from shared.bench_api.records import (
     Readiness,
     Routine,
     Subsystem,
-    as_field,
+    treat_as_field,
 )
 from shared.bench_api.registry import REGISTRY, readiness_of
 
@@ -34,7 +34,7 @@ def as_json(value: Any) -> Any:
             for f in dataclasses.fields(value)
             if f.metadata.get("wire") != "drop"
         }
-        for name in _properties_as_fields(type(value)):
+        for name in _properties_treated_as_fields(type(value)):
             crossed[name] = as_json(getattr(value, name))
         return crossed
     if isinstance(value, enum.Enum):
@@ -48,10 +48,10 @@ def as_json(value: Any) -> Any:
     return value
 
 
-def _properties_as_fields(record: type) -> tuple[str, ...]:
+def _properties_treated_as_fields(record: type) -> tuple[str, ...]:
     """Return the names of the properties this record asked to be walked as fields."""
     return tuple(
-        name for name, attr in vars(record).items() if isinstance(attr, as_field)
+        name for name, attr in vars(record).items() if isinstance(attr, treat_as_field)
     )
 
 

@@ -13,7 +13,7 @@ DROPPED = {"wire": "drop"}
 BY_NAME = {"wire": "name"}
 
 
-class as_field(property):
+class treat_as_field(property):
     """A property to be walked as though it were a field, since no property is one."""
 
 
@@ -204,7 +204,7 @@ class Subsystem:
     description: str = ""
     routines: dict[str, Routine] = field(default_factory=dict)
 
-    @as_field
+    @treat_as_field
     def id(self) -> str:
         """Return the name this subsystem is known by, its package's last part."""
         return self.package.rpartition(".")[2]
