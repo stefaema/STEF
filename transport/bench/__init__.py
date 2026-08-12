@@ -1,9 +1,5 @@
-"""What the operator does to the transport when it is out of service.
+"""What the operator does to the transport, at each stage of its life.
 
-Importing the subsystem module is what puts `@subsystem` in the registry, and a
-declaration in here finds its owner by looking for one. Walking this package
-imports this file first, so doing it here is what lets any module below declare
-without importing the subsystem for itself.
+One module per stage, and a module's name is the group its routines answer to:
+`link`, `prelink`, `setup`, and the generated `calls`.
 """
-
-from transport import transport  # noqa: F401

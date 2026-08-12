@@ -1,12 +1,12 @@
-"""Every firmware method, declared as an action, without writing any of them out.
+"""Every firmware method, declared as a routine, without writing any of them out.
 
 `fw_api` already generates one annotated dataclass per method from the firmware
 headers, and an annotated dataclass is exactly what a form derives from. Writing
 twenty-six declarations by hand would copy names and order that are already
 fixed elsewhere, and the copy would go stale the day a header changes.
 
-So the declarations are made in a loop. `@action` is a function like any other,
-and calling it without the decorator syntax is the same registration.
+So the declarations are made in a loop, through the registrar the decorator is
+sugar over.
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ from __future__ import annotations
 import ctypes
 import dataclasses
 import enum
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from shared import bench_api, fw_api
-from shared.bench_api import Level, Option, Result, Table, blocked
-from shared.bench_api.stef import STEF
+from shared.bench_api import CALL, PASSED, Level, Option, Result, StepOutcome, Table
+from transport import transport
 
 SUMMARY = 140
 DEVICE = "Which driver, by the name the board declares for it."
@@ -65,23 +65,6 @@ HAZARDOUS = {
 }
 
 
-def firmware() -> Any:
-    """Return the open link, or say that there is nothing to call through."""
-    link = STEF.transport.link
-    live = getattr(link, "firmware", None)
-    if live is None:
-        raise bench_api.DeclarationError("the transport is not connected")
-    return live
-
-
-def connected(*_: Any, **__: Any) -> Any:
-    """Say whether a call may be made at all, which is whether the link is up."""
-    link = STEF.transport.link
-    if getattr(link, "firmware", None) is None:
-        return blocked("not connected")
-    return None
-
-
 def devices() -> tuple[Option, ...]:
     """Return the board's driver table, as the names each index stands for.
 
@@ -89,10 +72,10 @@ def devices() -> tuple[Option, ...]:
     the machine is growing that table, and a copy kept here would disagree with
     the board the first time one is added.
     """
-    if connected() is not None:
+    if transport.state() is not bench_api.SubsystemState.UP:
         return ()
     try:
-        reply = firmware().sys.devices()
+        reply = transport.firmware().sys.devices()
     except Exception:  # noqa: BLE001
         return ()
     return tuple(
@@ -116,16 +99,6 @@ def owned_registers() -> tuple[Option, ...]:
         for reg in fw_api.Tmc2209Reg
         if fw_api.tmc2209_reg_class(int(reg)) == fw_api.TMC2209_CLASS_OWNED
     )
-
-
-def _values(args: Any) -> dict[str, Any]:
-    """Return an argument object as the keywords the generated method takes."""
-    if args is None:
-        return {}
-    if dataclasses.is_dataclass(args) and not isinstance(args, type):
-        return {f.name: getattr(args, f.name) for f in dataclasses.fields(args)}
-    mapping: Any = args
-    return dict(mapping)
 
 
 def text_fields(struct_type: Any) -> frozenset[str]:
@@ -187,7 +160,7 @@ def as_result(
     )
 
 
-def asked_register(name: str, args: Any) -> Any | None:
+def asked_register(name: str, values: dict[str, Any]) -> Any | None:
     """Return the register a call asked for, for the methods that answer per register.
 
     Only these need telling. A method that always answers the same register names
@@ -195,7 +168,7 @@ def asked_register(name: str, args: Any) -> Any | None:
     arguments still gets the decode.
     """
     if name in ANSWERS_WHAT_WAS_ASKED:
-        return getattr(args, "reg", None)
+        return values.get("reg")
     return None
 
 
@@ -303,62 +276,64 @@ def _render(value: Any) -> str:
     return str(value)
 
 
-def _caller(spec: fw_api.MethodSpec) -> Callable[[Any], Result]:
-    """Return the function that makes one method's call, annotated so a form derives.
+# ── One routine per generated method ─────────────────────────────────────────
 
-    The annotation is the whole declaration: `@action` reads the argument type
-    off it, and `derive.py` turns that dataclass into the controls.
-    """
+
+def _caller(
+    spec: fw_api.MethodSpec,
+) -> Callable[[dict[str, Any]], Iterator[StepOutcome]]:
+    """Return the routine that makes one method's call and reports what came back."""
     namespace, _, method = spec.name.partition(".")
 
-    def call(args=None):
-        bound = getattr(getattr(firmware(), namespace), method)
-        reply = bound(**_values(args))
-        return as_result(
-            spec.name, reply, spec.wire[1], asked_register(spec.name, args)
+    def call(values: dict[str, Any]) -> Iterator[StepOutcome]:
+        bound = getattr(getattr(transport.firmware(), namespace), method)
+        reply = bound(**values)
+        found = as_result(
+            spec.name, reply, spec.wire[1], asked_register(spec.name, values)
         )
+        yield StepOutcome(PASSED, found.summary, found)
 
-    call.__name__ = spec.name.replace(".", "_")
-    call.__qualname__ = call.__name__
-    call.__module__ = __name__
-    call.__doc__ = spec.doc or f"Call {spec.name}."
-    call.__annotations__ = {} if spec.args is None else {"args": spec.args}
     return call
 
 
-def _declared(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
-    """Return the residue an annotation cannot carry, for the fields that have any.
+def _inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
+    """Return the form one method takes, deriving it and overriding what it cannot say.
 
     An index is a number until the board says which driver each one is, and a
     batch element names a register out of a set narrower than the type allows.
     """
-    params: list[Any] = []
-    if "idx" in spec.fields:
-        params.append(bench_api.choice("idx", devices, hint=DEVICE))
-    if "ops" in spec.fields:
-        params.append(
-            bench_api.group(
-                "ops",
-                columns=(
-                    bench_api.integer("value"),
-                    bench_api.choice("reg", owned_registers(), hint=REGISTER),
-                ),
-            )
-        )
-    return tuple(params)
+    override = {
+        "idx": bench_api.choice("idx", devices, hint=DEVICE),
+        "ops": bench_api.group(
+            "ops",
+            columns=(
+                bench_api.integer("value"),
+                bench_api.choice("reg", owned_registers(), hint=REGISTER),
+            ),
+        ),
+    }
+    derived = bench_api.inputs_for(spec.args)
+    named = {name: item for name, item in override.items() if name in spec.fields}
+    return bench_api.overridden(derived, named)
 
 
 def declare() -> tuple[str, ...]:
-    """Register one action per generated method, and return what was registered."""
+    """Register one routine per generated method, and return what was registered."""
     declared = []
     for namespace in fw_api.namespaces().values():
         for spec in namespace.values():
-            bench_api.action(
-                spec.name,
+            group, _, name = spec.name.partition(".")
+            bench_api.register_routine(
+                module=__name__,
+                group=group,
+                name=name,
+                title=spec.name,
+                description=spec.doc or "",
+                category=CALL,
                 hazardous=spec.name in HAZARDOUS,
-                precondition=connected,
-                params=_declared(spec),
-            )(_caller(spec))
+                inputs=_inputs(spec),
+                run=_caller(spec),
+            )
             declared.append(spec.name)
     return tuple(declared)
 

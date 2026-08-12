@@ -1,4 +1,4 @@
-"""Who is on the port, told in the order that costs the board least.
+"""What the operator does to a port before anything holds it.
 
 The obvious ladder is bottom-up: prove the silicon, then prove the firmware. It
 resets a healthy board every time you look at it, and the reset kills the
@@ -9,30 +9,57 @@ silence is ambiguous, and only silence is worth a reset to resolve.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 from shared import bench_api
-from shared.bench_api import Level, Result, StepOutcome, StepStatus
+from shared.bench_api import (
+    FAILED,
+    PASSED,
+    PRELINK,
+    WARNED,
+    Abandoned,
+    Level,
+    Result,
+    StepOutcome,
+    StepStatus,
+)
 from transport import fw_image, fw_link, fw_probe
 from transport.bench import rom
-from transport.transport import AUTO, serial_ports
+from transport.bench.link import PORT
+from transport.transport import AUTO, named_port, pinned_version
 
 STATUS = {
-    fw_probe.Finding.RUNNING: StepStatus.PASSED,
-    fw_probe.Finding.STALE: StepStatus.WARNED,
-    fw_probe.Finding.PROTOCOL: StepStatus.FAILED,
-    fw_probe.Finding.ABSENT: StepStatus.FAILED,
+    fw_probe.Finding.RUNNING: PASSED,
+    fw_probe.Finding.STALE: WARNED,
+    fw_probe.Finding.PROTOCOL: FAILED,
+    fw_probe.Finding.ABSENT: FAILED,
 }
 
 LEVEL = {
-    StepStatus.PASSED: Level.OK,
-    StepStatus.WARNED: Level.WARN,
-    StepStatus.FAILED: Level.ERROR,
+    PASSED: Level.OK,
+    WARNED: Level.WARN,
+    FAILED: Level.ERROR,
     StepStatus.SKIPPED: Level.OK,
 }
 
+DESCRIPTOR = "USB descriptor"
+OVER_RPC = "Firmware over RPC"
+BOOTLOADER = "ROM bootloader"
 
-def _result(status: StepStatus, verdict: fw_probe.Verdict) -> Result:
-    """Return the verdict as the panel behind the one-line outcome."""
+
+def _panel(status: StepStatus, verdict: fw_probe.Verdict) -> Result:
+    """Return a verdict as the panel behind the one-line outcome."""
     return Result(level=LEVEL[status], summary=verdict.sentence, fields=verdict.fields)
+
+
+def _result_for(verdict: fw_probe.Verdict) -> Result:
+    """Return a verdict as the panel behind the line that reports it."""
+    return Result(
+        level=Level.OK if verdict else Level.WARN,
+        summary=verdict.sentence,
+        fields=verdict.fields,
+    )
 
 
 def _descriptor_says(seen: fw_probe.Candidate) -> tuple[StepStatus, str, str]:
@@ -44,116 +71,179 @@ def _descriptor_says(seen: fw_probe.Candidate) -> tuple[StepStatus, str, str]:
     """
     if seen.silicon is fw_probe.Silicon.ESPRESSIF:
         return (
-            StepStatus.PASSED,
+            PASSED,
             f"{seen.device} is Espressif silicon, {seen.description or seen.vidpid}",
             "The vendor id is Espressif's own, so this much is settled.",
         )
     if seen.silicon is fw_probe.Silicon.BRIDGE:
         return (
-            StepStatus.PASSED,
+            PASSED,
             f"{seen.device} is a USB-UART bridge, {seen.description or seen.vidpid}",
             "A bridge chip names itself, never what is behind it.",
         )
     return (
-        StepStatus.WARNED,
+        WARNED,
         f"{seen.device} does not look like a board",
         "Nothing in the descriptor suggests one. Asking anyway, since a "
         "descriptor cannot settle what is on the far side of a UART.",
     )
 
 
-def _pinned() -> str | None:
-    """Return the version this machine says it runs, treating a bad pin as none.
-
-    A malformed pin must not stop the ladder: the operator is here because
-    something is wrong, and refusing to look would be the least useful moment
-    to be strict.
-    """
+def _port_now(chosen: str) -> str:
+    """Return the port to work on, refusing before anything is opened."""
     try:
-        return fw_image.expected()
-    except fw_image.ImageError:
-        return None
+        return fw_probe.find_port(named_port(chosen))
+    except fw_link.LinkError as exc:
+        raise Abandoned(str(exc), FAILED) from exc
 
 
-@bench_api.link_test(
-    params=(
-        bench_api.choice(
-            "port",
-            serial_ports,
-            hint="Which port to interrogate. 'auto' when only one could carry a board.",
-        ),
-    )
+# ── Asking who is there ──────────────────────────────────────────────────────
+
+
+@bench_api.routine(
+    category=PRELINK, steps=[DESCRIPTOR, OVER_RPC, BOOTLOADER], inputs=[PORT]
 )
-class VerifyPort:
+def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Verify a port.
 
     Asks the firmware who it is, and falls back to the ROM bootloader only when
     nothing answers. Ends naming what is on the port and what to do about it.
     """
+    port = _port_now(values.get("port", AUTO))
 
-    def __init__(self, port: str = AUTO) -> None:
-        """Take the port the form chose, which every step below reads off self."""
-        self.chosen = port
-        self.port = ""
-        self.verdict: fw_probe.Verdict | None = None
+    seen = fw_probe.attached(port)
+    assert seen is not None
+    status, summary, note = _descriptor_says(seen)
+    fields = [("port", port), ("silicon", seen.silicon.value)]
+    if seen.vid is not None:
+        fields.insert(1, ("usb", seen.vidpid))
+    if seen.description:
+        fields.insert(-1, ("descriptor", seen.description))
+    yield StepOutcome(
+        status,
+        summary,
+        Result(level=LEVEL[status], summary=summary, note=note, fields=tuple(fields)),
+        step=DESCRIPTOR,
+    )
 
-    @bench_api.step
-    def attached(self, bench: object) -> StepOutcome:
-        """USB descriptor."""
-        try:
-            self.port = fw_probe.find_port(None if self.chosen == AUTO else self.chosen)
-        except fw_link.LinkError as exc:
-            raise bench_api.Abandoned(str(exc), StepStatus.FAILED) from exc
+    verdict = fw_probe.identify(port, pinned_version())
+    if verdict.finding is not fw_probe.Finding.SILENT:
+        settled = STATUS[verdict.finding]
+        raise Abandoned(verdict.sentence, settled, _panel(settled, verdict))
+    yield StepOutcome(WARNED, verdict.sentence, step=OVER_RPC)
 
-        seen = fw_probe.attached(self.port)
-        assert seen is not None
-        status, summary, note = _descriptor_says(seen)
-        fields = [("port", self.port), ("silicon", seen.silicon.value)]
-        if seen.vid is not None:
-            fields.insert(1, ("usb", seen.vidpid))
-        if seen.description:
-            fields.insert(-1, ("descriptor", seen.description))
+    try:
+        found = rom.detect(port)
+    except rom.RomError as exc:
+        yield StepOutcome(
+            FAILED,
+            f"no bootloader answered either, so {port} is not a board we can use",
+            Result(level=Level.ERROR, summary=str(exc)),
+            step=BOOTLOADER,
+        )
+        return
 
-        return StepOutcome(
-            status,
-            summary,
-            Result(
-                level=LEVEL[status], summary=summary, note=note, fields=tuple(fields)
-            ),
+    yield StepOutcome(
+        WARNED,
+        f"{found.description} with no working firmware. Flash it",
+        Result(
+            level=Level.WARN,
+            summary=f"{found.description} answered its bootloader",
+            note="The silicon is ours and the firmware is not. Flash it.",
+            fields=(("port", port), *found.fields),
+        ),
+        step=BOOTLOADER,
+    )
+
+
+# ── Putting an image on ──────────────────────────────────────────────────────
+
+
+@bench_api.routine(
+    category=PRELINK,
+    hazardous=True,
+    inputs=[
+        PORT,
+        bench_api.choice(
+            "image",
+            fw_image.versions,
+            hint="Which installed version to write. 'auto' is the one this machine pins.",
+        ),
+        bench_api.boolean(
+            "force", hint="Write even when the board already runs this version."
+        ),
+    ],
+)
+def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Flash the board.
+
+    Erases the flash and writes one installed release onto it, then reads it back
+    and asks the firmware who it is. Refuses a board that already runs the chosen
+    version unless forced, and refuses a release built for another chip always.
+    """
+    release = fw_image.resolve(values.get("image", fw_image.AUTO))
+    port = _port_now(values.get("port", AUTO))
+
+    altered = fw_image.altered(release)
+    if altered:
+        raise Abandoned(
+            f"{release.version} on disk no longer matches its manifest: "
+            f"{', '.join(altered)}. Import it again",
+            FAILED,
         )
 
-    @bench_api.step
-    def firmware(self, bench: object) -> StepOutcome:
-        """Firmware over RPC."""
-        self.verdict = fw_probe.identify(self.port, _pinned())
-        if self.verdict.finding is fw_probe.Finding.SILENT:
-            return StepOutcome(StepStatus.WARNED, self.verdict.sentence)
+    running = fw_probe.identify(port, release.version)
+    if running.finding is fw_probe.Finding.RUNNING and not values.get("force"):
+        raise Abandoned(
+            f"{port} already runs {release.version}, so there is nothing to write",
+            PASSED,
+            Result(level=Level.OK, summary=running.sentence, fields=running.fields),
+        )
+    yield StepOutcome(
+        PASSED,
+        f"writing {release.version} to {port}: {running.sentence}",
+        _result_for(running),
+    )
 
-        settled = STATUS[self.verdict.finding]
-        raise bench_api.Abandoned(
-            self.verdict.sentence, settled, _result(settled, self.verdict)
+    found = rom.detect(port)
+    if not release.fits(found.chip):
+        raise Abandoned(
+            f"{release.version} was built for {release.chip} and this board is "
+            f"{found.description}. Refusing to write it",
+            FAILED,
+        )
+    yield StepOutcome(
+        PASSED,
+        f"{found.description}, which is what {release.version} was built for",
+        Result(
+            level=Level.OK,
+            summary="the image matches the silicon",
+            fields=found.fields,
+        ),
+    )
+
+    rom.erase(port, release.chip)
+    yield StepOutcome(PASSED, "flash erased")
+
+    for binary in release.binaries:
+        rom.write(port, release, binary)
+        yield StepOutcome(
+            PASSED,
+            f"wrote {binary.path.name} at {hex(binary.offset)}, {binary.size} bytes",
         )
 
-    @bench_api.step
-    def bootloader(self, bench: object) -> StepOutcome:
-        """ROM bootloader."""
-        try:
-            found = rom.detect(self.port)
-        except rom.RomError as exc:
-            return StepOutcome(
-                StepStatus.FAILED,
-                f"no bootloader answered either, so {self.port} is not a board "
-                f"we can use",
-                Result(level=Level.ERROR, summary=str(exc)),
-            )
-
-        return StepOutcome(
-            StepStatus.WARNED,
-            f"{found.description} with no working firmware. Flash it",
-            Result(
-                level=Level.WARN,
-                summary=f"{found.description} answered its bootloader",
-                note="The silicon is ours and the firmware is not. Flash it.",
-                fields=(("port", self.port), *found.fields),
-            ),
+    differing = rom.verify(port, release)
+    if differing:
+        raise Abandoned(
+            f"the board reads back different from what was written: "
+            f"{', '.join(differing)}",
+            FAILED,
         )
+    yield StepOutcome(
+        PASSED, f"all {len(release.binaries)} images read back as written"
+    )
+
+    settled = fw_probe.identify(port, release.version)
+    yield StepOutcome(
+        PASSED if settled else WARNED, settled.sentence, _result_for(settled)
+    )

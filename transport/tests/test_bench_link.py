@@ -7,17 +7,10 @@ from shared.bench_api import StepStatus
 from transport import fw_link, fw_probe
 
 
-@pytest.fixture(scope="module", autouse=True)
-def declared():
-    """Import the bench package once, the way the backend does."""
-    bench_api.load("transport.bench")
-    return bench_api.REGISTRY
-
-
 @pytest.fixture
 def verify(declared):
     """Return the routine under test."""
-    return declared.bench_test("transport.verify_port")
+    return declared.routines["prelink.verify_port"]
 
 
 def candidate(device, vid, description=""):
@@ -43,7 +36,7 @@ def only(monkeypatch):
 
 def descriptor_step(verify, one):
     """Return how the first rung settled for this port."""
-    return next(iter(verify.run(None, port=one.device)))
+    return next(iter(bench_api.run_routine(verify, {"port": one.device})))
 
 
 def test_espressif_silicon_is_the_one_thing_a_descriptor_settles(verify, only):
@@ -72,7 +65,7 @@ def test_a_port_the_descriptor_does_not_recognise_is_not_a_pass(verify, only):
 
 def test_an_unrecognised_port_is_still_asked_rather_than_refused(verify, only):
     one = only(candidate("/dev/ttyS1", None, "n/a"))
-    reached = [o.status for o in verify.run(None, port=one.device)]
+    reached = [o.status for o in bench_api.run_routine(verify, {"port": one.device})]
     assert len(reached) == 3
     assert reached[0] is StepStatus.WARNED
 
@@ -81,6 +74,6 @@ def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
     verify, monkeypatch
 ):
     monkeypatch.setattr(fw_probe, "candidates", lambda: ())
-    settled = list(verify.run(None, port="/dev/ttyNOPE"))
+    settled = list(bench_api.run_routine(verify, {"port": "/dev/ttyNOPE"}))
     assert settled[0].status is StepStatus.FAILED
     assert [o.status for o in settled[1:]] == [StepStatus.SKIPPED, StepStatus.SKIPPED]
