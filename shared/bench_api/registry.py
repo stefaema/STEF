@@ -16,6 +16,7 @@ from shared.bench_api.records import (
     READY,
     SETUP,
     SKIPPED,
+    Behaviour,
     Category,
     DeclarationError,
     Input,
@@ -151,8 +152,8 @@ def register_routine(
     steps: Sequence[str] = (),
     inputs: Sequence[Input] = (),
     run: Callable[..., Iterator[StepOutcome]],
-    precondition: Callable[..., Readiness | None] | None = None,
-    may_run: Callable[..., Readiness | None] | None = None,
+    can_run: Callable[..., Readiness | None] | None = None,
+    can_run_with: Callable[..., Readiness | None] | None = None,
 ) -> Routine:
     """Register one routine from parts, which is what a generated family has.
 
@@ -171,9 +172,7 @@ def register_routine(
             hazardous=hazardous,
             steps=tuple(steps),
             inputs=checked_inputs(inputs),
-            run=run,
-            precondition=precondition,
-            may_run=may_run,
+            do=Behaviour(run=run, can_run=can_run, can_run_with=can_run_with),
         )
     )
 
@@ -184,8 +183,8 @@ def routine(
     hazardous: bool = False,
     steps: Sequence[str] = (),
     inputs: Sequence[Input] = (),
-    precondition: Callable[..., Readiness | None] | None = None,
-    may_run: Callable[..., Readiness | None] | None = None,
+    can_run: Callable[..., Readiness | None] | None = None,
+    can_run_with: Callable[..., Readiness | None] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Declare one routine, taking its id from where it lives and its prose from its docstring."""
 
@@ -202,8 +201,8 @@ def routine(
             steps=steps,
             inputs=inputs,
             run=target,
-            precondition=precondition,
-            may_run=may_run,
+            can_run=can_run,
+            can_run_with=can_run_with,
         )
         return target
 
@@ -225,16 +224,16 @@ def readiness_of(item: Routine, state: SubsystemState) -> Readiness:
         return blocked("not connected")
     if item.category is PRELINK and state is SubsystemState.UP:
         return blocked("the link holds the port; disconnect first")
-    if item.precondition is None:
+    if item.do.can_run is None:
         return READY
-    return _answered(item.precondition())
+    return _answered(item.do.can_run())
 
 
 def readiness_with(item: Routine, values: dict[str, Any]) -> Readiness:
     """Return whether this routine may run with these values, which may cost a probe."""
-    if item.may_run is None:
+    if item.do.can_run_with is None:
         return READY
-    return _answered(item.may_run(**values))
+    return _answered(item.do.can_run_with(**values))
 
 
 def _answered(verdict: Readiness | None) -> Readiness:
@@ -260,7 +259,7 @@ def run_routine(item: Routine, values: dict[str, Any]) -> Iterator[StepOutcome]:
     pending = list(item.steps)
     reached = 0
     try:
-        for produced in item.run(values):
+        for produced in item.do.run(values):
             outcome = _titled_outcome(produced, pending, reached)
             _consume(pending, outcome.step)
             yield outcome

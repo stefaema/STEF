@@ -62,7 +62,7 @@ def can_connect(port: str = AUTO) -> Readiness:
 
 
 @bench_api.routine(
-    category=LINK, inputs=[PORT], precondition=link_is_down, may_run=can_connect
+    category=LINK, inputs=[PORT], can_run=link_is_down, can_run_with=can_connect
 )
 def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Connect.
@@ -78,7 +78,7 @@ def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     )
 
 
-@bench_api.routine(category=LINK, precondition=link_is_up)
+@bench_api.routine(category=LINK, can_run=link_is_up)
 def disconnect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Disconnect.
 

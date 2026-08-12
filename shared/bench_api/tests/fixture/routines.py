@@ -42,7 +42,7 @@ def probe_is_warm(port: str = "") -> Readiness:
 @bench_api.routine(
     category=LINK,
     inputs=[bench_api.choice("port", ports)],
-    may_run=probe_is_warm,
+    can_run_with=probe_is_warm,
 )
 def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Connect."""

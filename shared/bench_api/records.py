@@ -3,7 +3,7 @@
 import enum
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, NamedTuple
+from typing import Any, NamedTuple
 
 # What a subsystem package is asked for its state by.
 STATE_ATTRIBUTE = "state"
@@ -144,10 +144,6 @@ class Input:
     options: Options = None
     columns: tuple["Input", ...] = ()
 
-    # Where the options come from, which is a live list as often as a fixed one.
-    # What crosses is what they are right now, or the name to ask under.
-    NOT_DATA: ClassVar[tuple[str, ...]] = ("options",)
-
 
 # ── What an operator runs ────────────────────────────────────────────────────
 
@@ -168,6 +164,19 @@ CALL = Category.CALL
 
 
 @dataclass(frozen=True, slots=True)
+class Behaviour:
+    """What a routine does, and what it says before it does it.
+
+    Held apart from the description because nothing describes a callable: it is
+    called, never read, never shown and never serialised.
+    """
+
+    run: Callable[..., Iterator[StepOutcome]]
+    can_run: Callable[[], Readiness | None] | None = None
+    can_run_with: Callable[..., Readiness | None] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Routine:
     """One thing an operator runs, whatever it does and however many steps it takes."""
 
@@ -181,13 +190,7 @@ class Routine:
     hazardous: bool
     steps: tuple[str, ...]
     inputs: tuple[Input, ...]
-    run: Callable[..., Iterator[StepOutcome]]
-    precondition: Callable[[], Readiness | None] | None = None
-    may_run: Callable[..., Readiness | None] | None = None
-
-    # What this record does, as against what it holds. A screen is given the
-    # rest of it; these three are only ever called.
-    NOT_DATA: ClassVar[tuple[str, ...]] = ("run", "precondition", "may_run")
+    do: Behaviour
 
 
 @dataclass
@@ -198,9 +201,6 @@ class Subsystem:
     summary: str = ""
     description: str = ""
     routines: dict[str, Routine] = field(default_factory=dict)
-
-    # The live package, which is asked for state and never described to anyone.
-    NOT_DATA: ClassVar[tuple[str, ...]] = ("module",)
 
     @property
     def id(self) -> str:

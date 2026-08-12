@@ -2,6 +2,7 @@
 
 import dataclasses
 import enum
+import inspect
 from typing import Any
 
 from shared.bench_api.inputs import (
@@ -10,24 +11,29 @@ from shared.bench_api.inputs import (
     options_are_live,
     options_name,
 )
-from shared.bench_api.records import Input, Readiness, Routine, Subsystem
+from shared.bench_api.records import (
+    Behaviour,
+    Input,
+    Readiness,
+    Routine,
+    Subsystem,
+)
 from shared.bench_api.registry import REGISTRY, readiness_of
 
 # ── The one convention ───────────────────────────────────────────────────────
 
 
 def as_json(value: Any) -> Any:
-    """Return any record as JSON, leaving out whatever the record does rather than holds.
+    """Return any record as JSON, leaving out whatever it uses rather than holds.
 
-    A record says which of its members are not data, and those are the ones a
-    screen has no use for anyway: what it runs and what it asks before running.
+    What a record uses is a `Behaviour` or a live module, and neither describes
+    anything: one is called and the other is asked for state.
     """
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        behaviour = getattr(type(value), "NOT_DATA", ())
         return {
             f.name: as_json(getattr(value, f.name))
             for f in dataclasses.fields(value)
-            if f.name not in behaviour
+            if _is_data(getattr(value, f.name))
         }
     if isinstance(value, enum.Enum):
         return value.value
@@ -43,10 +49,20 @@ def as_json(value: Any) -> Any:
 # ── What a screen receives ───────────────────────────────────────────────────
 
 
+def _is_data(value: Any) -> bool:
+    """Whether this is something a record holds, rather than something it uses."""
+    return not isinstance(value, Behaviour) and not inspect.ismodule(value)
+
+
 def input_json(item: Input) -> dict[str, Any]:
     """Return one control, its options inline unless they must be asked for."""
     return {
-        **as_json(item),
+        "name": item.name,
+        "kind": item.kind,
+        "hint": item.hint,
+        "unit": item.unit,
+        "min": item.min,
+        "max": item.max,
         "options": None if options_are_live(item) else list(labelled_options(item)),
         "options_name": options_name(item),
         "columns": [input_json(column) for column in item.columns],
@@ -71,7 +87,7 @@ def routine_json(item: Routine, state: Any) -> dict[str, Any]:
         "inputs": [input_json(entry) for entry in item.inputs],
         "blank": blank_values(item.inputs),
         "ready": readiness_json(readiness_of(item, state)),
-        "asks_first": item.may_run is not None,
+        "asks_first": item.do.can_run_with is not None,
     }
 
 

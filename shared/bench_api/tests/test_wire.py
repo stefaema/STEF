@@ -47,7 +47,7 @@ def test_an_outcome_carries_its_step_and_whatever_it_found():
 def test_what_a_record_does_is_left_out_and_what_it_holds_is_not(oven):
     packed = bench_api.as_json(oven.routines["routines.connect"])
 
-    assert set(packed) & set(bench_api.Routine.NOT_DATA) == set()
+    assert "do" not in packed
     assert packed["title"] == "Connect"
 
 
@@ -65,9 +65,7 @@ def test_the_name_a_subsystem_is_known_by_reaches_the_screen(oven):
 def test_the_callable_that_runs_a_routine_never_crosses(oven):
     packed = routine_of(oven, "routines.ramp")
 
-    assert "run" not in packed
-    assert "precondition" not in packed
-    assert "may_run" not in packed
+    assert "do" not in packed
 
 
 def test_a_live_option_list_crosses_as_the_name_to_ask_for_it_by(oven):
