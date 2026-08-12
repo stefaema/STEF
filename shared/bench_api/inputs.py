@@ -157,12 +157,6 @@ def options_are_live(item: Input) -> bool:
     return _fetcher(item) is not None
 
 
-def options_name(item: Input) -> str | None:
-    """Return the name the options are fetched by, or None where nothing is called."""
-    fetch = _fetcher(item)
-    return fetch.__name__ if fetch else None
-
-
 def current_options(item: Input) -> tuple[Any, ...]:
     """Return the options as they stand now, calling for them if that is needed."""
     fetch = _fetcher(item)

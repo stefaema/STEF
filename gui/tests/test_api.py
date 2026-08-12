@@ -45,16 +45,16 @@ def test_every_declaration_reaches_the_browser_as_json(client):
     assert len(transport["actions"]) == 26
 
 
-def test_a_live_option_list_crosses_as_its_name_and_not_as_a_snapshot(client):
+def test_a_live_option_list_arrives_drawn_and_says_where_to_ask_again(client):
     transport = client.get("/api/subsystems").json()[0]
     port = transport["link"]["params"][0]
-    assert port["options_name"] == "serial_ports"
-    assert port["options"] is None
-    assert client.get("/api/options/serial_ports").status_code == 200
+    assert isinstance(port["options"], list)
+    assert port["reload"] == "/api/options/transport/link.connect/port"
+    assert client.get(port["reload"]).status_code == 200
 
 
 def test_options_nobody_declared_are_a_refusal(client):
-    assert client.get("/api/options/nothing_declares_this").status_code == 404
+    assert client.get("/api/options/transport/link.connect/nope").status_code == 404
 
 
 def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
@@ -72,7 +72,7 @@ def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
     patched = (*declared.inputs, bench_api.group("rows", columns=(column,)))
     record.routines["raw.write"] = dataclasses.replace(declared, inputs=patched)
     try:
-        offered = client.get("/api/options/gears")
+        offered = client.get("/api/options/transport/raw.write/gear")
         assert offered.status_code == 200
         assert [one["value"] for one in offered.json()] == ["high", "low"]
     finally:
@@ -80,7 +80,7 @@ def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
 
 
 def test_the_port_list_offers_more_than_the_shortlist(client):
-    offered = client.get("/api/options/serial_ports").json()
+    offered = client.get("/api/options/transport/link.connect/port").json()
     assert offered[0]["value"] == "auto"
     assert all("value" in one and "label" in one for one in offered)
 

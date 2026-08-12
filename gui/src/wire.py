@@ -86,11 +86,6 @@ def readiness(verdict: Any) -> dict[str, Any]:
     return bench_api.readiness_json(verdict)
 
 
-def options_for(name: str) -> list[dict[str, Any]]:
-    """Return a live option list, by the name its callable crosses under."""
-    return bench_api.options_named(name)
-
-
 def link_of(item: Subsystem, name: str) -> Routine:
     """Return one of a subsystem's link routines, or say it declares none."""
     found = bench_api.link_routine(item, name)

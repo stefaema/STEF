@@ -160,14 +160,10 @@
     });
   }
 
-  var fetched = {};
-
-  function options(name) {
-    if (fetched[name]) return Promise.resolve(fetched[name]);
-    return api("/api/options/" + encodeURIComponent(name)).then(function (list) {
-      fetched[name] = list;
-      return list;
-    });
+  // A live list is asked for again where the control says to, and never cached:
+  // ports appear when a board is plugged in, and the point of asking is freshness.
+  function reload(at) {
+    return api(at);
   }
 
   // ── What the screen is showing ─────────────────────────────────────────────
@@ -482,23 +478,23 @@
       }
     }
 
+    // Drawn with what the payload carried, so nothing is ever empty while a
+    // request is in flight. A list that can move is then asked for again.
     var box = fieldBox(spec, select);
-    if (spec.options_name) {
+    fill(spec.options);
+    if (spec.reload) {
       var row = el("div", { class: "flex items-center gap-2" });
       select.classList.add("flex-1");
       var refresh = el("button", {
         class: CLS.btnQuiet,
         title: (T.link || {}).refresh,
         onclick: function () {
-          delete fetched[spec.options_name];
-          options(spec.options_name).then(fill);
+          reload(spec.reload).then(fill);
         },
       }, icon("sync", "size-4"));
       box = fieldBox(spec, row);
       row.append(select, refresh);
-      options(spec.options_name).then(fill);
-    } else {
-      fill(spec.options);
+      reload(spec.reload).then(fill);
     }
     return box;
   }

@@ -17,7 +17,6 @@ from shared.bench_api.inputs import (
     inputs_for,
     integer,
     labelled_options,
-    options_name,
     overridden,
     raw_bytes,
 )
@@ -65,7 +64,7 @@ from shared.bench_api.registry import (
 from shared.bench_api.wire import (
     as_json,
     input_json,
-    options_named,
+    options_of,
     readiness_json,
     routine_json,
     subsystem_json,
@@ -116,8 +115,7 @@ __all__ = [
     "labelled_options",
     "link_routine",
     "load_subsystem",
-    "options_name",
-    "options_named",
+    "options_of",
     "overridden",
     "raw_bytes",
     "readiness_json",

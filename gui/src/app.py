@@ -127,7 +127,7 @@ def machine_state() -> dict[str, Any]:
 
 
 @app.get("/api/subsystems")
-def declarations() -> list[dict[str, Any]]:
+async def declarations() -> list[dict[str, Any]]:
     """Return every part of the machine, declared or merely expected.
 
     One that nothing declared crosses as a name and nothing else, which is
@@ -139,20 +139,23 @@ def declarations() -> list[dict[str, Any]]:
             found.append({"id": name, "available": False})
             continue
         record = bench_api.REGISTRY.subsystem(name)
-        found.append({**wire.subsystem(record, _state(name)), "available": True})
+        # Off the loop: a control's options may come from the hardware, so
+        # building this payload can cost a round trip to the board.
+        packed = await asyncio.to_thread(wire.subsystem, record, _state(name))
+        found.append({**packed, "available": True})
     return found
 
 
-@app.get("/api/options/{name}")
-async def options_for(name: str) -> list[dict[str, Any]]:
-    """Return a live option list, fetched afresh because the world moves.
+@app.get("/api/options/{name}/{key}/{input_name}")
+async def options_for(name: str, key: str, input_name: str) -> list[dict[str, Any]]:
+    """Return one control's options, fetched afresh because the world moves.
 
     Off the loop, since a list may come from the hardware rather than from here.
     """
     try:
-        return await asyncio.to_thread(wire.options_for, name)
+        return await asyncio.to_thread(bench_api.options_of, name, key, input_name)
     except KeyError as exc:
-        raise HTTPException(404, f"no options {name!r}") from exc
+        raise HTTPException(404, f"no options for {name}.{key}.{input_name}") from exc
 
 
 # ── The link ─────────────────────────────────────────────────────────────────

@@ -68,17 +68,17 @@ def test_the_callable_that_runs_a_routine_never_crosses(oven):
     assert "do" not in packed
 
 
-def test_a_live_option_list_crosses_as_the_name_to_ask_for_it_by(oven):
+def test_a_live_list_arrives_drawn_and_carrying_where_to_ask_again(oven):
     port = routine_of(oven, "routines.connect")["inputs"][0]
 
-    assert port["options_name"] == "ports"
-    assert port["options"] is None
+    assert port["options"] == [{"value": "/dev/oven0", "label": "oven, front"}]
+    assert port["reload"] == "/api/options/fixture/routines.connect/port"
 
 
-def test_a_fixed_option_list_crosses_inline_since_it_cannot_move(oven):
+def test_a_fixed_list_is_drawn_and_never_asked_for_again(oven):
     element = routine_of(oven, "routines.derived_form")["inputs"][0]
 
-    assert element["options_name"] is None
+    assert element["reload"] is None
     assert element["options"] == [
         {"value": 0, "label": "UPPER"},
         {"value": 1, "label": "LOWER"},
@@ -124,12 +124,36 @@ def test_the_state_is_read_once_for_the_whole_subsystem(oven):
 # ── A list nobody could send ahead of time ───────────────────────────────────
 
 
-def test_a_live_list_is_reachable_by_the_name_it_crossed_under(oven):
-    assert bench_api.options_named("ports") == [
+def test_a_control_is_asked_again_by_where_it_lives(oven):
+    assert bench_api.options_of("fixture", "routines.connect", "port") == [
         {"value": "/dev/oven0", "label": "oven, front"}
     ]
 
 
-def test_a_name_nothing_declares_is_a_refusal(oven):
+def test_an_input_the_routine_does_not_declare_is_a_refusal(oven):
     with pytest.raises(KeyError):
-        bench_api.options_named("nothing_declares_this")
+        bench_api.options_of("fixture", "routines.connect", "nothing_declares_this")
+
+
+def test_two_controls_sharing_a_live_list_ask_for_it_once():
+    seen = []
+
+    def ports():
+        seen.append(1)
+        return ("/dev/oven0",)
+
+    asked = {}
+    bench_api.input_json(bench_api.choice("a", ports), None, asked)
+    bench_api.input_json(bench_api.choice("b", ports), None, asked)
+
+    assert len(seen) == 1
+
+
+def test_a_control_outside_a_payload_still_draws_its_own_options():
+    def ports():
+        return ("/dev/oven0",)
+
+    drawn = bench_api.input_json(bench_api.choice("port", ports))
+
+    assert drawn["options"] == [{"value": "/dev/oven0", "label": "/dev/oven0"}]
+    assert drawn["reload"] is None
