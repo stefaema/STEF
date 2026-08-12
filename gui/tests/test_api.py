@@ -33,20 +33,29 @@ def test_the_screen_renders_without_asking_any_subsystem_anything(client):
     assert "STEF" in page.text
 
 
+def routines_of(payload, category):
+    """Return one subsystem's routines of a category, the way the screen filters them."""
+    return [r for r in payload["routines"] if r["category"] == category]
+
+
 def test_every_declaration_reaches_the_browser_as_json(client):
     subsystems = client.get("/api/subsystems").json()
     transport = next(s for s in subsystems if s["id"] == "transport")
-    assert transport["link"]["params"][0]["name"] == "port"
-    assert {t["id"] for t in transport["link_tests"]} == {
-        "prelink.verify_port",
-        "prelink.flash_board",
+    assert connect_form(transport)["inputs"][0]["name"] == "port"
+    assert {t["name"] for t in routines_of(transport, "prelink")} == {
+        "verify_port",
+        "flash_board",
     }
-    assert len(transport["actions"]) == 26
+
+
+def connect_form(payload):
+    """Return the routine the connection card draws itself from."""
+    return next(r for r in routines_of(payload, "link") if r["name"] == "connect")
 
 
 def test_a_live_option_list_crosses_undrawn_and_says_where_to_ask_for_it(client):
     transport = client.get("/api/subsystems").json()[0]
-    port = transport["link"]["params"][0]
+    port = connect_form(transport)["inputs"][0]
     assert port["options"] is None
     assert port["reload"] == "/api/options/transport/link.connect/port"
     assert client.get(port["reload"]).status_code == 200
@@ -86,9 +95,16 @@ def test_the_port_list_offers_more_than_the_shortlist(client):
 
 def test_a_derived_form_keeps_the_shape_the_firmware_declared(client):
     transport = client.get("/api/subsystems").json()[0]
-    write = next(a for a in transport["actions"] if a["name"] == "raw.write")
-    ops = next(p for p in write["params"] if p["kind"] == "group")
+    write = next(a for a in routines_of(transport, "call") if a["name"] == "write")
+    ops = next(p for p in write["inputs"] if p["kind"] == "group")
     assert {c["name"] for c in ops["columns"]} == {"reg", "value"}
+
+
+def test_a_routine_crosses_carrying_the_address_every_route_takes(client):
+    transport = client.get("/api/subsystems").json()[0]
+    write = next(a for a in routines_of(transport, "call") if a["name"] == "write")
+    assert f"{write['group']}.{write['name']}" == "raw.write"
+    assert write["id"] == "transport.raw.write"
 
 
 def test_nothing_that_crosses_can_be_spelled_in_ctypes(client):

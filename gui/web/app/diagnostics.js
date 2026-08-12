@@ -193,29 +193,42 @@
 
   function current() { return state.current; }
 
-  function linkRoutines() {
+  // What every route addresses a routine by, and what the payload calls it are
+  // not the same: the address is scoped to its subsystem, the id is not.
+  function keyOf(item) { return item.group + "." + item.name; }
+
+  function routinesOf(category) {
     var sub = current();
-    if (!sub) return [];
-    return sub.link_tests.slice().sort(function (a, b) {
-      if (a.id === "verify_port") return -1;
-      if (b.id === "verify_port") return 1;
+    if (!sub || !sub.routines) return [];
+    return sub.routines.filter(function (one) { return one.category === category; });
+  }
+
+  function linkRoutines() {
+    return routinesOf("prelink").slice().sort(function (a, b) {
+      if (a.name === "verify_port") return -1;
+      if (b.name === "verify_port") return 1;
       return a.hazardous - b.hazardous;
     });
   }
 
   function benchRoutines() {
-    var sub = current();
-    return sub ? sub.bench_tests : [];
+    return routinesOf("setup");
+  }
+
+  function connectRoutine() {
+    return routinesOf("link").filter(function (one) {
+      return one.name === "connect";
+    })[0] || null;
   }
 
   function runFor(test) {
-    var key = current().id + "." + test.id;
+    var key = current().id + "." + keyOf(test);
     if (!state.runs[key]) {
       state.runs[key] = {
         status: "idle",
         when: null,
         open: false,
-        values: JSON.parse(JSON.stringify(test.values || {})),
+        values: JSON.parse(JSON.stringify(test.blank || {})),
         outcomes: [],
       };
     }
@@ -687,8 +700,9 @@
     var sub = current();
     var body = el("div", { class: CLS.cardBody });
 
-    if (sub.link && sub.link.params.length) {
-      body.append(formGrid(sub.link.params, state.linkValues, function () { probe(); }));
+    var opening = connectRoutine();
+    if (opening && opening.inputs.length) {
+      body.append(formGrid(opening.inputs, state.linkValues, function () { probe(); }));
     }
 
     if (state.linkReason) {
@@ -722,14 +736,17 @@
     if (routines.length) {
       container.append(sectionLabel((T.card || {}).before));
       var group = el("div", { class: "flex flex-col gap-2" });
-      routines.forEach(function (test) { group.append(routineCard(test, sub)); });
+      routines.forEach(function (test) { group.append(routineCard(test)); });
       container.append(group);
     }
   }
 
   function probe() {
     var sub = current();
-    if (!sub.link || sub.state === "up") { state.linkReason = null; return Promise.resolve(); }
+    if (!connectRoutine() || sub.state === "up") {
+      state.linkReason = null;
+      return Promise.resolve();
+    }
     return api("/api/link/" + sub.id + "/readiness", state.linkValues).then(function (verdict) {
       state.linkReason = verdict.ok ? null : verdict.reason;
       renderMain();
@@ -769,7 +786,6 @@
   // ── Bench tests ────────────────────────────────────────────────────────────
 
   function renderChecks(container) {
-    var sub = current();
     var list = benchRoutines();
 
     if (!list.length) {
@@ -785,7 +801,7 @@
       )
     );
     var group = el("div", { class: "flex flex-col gap-2" });
-    list.forEach(function (test) { group.append(routineCard(test, sub)); });
+    list.forEach(function (test) { group.append(routineCard(test)); });
     container.append(group);
   }
 
@@ -799,10 +815,12 @@
       aside || null);
   }
 
-  function routineCard(test, sub) {
+  function routineCard(test) {
     var entry = runFor(test);
-    var gated = test.needs_link ? sub.state !== "up" : sub.state === "up";
-    var why = test.needs_link ? (T.run || {}).needs_link : (T.run || {}).owns_port;
+    // The subsystem answered this when the payload was built, reason and all,
+    // so the screen shows its sentence rather than guessing one from the state.
+    var gated = !test.ready.ok;
+    var why = test.ready.reason || (T.run || {}).needs_link;
     var row = el("div", { class: CLS.card });
 
     var caret = el("span", {
@@ -861,7 +879,7 @@
       );
     }
 
-    var form = formGrid(test.params, entry.values, function () {});
+    var form = formGrid(test.inputs, entry.values, function () {});
     if (form) body.append(form);
 
     body.append(stepList(test, entry));
@@ -884,8 +902,8 @@
     );
 
     var declared = test.steps.length
-      ? test.steps.map(function (step, index) {
-          return { title: step.title, settled: entry.outcomes[index] || null };
+      ? test.steps.map(function (title, index) {
+          return { title: title, settled: entry.outcomes[index] || null };
         })
       : entry.outcomes.map(function (settled, index) {
           return { title: "#" + (index + 1), settled: settled };
@@ -936,7 +954,7 @@
     entry.when = clock(Date.now() / 1000);
     renderMain();
 
-    streamPost("/api/run/" + sub.id + "/" + test.id, entry.values, function (event, payload) {
+    streamPost("/api/run/" + sub.id + "/" + keyOf(test), entry.values, function (event, payload) {
       if (event === "outcome") {
         if (payload.error) {
           entry.outcomes.push({ status: "failed", detail: payload.error, value: null });
@@ -997,50 +1015,39 @@
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function namespaceOf(item) {
-    var cut = item.name.indexOf(".");
-    return cut < 0 ? "" : item.name.slice(0, cut);
-  }
-
-  function methodOf(item) {
-    var cut = item.name.indexOf(".");
-    return cut < 0 ? item.name : item.name.slice(cut + 1);
-  }
-
-  function namespaceGroups(actions) {
+  function namespaceGroups(calls) {
     var order = [];
     var methods = {};
-    actions.forEach(function (item) {
-      var ns = namespaceOf(item);
-      if (!methods[ns]) { methods[ns] = []; order.push(ns); }
-      methods[ns].push(item);
+    calls.forEach(function (item) {
+      if (!methods[item.group]) { methods[item.group] = []; order.push(item.group); }
+      methods[item.group].push(item);
     });
     return order.map(function (ns) { return { name: ns, methods: methods[ns] }; });
   }
 
   function renderActions(container) {
-    var sub = current();
-    if (!sub.actions.length) {
+    var calls = routinesOf("call");
+    if (!calls.length) {
       container.append(card((T.tool || {}).actions, el("div", { class: CLS.cardBody },
         el("div", { class: CLS.hint, text: (T.action || {}).none }))));
       return;
     }
 
-    // A refresh replaces every declaration, so the pick is held by name. Re-reading
-    // it rather than re-adopting is what keeps a half-filled form filled.
-    var groups = namespaceGroups(sub.actions);
-    var live = state.action && sub.actions.filter(function (one) {
-      return one.name === state.action.name;
+    // A refresh replaces every declaration, so the pick is held by address.
+    // Re-reading it rather than re-adopting is what keeps a half-filled form filled.
+    var groups = namespaceGroups(calls);
+    var live = state.action && calls.filter(function (one) {
+      return keyOf(one) === keyOf(state.action);
     })[0];
     if (live) state.action = live;
     else adoptAction(groups[0].methods[0]);
 
     container.append(card((T.tool || {}).actions, picker(groups)));
-    container.append(methodCard(state.action, sub));
+    container.append(methodCard(state.action));
   }
 
   function picker(groups) {
-    var chosen = namespaceOf(state.action);
+    var chosen = state.action.group;
     var group = groups.filter(function (one) { return one.name === chosen; })[0];
 
     var namespace = pickerBox(
@@ -1058,12 +1065,12 @@
     var method = pickerBox(
       (T.action || {}).method,
       group.methods.map(function (one) {
-        return { value: one.name, label: methodOf(one) };
+        return { value: keyOf(one), label: one.name };
       }),
-      state.action.name,
+      keyOf(state.action),
       function (picked) {
         selectAction(group.methods.filter(function (one) {
-          return one.name === picked;
+          return keyOf(one) === picked;
         })[0]);
       }
     );
@@ -1096,22 +1103,22 @@
       select);
   }
 
-  function methodCard(item, sub) {
+  function methodCard(item) {
     var body = el("div", { class: "flex flex-col gap-4 p-4" });
 
-    if (item.effect) body.append(el("div", { class: CLS.lede, text: item.effect }));
+    if (item.title) body.append(el("div", { class: CLS.lede, text: item.title }));
     if (item.description) {
       body.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
     }
 
-    var form = formGrid(item.params, state.actionValues, function () {});
+    var form = formGrid(item.inputs, state.actionValues, function () {});
     body.append(
       el("hr", { class: CLS.divider }),
       el("div", {},
         el("div", { class: CLS.label, text: (T.action || {}).arguments }),
         form || el("div", { class: CLS.hint, text: (T.action || {}).no_arguments })),
       el("hr", { class: CLS.divider }),
-      buttonRow(item, sub)
+      buttonRow(item)
     );
 
     if (state.actionAnswer) {
@@ -1126,15 +1133,15 @@
       );
     }
 
-    return card(item.qualified || item.name, body);
+    return card(item.id, body);
   }
 
-  function buttonRow(item, sub) {
-    var gated = sub.state !== "up";
+  function buttonRow(item) {
+    var gated = !item.ready.ok;
     var run = el("button", {
       class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
       disabled: gated || state.actionBusy,
-      title: gated ? (T.action || {}).blocked : "",
+      title: gated ? item.ready.reason || (T.action || {}).blocked : "",
     });
     var label = (T.action || {}).run;
     run.append(
@@ -1147,19 +1154,12 @@
       else runAction(item);
     });
 
-    var digest = el("button", {
-      class: CLS.btn,
-      disabled: !item.has_digest,
-      title: item.has_digest ? "" : (T.action || {}).no_digest,
-    });
-    digest.append(icon("receipt_long"), el("span", { text: (T.action || {}).digest }));
-
-    return el("div", { class: "flex items-center gap-2" }, run, digest);
+    return el("div", { class: "flex items-center gap-2" }, run);
   }
 
   function adoptAction(item) {
     state.action = item;
-    state.actionValues = JSON.parse(JSON.stringify(item.values || {}));
+    state.actionValues = JSON.parse(JSON.stringify(item.blank || {}));
     state.actionAnswer = null;
   }
 
@@ -1172,7 +1172,7 @@
     var sub = current();
     state.actionBusy = true;
     renderMain();
-    api("/api/action/" + sub.id + "/" + item.name, state.actionValues)
+    api("/api/action/" + sub.id + "/" + keyOf(item), state.actionValues)
       .then(function (answer) {
         state.actionBusy = false;
         state.actionAnswer = answer;

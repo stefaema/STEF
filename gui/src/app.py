@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from gui.src import json_helpers, text
+from gui.src import text
 from gui.src.i18n import gettext, ngettext
 from gui.src.runner import Busy, Record, Slot, Stream, call_off_loop, stream_run
 from gui.src.stef import STEF, StefState
@@ -139,8 +139,7 @@ def declarations() -> list[dict[str, Any]]:
             found.append({"id": name, "available": False})
             continue
         record = bench_api.REGISTRY.subsystem(name)
-        packed = json_helpers.subsystem(record, _state(name))
-        found.append({**packed, "available": True})
+        found.append({**bench_api.subsystem_json(record), "available": True})
     return found
 
 
@@ -161,10 +160,10 @@ async def options_for(name: str, key: str, input_name: str) -> list[dict[str, An
 
 def _link_of(name: str, which: str) -> Any:
     """Return one of a subsystem's link routines, or say it declares none."""
-    try:
-        return json_helpers.link_of(subsystem_of(name), which)
-    except KeyError as exc:
-        raise HTTPException(404, str(exc)) from exc
+    found = bench_api.link_routine(subsystem_of(name), which)
+    if found is None:
+        raise HTTPException(404, f"{name} declares no {which}")
+    return found
 
 
 @app.post("/api/link/{name}/readiness")
