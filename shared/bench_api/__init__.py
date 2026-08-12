@@ -20,6 +20,15 @@ from shared.bench_api.inputs import (
     overridden,
     raw_bytes,
 )
+from shared.bench_api.json_helpers import (
+    input_json,
+    options_of,
+    outcome_json,
+    readiness_json,
+    result_json,
+    routine_json,
+    subsystem_json,
+)
 from shared.bench_api.records import (
     CALL,
     FAILED,
@@ -61,14 +70,6 @@ from shared.bench_api.registry import (
     summary_and_body,
     titled,
 )
-from shared.bench_api.wire import (
-    as_json,
-    input_json,
-    options_of,
-    readiness_json,
-    routine_json,
-    subsystem_json,
-)
 
 __all__ = [
     "CALL",
@@ -99,7 +100,6 @@ __all__ = [
     "SubsystemState",
     "Table",
     "as_bytes",
-    "as_json",
     "bitmask",
     "blank_values",
     "blocked",
@@ -116,9 +116,11 @@ __all__ = [
     "link_routine",
     "load_subsystem",
     "options_of",
+    "outcome_json",
     "overridden",
     "raw_bytes",
     "readiness_json",
+    "result_json",
     "readiness_of",
     "readiness_with",
     "register_routine",

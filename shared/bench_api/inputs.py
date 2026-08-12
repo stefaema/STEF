@@ -209,6 +209,8 @@ def _blank(item: Input) -> Any:
     if item.kind == "raw_bytes":
         return ""
     if item.kind == "choice":
+        if options_are_live(item):
+            return None
         picks = labelled_options(item)
         return picks[0]["value"] if picks else None
     return item.min or 0

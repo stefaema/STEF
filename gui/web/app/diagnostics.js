@@ -478,8 +478,8 @@
       }
     }
 
-    // Drawn with what the payload carried, so nothing is ever empty while a
-    // request is in flight. A list that can move is then asked for again.
+    // A fixed list crossed with the payload. One that can move crossed as an
+    // address instead, and is asked for whenever this control is drawn.
     var box = fieldBox(spec, select);
     fill(spec.options);
     if (spec.reload) {

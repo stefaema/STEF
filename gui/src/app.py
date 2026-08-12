@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from gui.src import text, wire
+from gui.src import json_helpers, text
 from gui.src.i18n import gettext, ngettext
 from gui.src.runner import Busy, Record, Slot, Stream, call_off_loop, stream_run
 from gui.src.stef import STEF, StefState
@@ -127,7 +127,7 @@ def machine_state() -> dict[str, Any]:
 
 
 @app.get("/api/subsystems")
-async def declarations() -> list[dict[str, Any]]:
+def declarations() -> list[dict[str, Any]]:
     """Return every part of the machine, declared or merely expected.
 
     One that nothing declared crosses as a name and nothing else, which is
@@ -139,9 +139,7 @@ async def declarations() -> list[dict[str, Any]]:
             found.append({"id": name, "available": False})
             continue
         record = bench_api.REGISTRY.subsystem(name)
-        # Off the loop: a control's options may come from the hardware, so
-        # building this payload can cost a round trip to the board.
-        packed = await asyncio.to_thread(wire.subsystem, record, _state(name))
+        packed = json_helpers.subsystem(record, _state(name))
         found.append({**packed, "available": True})
     return found
 
@@ -164,7 +162,7 @@ async def options_for(name: str, key: str, input_name: str) -> list[dict[str, An
 def _link_of(name: str, which: str) -> Any:
     """Return one of a subsystem's link routines, or say it declares none."""
     try:
-        return wire.link_of(subsystem_of(name), which)
+        return json_helpers.link_of(subsystem_of(name), which)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
 
@@ -184,7 +182,7 @@ async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
-    return wire.readiness(verdict)
+    return bench_api.readiness_json(verdict)
 
 
 @app.post("/api/link/{name}/connect")
@@ -248,7 +246,9 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
                 slot, f"{name}.{test_id}", lambda: bench_api.run_routine(test, taken)
             )
             async for item in produced:
-                packed = item if isinstance(item, dict) else wire.outcome(item)
+                packed = (
+                    item if isinstance(item, dict) else bench_api.outcome_json(item)
+                )
                 if packed.get("detail"):
                     stream.say(
                         name, _tone(packed["status"]), "outcome", packed["detail"]
@@ -304,7 +304,7 @@ async def call_action(
         message = _failed(name, exc)
         return {"ok": False, "reason": message, "value": None}
 
-    packed = wire.result(answer) if answer is not None else None
+    packed = bench_api.result_json(answer) if answer is not None else None
     stream.say(name, "ok", "result", packed["summary"] if packed else action_name)
     return {"ok": True, "reason": None, "value": packed}
 

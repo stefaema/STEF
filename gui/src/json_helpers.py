@@ -1,7 +1,7 @@
 """The registry as the browser still expects it, until the browser is migrated.
 
-`bench_api` holds one kind of thing now, a routine, and serialises it by one
-convention. The screen still asks for the three it used to be told about, so the
+`bench_api` holds one kind of thing now, a routine, and serialises each record
+itself. The screen still asks for the three it used to be told about, so the
 translation is a grouping by category and a rename of two keys. Nothing here
 decides anything; when `diagnostics.js` speaks routines, this file goes.
 """
@@ -69,21 +69,6 @@ def subsystem(item: Subsystem, state: str) -> dict[str, Any]:
         "link_tests": [_routine(r, now) for r in item.by_category(PRELINK)],
         "actions": [_action(r, now) for r in item.by_category(CALL)],
     }
-
-
-def outcome(item: Any) -> dict[str, Any]:
-    """Return how one step settled."""
-    return bench_api.as_json(item)
-
-
-def result(item: Any) -> dict[str, Any] | None:
-    """Return what a step found, or nothing where it found nothing worth a panel."""
-    return None if item is None else bench_api.as_json(item)
-
-
-def readiness(verdict: Any) -> dict[str, Any]:
-    """Return a verdict as the two things a disabled control needs."""
-    return bench_api.readiness_json(verdict)
 
 
 def link_of(item: Subsystem, name: str) -> Routine:

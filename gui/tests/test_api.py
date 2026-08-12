@@ -6,7 +6,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from gui.src import wire
 from gui.src.app import app
 
 
@@ -45,10 +44,10 @@ def test_every_declaration_reaches_the_browser_as_json(client):
     assert len(transport["actions"]) == 26
 
 
-def test_a_live_option_list_arrives_drawn_and_says_where_to_ask_again(client):
+def test_a_live_option_list_crosses_undrawn_and_says_where_to_ask_for_it(client):
     transport = client.get("/api/subsystems").json()[0]
     port = transport["link"]["params"][0]
-    assert isinstance(port["options"], list)
+    assert port["options"] is None
     assert port["reload"] == "/api/options/transport/link.connect/port"
     assert client.get(port["reload"]).status_code == 200
 
@@ -204,8 +203,8 @@ def test_a_late_listener_is_caught_up_on_what_it_missed():
 
 
 def test_a_readiness_crosses_as_its_verdict_and_its_reason():
+    from shared import bench_api
     from shared.bench_api import READY, blocked
 
-    assert wire.readiness(READY) == {"ok": True, "reason": None}
-    assert wire.readiness(blocked("no")) == {"ok": False, "reason": "no"}
-    assert wire.readiness(None) == {"ok": False, "reason": None}
+    assert bench_api.readiness_json(READY) == {"ok": True, "reason": None}
+    assert bench_api.readiness_json(blocked("no")) == {"ok": False, "reason": "no"}
