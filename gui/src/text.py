@@ -36,6 +36,9 @@ def catalog() -> dict[str, Any]:
             "calls": _("Calls"),
             "before": _("Before connecting"),
         },
+        "category": {
+            "setup": _("Setup"),
+        },
         "link": {
             "connect": _("Connect"),
             "disconnect": _("Disconnect"),

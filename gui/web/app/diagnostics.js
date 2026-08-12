@@ -223,8 +223,33 @@
     });
   }
 
-  function setupRoutines() {
-    return routinesOf("setup");
+  // The categories that already have a panel of their own. The Routines tab is
+  // what is left over, so a category declared later appears there without this
+  // file learning its name.
+  var HOUSED = ["link", "prelink", "call"];
+
+  function benchRoutines() {
+    var sub = current();
+    if (!sub || !sub.routines) return [];
+    return sub.routines.filter(function (one) {
+      return HOUSED.indexOf(one.category) === -1;
+    });
+  }
+
+  function categoryGroups(list) {
+    var order = [];
+    var held = {};
+    list.forEach(function (one) {
+      if (!held[one.category]) { held[one.category] = []; order.push(one.category); }
+      held[one.category].push(one);
+    });
+    return order.map(function (name) { return { name: name, routines: held[name] }; });
+  }
+
+  // A category with no legend is rendered under its own name rather than hidden,
+  // since the alternative is a routine an operator cannot reach.
+  function categoryLabel(name) {
+    return (T.category || {})[name] || name;
   }
 
   function connectRoutine() {
@@ -798,23 +823,25 @@
   // ── Bench tests ────────────────────────────────────────────────────────────
 
   function renderRoutines(container) {
-    var list = setupRoutines();
+    var groups = categoryGroups(benchRoutines());
 
-    if (!list.length) {
+    if (!groups.length) {
       container.append(card(null, el("div", { class: CLS.cardBody },
         el("div", { class: CLS.hint, text: (T.run || {}).none }))));
       return;
     }
 
-    container.append(
-      sectionLabel(
-        (T.tool || {}).routines,
-        outcomeMark(worst(list.map(function (test) { return runFor(test).status; })), true)
-      )
-    );
-    var group = el("div", { class: "flex flex-col gap-2" });
-    list.forEach(function (test) { group.append(routineCard(test)); });
-    container.append(group);
+    groups.forEach(function (one) {
+      container.append(
+        sectionLabel(
+          categoryLabel(one.name),
+          outcomeMark(worst(one.routines.map(function (test) { return runFor(test).status; })), true)
+        )
+      );
+      var stack = el("div", { class: "flex flex-col gap-2" });
+      one.routines.forEach(function (test) { stack.append(routineCard(test)); });
+      container.append(stack);
+    });
   }
 
   function sectionLabel(title, aside) {

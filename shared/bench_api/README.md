@@ -37,9 +37,9 @@ look like a test module, or pytest collects it, imports it a second time, and
 every declaration in it registers twice. That is why the prelink ladder is
 `transport/bench/prelink.py` and not `bench/link_test.py`.
 
-## Declare a routine
+## Declare a bench routine
 
-A routine is one thing an operator runs. It is a generator that yields one
+A bench routine is one thing an operator runs in order to diagnose a subsystem. It is a generator that yields one
 `StepOutcome` per step:
 
 ```python

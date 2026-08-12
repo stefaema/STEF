@@ -20,8 +20,13 @@ declares, and gates each group on the one thing the category already says:
 | --- | --- | --- |
 | Link | `LINK` | always. The connect and disconnect controls themselves |
 | Before connecting | `PRELINK` | the link is down, since these hold the port |
-| Routines | `SETUP` | the link is up |
 | Calls | `CALL` | the link is up |
+| Routines | everything else, `SETUP` today | the link is up |
+
+Three of those panels name the category they draw. The Routines tab takes what is left, one
+labelled group per category in declaration order, so a category declared later appears there
+without this module learning its name. A category with no legend in `src/text.py` is drawn under
+its own name, since the alternative is a routine an operator cannot reach.
 
 Connect is not gated on having run anything. It asks `can_connect` and shows whatever that
 refuses with, so the disabled button carries the sentence naming its own remedy rather than
