@@ -1,141 +1,44 @@
-"""What the decorators build, and where it lands."""
+"""Where a declaration lands, what gates it, and how it is run."""
 
+import dataclasses
 import importlib
 import inspect
 import pkgutil
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from shared.bench_api.derive import values_to_dataclass
-from shared.bench_api.params import ParamSpec
-from shared.bench_api.readiness import Readiness
-from shared.bench_api.results import StepOutcome, StepStatus
+from shared.bench_api.inputs import checked_inputs
+from shared.bench_api.records import (
+    CALL,
+    FAILED,
+    LINK,
+    PRELINK,
+    READY,
+    SETUP,
+    SKIPPED,
+    Category,
+    DeclarationError,
+    Input,
+    Readiness,
+    Routine,
+    StepOutcome,
+    Subsystem,
+    SubsystemState,
+    blocked,
+)
+
+TESTS = "tests"
 
 
-class DeclarationError(Exception):
-    """A declaration whose failure mode would otherwise be silence."""
+# ── What has been declared ───────────────────────────────────────────────────
 
 
-class Abandoned(Exception):
-    """Raised by a step to end its run early without failing it.
-
-    A routine that finds there is nothing left to do has not failed, and saying
-    so by raising is the only way a step can speak for the steps after it.
-    """
-
-    def __init__(
-        self,
-        detail: str = "",
-        status: StepStatus = StepStatus.PASSED,
-        value: Any = None,
-    ) -> None:
-        """Take how this step settled, which is what the run stops on."""
-        super().__init__(detail)
-        self.outcome = StepOutcome(status, detail, value)
-
-
-@dataclass(frozen=True, slots=True)
-class Step:
-    """One numbered thing a bench test does."""
-
-    name: str
-    title: str
-    run: Callable[..., Any]
-
-
-@dataclass(frozen=True, slots=True)
-class BenchTest:
-    """A routine an operator runs by hand to check behaviour."""
-
-    id: str
-    subsystem: str
-    title: str
-    description: str
-    steps: tuple[Step, ...]
-    params: tuple[ParamSpec, ...]
-    hazardous: bool
-    needs_link: bool
-    target: Any
-
-    @property
-    def qualified(self) -> str:
-        """Return the id the registry knows this by, which names its subsystem too."""
-        return f"{self.subsystem}.{self.id}"
-
-    def run(self, bench: Any = None, **args: Any) -> Iterator[StepOutcome]:
-        """Yield each step's outcome in order, as the run reaches it.
-
-        The form is applied where the routine starts, the constructor in the class
-        form and the call in the generator one, so no step is handed values it
-        does not use. One that raises before any step settles yields a single
-        failure.
-        """
-        yield from _run_steps(self, bench, args)
-
-
-@dataclass(frozen=True, slots=True)
-class Action:
-    """One call an operator can make by hand, and what it takes to make it."""
-
-    name: str
-    subsystem: str
-    effect: str
-    description: str
-    params: tuple[ParamSpec, ...]
-    hazardous: bool
-    precondition: Callable[..., Readiness | None] | None
-    digest: Callable[..., Any] | None
-    target: Callable[..., Any]
-    argument_type: type | None
-
-    @property
-    def qualified(self) -> str:
-        """Return the id the registry knows this by, which names its subsystem too."""
-        return f"{self.subsystem}.{self.name}"
-
-    def call(self, values: dict[str, Any]) -> Any:
-        """Make the call, with the values as the argument object it takes.
-
-        A target annotated with no dataclass takes none, so the values it was
-        handed were never going anywhere and the call is made bare.
-        """
-        args = values_to_dataclass(self.argument_type, values)
-        return self.target() if args is None else self.target(args)
-
-
-@dataclass(frozen=True, slots=True)
-class Link:
-    """How a subsystem is reached, and whether it may be reached right now."""
-
-    subsystem: str
-    params: tuple[ParamSpec, ...]
-    target: type
-
-
-@dataclass
-class Subsystem:
-    """One part of the machine, and everything declared against it."""
-
-    id: str
-    description: str
-    target: type
-    package: str
-    link: Link | None = None
-    bench_tests: dict[str, BenchTest] = field(default_factory=dict)
-    actions: dict[str, Action] = field(default_factory=dict)
-
-    @property
-    def link_tests(self) -> tuple[BenchTest, ...]:
-        """Return the routines that run with no link."""
-        return tuple(t for t in self.bench_tests.values() if not t.needs_link)
-
-
-@dataclass
 class Registry:
-    """Every subsystem that has been imported, and what each declared."""
+    """Every subsystem that has been loaded, and every routine under it."""
 
-    subsystems: dict[str, Subsystem] = field(default_factory=dict)
+    def __init__(self) -> None:
+        """Start holding nothing, since a declaration arrives by import."""
+        self.subsystems: dict[str, Subsystem] = {}
 
     def add_subsystem(self, item: Subsystem) -> Subsystem:
         """Register one subsystem, refusing a second by the same id."""
@@ -144,12 +47,25 @@ class Registry:
         self.subsystems[item.id] = item
         return item
 
-    def owner_of(self, module: str) -> Subsystem:
-        """Return the subsystem owning the module, which is the innermost enclosing one.
+    def add_routine(self, item: Routine) -> Routine:
+        """Register one routine, refusing a second by the same id."""
+        owner = self.subsystems[item.subsystem]
+        key = f"{item.group}.{item.name}"
+        if key in owner.routines:
+            raise DeclarationError(f"two routines answer to {item.id!r}")
+        owner.routines[key] = item
+        return item
 
-        A declaration finds its subsystem by where it lives, so it never names it
-        twice. The boundary is the package holding the decorated class.
-        """
+    def subsystem(self, subsystem_id: str) -> Subsystem:
+        """Return the subsystem with this id."""
+        return self.subsystems[subsystem_id]
+
+    def routine(self, subsystem_id: str, key: str) -> Routine:
+        """Return the routine named `group.name` under one subsystem."""
+        return self.subsystems[subsystem_id].routines[key]
+
+    def owner_of(self, module: str) -> Subsystem:
+        """Return the subsystem whose package the module was written in."""
         owners = [
             item
             for item in self.subsystems.values()
@@ -157,47 +73,9 @@ class Registry:
         ]
         if not owners:
             raise DeclarationError(
-                f"{module!r} declares against no subsystem; its package has no @subsystem"
+                f"{module!r} declares against no subsystem; load its package first"
             )
         return max(owners, key=lambda item: len(item.package))
-
-    def add_bench_test(self, item: BenchTest) -> BenchTest:
-        """Register one bench test, refusing a second by the same id."""
-        owner = self.subsystems[item.subsystem]
-        if item.id in owner.bench_tests:
-            raise DeclarationError(f"two bench tests answer to {item.qualified!r}")
-        owner.bench_tests[item.id] = item
-        return item
-
-    def add_action(self, item: Action) -> Action:
-        """Register one action, refusing a second by the same name."""
-        owner = self.subsystems[item.subsystem]
-        if item.name in owner.actions:
-            raise DeclarationError(f"two actions answer to {item.qualified!r}")
-        owner.actions[item.name] = item
-        return item
-
-    def set_link(self, item: Link) -> Link:
-        """Register one subsystem's link, refusing a second."""
-        owner = self.subsystems[item.subsystem]
-        if owner.link is not None:
-            raise DeclarationError(f"{item.subsystem!r} already declared a link")
-        owner.link = item
-        return item
-
-    def subsystem(self, subsystem_id: str) -> Subsystem:
-        """Return the subsystem with this id."""
-        return self.subsystems[subsystem_id]
-
-    def bench_test(self, qualified: str) -> BenchTest:
-        """Return the bench test named `subsystem.id`."""
-        subsystem_id, _, rest = qualified.partition(".")
-        return self.subsystems[subsystem_id].bench_tests[rest]
-
-    def action(self, qualified: str) -> Action:
-        """Return the action named `subsystem.ns.method`."""
-        subsystem_id, _, rest = qualified.partition(".")
-        return self.subsystems[subsystem_id].actions[rest]
 
     def clear(self) -> None:
         """Forget every registration."""
@@ -207,67 +85,226 @@ class Registry:
 REGISTRY = Registry()
 
 
-def load(package: Any) -> None:
-    """Import every module under the package, so its decorators run.
+# ── Loading one subsystem ────────────────────────────────────────────────────
 
-    A decorator runs only when its module is imported, and forgetting one leaves
-    a bench test that silently does not appear.
+
+def load_subsystem(package: str) -> Subsystem:
+    """Import a package and everything below it, so its declarations register.
+
+    The package is the subsystem: its name is the id, its docstring is the prose
+    the screen shows, and any routine declared beneath it belongs to it.
     """
-    if isinstance(package, str):
-        package = importlib.import_module(package)
-    for info in pkgutil.walk_packages(package.__path__, f"{package.__name__}."):
+    module = importlib.import_module(package)
+    summary, description = prose_of(module)
+    found = REGISTRY.add_subsystem(
+        Subsystem(
+            id=package.rpartition(".")[2],
+            summary=summary,
+            description=description,
+            package=package,
+            module=module,
+        )
+    )
+    for info in pkgutil.walk_packages(module.__path__, f"{package}."):
+        if not _is_declaration(info.name.removeprefix(f"{package}.")):
+            continue
         importlib.import_module(info.name)
+    return found
+
+
+def _is_declaration(under: str) -> bool:
+    """Whether a module below a subsystem could declare, rather than test what does."""
+    parts = under.split(".")
+    return TESTS not in parts and not parts[-1].startswith("test_")
+
+
+def prose_of(target: Any) -> tuple[str, str]:
+    """Return a docstring's summary line and its body, which is what the screen shows."""
+    doc = inspect.getdoc(target) or ""
+    summary, _, body = doc.partition("\n")
+    return summary.strip(), inspect.cleandoc(body).strip()
+
+
+def titled(summary: str) -> str:
+    """Return a docstring summary as a title, which is a label and not a sentence."""
+    return (
+        summary[:-1]
+        if summary.endswith(".") and not summary.endswith("..")
+        else summary
+    )
+
+
+# ── Declaring a routine ──────────────────────────────────────────────────────
+
+
+def register_routine(
+    *,
+    module: str,
+    group: str,
+    name: str,
+    title: str,
+    description: str = "",
+    category: Category = SETUP,
+    hazardous: bool = False,
+    steps: Sequence[str] = (),
+    inputs: Sequence[Input] = (),
+    run: Callable[..., Iterator[StepOutcome]],
+    precondition: Callable[..., Readiness | None] | None = None,
+    may_run: Callable[..., Readiness | None] | None = None,
+) -> Routine:
+    """Register one routine from parts, which is what a generated family has.
+
+    The decorator reads these off a function; a loop over an ABI passes them in.
+    """
+    owner = REGISTRY.owner_of(module)
+    return REGISTRY.add_routine(
+        Routine(
+            id=f"{owner.id}.{group}.{name}",
+            subsystem=owner.id,
+            group=group,
+            name=name,
+            category=category,
+            title=title,
+            description=description,
+            hazardous=hazardous,
+            steps=tuple(steps),
+            inputs=checked_inputs(inputs),
+            run=run,
+            precondition=precondition,
+            may_run=may_run,
+        )
+    )
+
+
+def routine(
+    *,
+    category: Category = SETUP,
+    hazardous: bool = False,
+    steps: Sequence[str] = (),
+    inputs: Sequence[Input] = (),
+    precondition: Callable[..., Readiness | None] | None = None,
+    may_run: Callable[..., Readiness | None] | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Declare one routine, taking its id from where it lives and its prose from its docstring."""
+
+    def declare(target: Callable[..., Any]) -> Callable[..., Any]:
+        summary, body = prose_of(target)
+        register_routine(
+            module=target.__module__,
+            group=target.__module__.rpartition(".")[2],
+            name=target.__name__,
+            title=titled(summary) or target.__name__,
+            description=body,
+            category=category,
+            hazardous=hazardous,
+            steps=steps,
+            inputs=inputs,
+            run=target,
+            precondition=precondition,
+            may_run=may_run,
+        )
+        return target
+
+    return declare
+
+
+# ── Whether it may be run right now ──────────────────────────────────────────
+
+NEEDS_LINK = (SETUP, CALL)
+
+
+def readiness_of(item: Routine, state: SubsystemState) -> Readiness:
+    """Return whether this routine may run, and the sentence for when it may not.
+
+    The category carries the rule, so a screen full of calls costs one state read
+    rather than one question per call.
+    """
+    if item.category in NEEDS_LINK and state is not SubsystemState.UP:
+        return blocked("not connected")
+    if item.category is PRELINK and state is SubsystemState.UP:
+        return blocked("the link holds the port; disconnect first")
+    if item.precondition is None:
+        return READY
+    return _answered(item.precondition())
+
+
+def readiness_with(item: Routine, values: dict[str, Any]) -> Readiness:
+    """Return whether this routine may run with these values, which may cost a probe."""
+    if item.may_run is None:
+        return READY
+    return _answered(item.may_run(**values))
+
+
+def _answered(verdict: Readiness | None) -> Readiness:
+    """Return what a guard said, reading its silence as consent.
+
+    A blocking verdict is falsy, so this cannot be an `or`: that would read
+    every refusal as an approval.
+    """
+    return READY if verdict is None else verdict
 
 
 # ── Running one ──────────────────────────────────────────────────────────────
 
 
-def _run_steps(
-    test: BenchTest, bench: Any, args: dict[str, Any]
-) -> Iterator[StepOutcome]:
-    """Yield each step's outcome, or the one failure that stopped it starting."""
-    if not inspect.isclass(test.target):
-        yield from _run_generator(test, bench, args)
-        return
+def run_routine(item: Routine, values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Yield each step's outcome as the run reaches it, then whatever it never reached.
 
+    A routine cannot break the stream: an uncaught exception becomes one failed
+    step, and abandoning settles the step that raised and skips the rest.
+    """
+    from shared.bench_api.records import Abandoned
+
+    pending = list(item.steps)
+    reached = 0
     try:
-        instance = test.target(**args)
-    except Exception as exc:
-        yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
-        return
-
-    for reached, step in enumerate(test.steps):
-        try:
-            yield _as_outcome(step.run(instance, bench))
-        except Abandoned as stop:
-            yield stop.outcome
-            for _ in test.steps[reached + 1 :]:
-                yield StepOutcome(StepStatus.SKIPPED, "")
-            return
-        except Exception as exc:
-            yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
-            return
-
-
-def _run_generator(
-    test: BenchTest, bench: Any, args: dict[str, Any]
-) -> Iterator[StepOutcome]:
-    """Yield what the generator form yields, so the two forms look alike."""
-    try:
-        for produced in test.target(bench, **args):
-            yield _as_outcome(produced)
+        for produced in item.run(values):
+            outcome = _titled_outcome(produced, pending, reached)
+            _consume(pending, outcome.step)
+            yield outcome
+            reached += 1
     except Abandoned as stop:
-        yield stop.outcome
-    except Exception as exc:
-        yield StepOutcome(StepStatus.FAILED, f"{type(exc).__name__}: {exc}")
+        settled = _titled_outcome(stop.outcome, pending, reached)
+        _consume(pending, settled.step)
+        yield settled
+    except Exception as exc:  # noqa: BLE001
+        settled = StepOutcome(
+            FAILED, f"{type(exc).__name__}: {exc}", step=_next(pending)
+        )
+        _consume(pending, settled.step)
+        yield settled
+
+    for title in pending:
+        yield StepOutcome(SKIPPED, "", step=title)
 
 
-def _as_outcome(produced: Any) -> StepOutcome:
-    """Return what a step handed back as a StepOutcome, allowing a bare status."""
-    if isinstance(produced, StepOutcome):
-        return produced
-    if isinstance(produced, StepStatus):
-        return StepOutcome(produced, "")
-    if produced is None:
-        return StepOutcome(StepStatus.PASSED, "")
-    raise DeclarationError(f"a step yielded {produced!r}, which is not a StepOutcome")
+def _titled_outcome(
+    outcome: StepOutcome, pending: list[str], reached: int
+) -> StepOutcome:
+    """Return the outcome carrying a title, from itself or from the preview's next row."""
+    if outcome.step:
+        return outcome
+    title = pending[0] if pending else f"#{reached + 1}"
+    return dataclasses.replace(outcome, step=title)
+
+
+def _consume(pending: list[str], title: str) -> None:
+    """Drop a title from the preview, since its row has now settled."""
+    if title in pending:
+        pending.remove(title)
+
+
+def _next(pending: list[str]) -> str:
+    """Return the title of the row a failure lands on, if the preview named one."""
+    return pending[0] if pending else ""
+
+
+# ── Which routines a link is made of ─────────────────────────────────────────
+
+
+def link_routine(item: Subsystem, name: str) -> Routine | None:
+    """Return one of a subsystem's link routines by name, or None where it has none."""
+    return next(
+        (r for r in item.by_category(LINK) if r.name == name),
+        None,
+    )

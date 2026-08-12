@@ -1,40 +1,29 @@
-"""One fixture subsystem, loaded once, and a registry that survives being written to."""
-
 import pytest
 
 from shared import bench_api
+from shared.bench_api import SubsystemState
 
 FIXTURE = "shared.bench_api.tests.fixture"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def loaded():
-    """Import the fixture package once, the way a backend would."""
-    bench_api.load(FIXTURE)
-    return bench_api.REGISTRY
+@pytest.fixture(scope="session")
+def oven():
+    """Return the fixture subsystem, loaded once.
+
+    A declaration runs when its module is imported, so loading is a
+    once-per-process act and a fixture that reloaded would register a subsystem
+    with no routines under it.
+    """
+    bench_api.REGISTRY.clear()
+    yield bench_api.load_subsystem(FIXTURE)
+    bench_api.REGISTRY.clear()
 
 
 @pytest.fixture
-def rig(loaded):
-    """Return the fixture subsystem."""
-    return loaded.subsystem("rig")
+def linked(oven):
+    """Return the same subsystem, with its link up for the length of one test."""
+    from shared.bench_api.tests.fixture import hardware
 
-
-@pytest.fixture
-def declaring(loaded):
-    """Return a way to run a module body, undoing whatever it registered."""
-    rig = loaded.subsystem("rig")
-    before = (dict(rig.bench_tests), dict(rig.actions), rig.link)
-
-    def declare(body, module=f"{FIXTURE}.declared"):
-        namespace = {"__name__": module, "bench_api": bench_api}
-        exec(compile(body, module, "exec"), namespace)
-        return namespace
-
-    yield declare
-
-    rig.bench_tests, rig.actions, rig.link = (
-        before[0],
-        before[1],
-        before[2],
-    )
+    hardware.set_state(SubsystemState.UP)
+    yield oven
+    hardware.set_state(SubsystemState.DOWN)

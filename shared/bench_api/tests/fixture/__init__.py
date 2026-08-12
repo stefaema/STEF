@@ -1,9 +1,9 @@
-"""A subsystem that exists only to be declared against.
+"""An oven with a thermocouple on a serial port, which is subsystem enough to test.
 
-A real package, so the walk from a declaration's module up to its subsystem has
-something real to walk.
+One heating element and the probe watching it.
 """
 
-from shared.bench_api.tests.fixture.subsystem import Rig, RigLink
+from shared.bench_api import SubsystemState
+from shared.bench_api.tests.fixture.hardware import state
 
-__all__ = ["Rig", "RigLink"]
+__all__ = ["SubsystemState", "state"]
