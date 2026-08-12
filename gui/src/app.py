@@ -275,15 +275,13 @@ def _tone(status: str) -> str:
     return {"passed": "ok", "warned": "warn", "failed": "error"}.get(status, "ok")
 
 
-@app.post("/api/action/{name}/{action_name:path}")
-async def call_action(
-    name: str, action_name: str, values: dict[str, Any]
-) -> dict[str, Any]:
+@app.post("/api/call/{name}/{key:path}")
+async def call(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
     """Make one call by hand, and return what it found."""
     record = subsystem_of(name)
-    if action_name not in record.routines:
-        raise HTTPException(404, f"no routine {name}.{action_name}")
-    declared = record.routines[action_name]
+    if key not in record.routines:
+        raise HTTPException(404, f"no routine {name}.{key}")
+    declared = record.routines[key]
 
     verdict = bench_api.readiness_of(declared, record.now())
     if not verdict:
@@ -291,11 +289,11 @@ async def call_action(
 
     taken = bench_api.coerced_values(declared.inputs, values)
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
-    stream.say(name, "ok", "command", f"{action_name}({shown})")
+    stream.say(name, "ok", "command", f"{key}({shown})")
 
     try:
         answer = await call_off_loop(
-            slot, f"{name}.{action_name}", lambda: _one_result(declared, taken)
+            slot, f"{name}.{key}", lambda: _one_result(declared, taken)
         )
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -304,7 +302,7 @@ async def call_action(
         return {"ok": False, "reason": message, "value": None}
 
     packed = bench_api.result_json(answer) if answer is not None else None
-    stream.say(name, "ok", "result", packed["summary"] if packed else action_name)
+    stream.say(name, "ok", "result", packed["summary"] if packed else key)
     return {"ok": True, "reason": None, "value": packed}
 
 

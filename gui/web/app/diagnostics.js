@@ -130,27 +130,6 @@
     }, "idle");
   }
 
-  // The browser's own tooltip is a square box nothing here can style, and a
-  // disabled control swallows the pointer, so the reason rides a wrapper and is
-  // drawn in the same visual language as everything else.
-  var tip = el("div", {
-    class: "fixed z-50 hidden max-w-xs px-2 py-1 rounded-md shadow-lg text-xs bg-gray-900 text-gray-50 dark:bg-gray-100 dark:text-gray-900",
-  });
-
-  function explains(node, text) {
-    if (!text) return node;
-    var wrap = el("div", { class: "inline-flex" }, node);
-    wrap.addEventListener("mouseenter", function () {
-      var box = wrap.getBoundingClientRect();
-      tip.textContent = text;
-      tip.classList.remove("hidden");
-      tip.style.left = Math.round(box.left) + "px";
-      tip.style.top = Math.round(box.bottom + 6) + "px";
-    });
-    wrap.addEventListener("mouseleave", function () { tip.classList.add("hidden"); });
-    return wrap;
-  }
-
   function hazardMark() {
     return el("span", {
       class: "inline-flex items-center gap-1 text-xs font-medium text-red-500",
@@ -210,10 +189,10 @@
     linkError: null,
     linkReason: null,
     runs: {},
-    action: null,
-    actionValues: {},
-    actionAnswer: null,
-    actionBusy: false,
+    call: null,
+    callValues: {},
+    callAnswer: null,
+    callBusy: false,
     records: [],
     seen: 0,
     cleared: 0,
@@ -244,7 +223,7 @@
     });
   }
 
-  function benchRoutines() {
+  function setupRoutines() {
     return routinesOf("setup");
   }
 
@@ -589,7 +568,7 @@
       if (spec.min != null || spec.max != null) {
         box.append(el("div", {
           class: CLS.hint + " mt-1",
-          text: (T.action || {}).range + " " + (spec.min == null ? "" : spec.min) +" to "+ (spec.max == null ? "" : spec.max),
+          text: (T.call || {}).range + " " + (spec.min == null ? "" : spec.min) +" to "+ (spec.max == null ? "" : spec.max),
         }));
       }
       return box;
@@ -650,9 +629,9 @@
 
   function describeHex(text) {
     var stripped = String(text || "").replace(/\s|^0x/gi, "");
-    if (!stripped) return "0 " + (T.action || {}).bytes;
-    if (!/^[0-9a-f]+$/i.test(stripped)) return (T.action || {}).invalid_hex;
-    return Math.ceil(stripped.length / 2) + " " + (T.action || {}).bytes;
+    if (!stripped) return "0 " + (T.call || {}).bytes;
+    if (!/^[0-9a-f]+$/i.test(stripped)) return (T.call || {}).invalid_hex;
+    return Math.ceil(stripped.length / 2) + " " + (T.call || {}).bytes;
   }
 
   function groupControl(spec, values, onChange) {
@@ -683,7 +662,7 @@
           if (label) label.remove();
           return el("td", { class: CLS.td }, cell);
         });
-        var remove = el("button", { class: CLS.btnQuiet, title: (T.action || {}).remove_row }, icon("close", "size-4"));
+        var remove = el("button", { class: CLS.btnQuiet, title: (T.call || {}).remove_row }, icon("close", "size-4"));
         remove.addEventListener("click", function () {
           rows.splice(index, 1);
           draw();
@@ -697,7 +676,7 @@
 
     var wrapper = fieldBox(spec, el("div", { class: "overflow-x-auto" }, table));
     var add = el("button", { class: CLS.btn });
-    add.append(icon("add"), el("span", { text: (T.action || {}).add_row }));
+    add.append(icon("add"), el("span", { text: (T.call || {}).add_row }));
     add.addEventListener("click", function () {
       rows.push(blankRow(spec.columns));
       draw();
@@ -818,8 +797,8 @@
 
   // ── Bench tests ────────────────────────────────────────────────────────────
 
-  function renderChecks(container) {
-    var list = benchRoutines();
+  function renderRoutines(container) {
+    var list = setupRoutines();
 
     if (!list.length) {
       container.append(card(null, el("div", { class: CLS.cardBody },
@@ -829,7 +808,7 @@
 
     container.append(
       sectionLabel(
-        (T.tool || {}).checks,
+        (T.tool || {}).routines,
         outcomeMark(worst(list.map(function (test) { return runFor(test).status; })), true)
       )
     );
@@ -883,6 +862,7 @@
     var runButton = el("button", {
       class: test.hazardous ? CLS.btnDanger : CLS.btn,
       disabled: gated || entry.status === "running",
+      title: gated ? why : "",
     });
     var label = entry.status === "running"
       ? (T.run || {}).running
@@ -897,7 +877,7 @@
       title,
       outcomeMark(entry.status, true),
       el("span", { class: "font-mono text-xs text-gray-500", text: entry.when || "" }),
-      gated ? explains(runButton, why) : runButton
+      runButton
     );
     row.append(head);
 
@@ -1054,51 +1034,51 @@
     return order.map(function (ns) { return { name: ns, methods: methods[ns] }; });
   }
 
-  function renderActions(container) {
+  function renderCalls(container) {
     var calls = routinesOf("call");
     if (!calls.length) {
-      container.append(card((T.tool || {}).actions, el("div", { class: CLS.cardBody },
-        el("div", { class: CLS.hint, text: (T.action || {}).none }))));
+      container.append(card((T.tool || {}).calls, el("div", { class: CLS.cardBody },
+        el("div", { class: CLS.hint, text: (T.call || {}).none }))));
       return;
     }
 
     // A refresh replaces every declaration, so the pick is held by address.
     // Re-reading it rather than re-adopting is what keeps a half-filled form filled.
     var groups = namespaceGroups(calls);
-    var live = state.action && calls.filter(function (one) {
-      return keyOf(one) === keyOf(state.action);
+    var live = state.call && calls.filter(function (one) {
+      return keyOf(one) === keyOf(state.call);
     })[0];
-    if (live) state.action = live;
-    else adoptAction(groups[0].methods[0]);
+    if (live) state.call = live;
+    else adoptCall(groups[0].methods[0]);
 
-    container.append(card((T.tool || {}).actions, picker(groups)));
-    container.append(methodCard(state.action));
+    container.append(card((T.tool || {}).calls, picker(groups)));
+    container.append(methodCard(state.call));
   }
 
   function picker(groups) {
-    var chosen = state.action.group;
+    var chosen = state.call.group;
     var group = groups.filter(function (one) { return one.name === chosen; })[0];
 
     var namespace = pickerBox(
-      (T.action || {}).namespace,
+      (T.call || {}).namespace,
       groups.map(function (one) {
         return { value: one.name, label: one.name + " (" + one.methods.length + ")" };
       }),
       chosen,
       function (picked) {
         var next = groups.filter(function (one) { return one.name === picked; })[0];
-        selectAction(next.methods[0]);
+        selectCall(next.methods[0]);
       }
     );
 
     var method = pickerBox(
-      (T.action || {}).method,
+      (T.call || {}).method,
       group.methods.map(function (one) {
         return { value: keyOf(one), label: one.name };
       }),
-      keyOf(state.action),
+      keyOf(state.call),
       function (picked) {
-        selectAction(group.methods.filter(function (one) {
+        selectCall(group.methods.filter(function (one) {
           return keyOf(one) === picked;
         })[0]);
       }
@@ -1132,22 +1112,22 @@
       body.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
     }
 
-    var form = formGrid(item.inputs, state.actionValues, function () {});
+    var form = formGrid(item.inputs, state.callValues, function () {});
     body.append(
       el("hr", { class: CLS.divider }),
       el("div", {},
-        el("div", { class: CLS.label, text: (T.action || {}).arguments }),
-        form || el("div", { class: CLS.hint, text: (T.action || {}).no_arguments })),
+        el("div", { class: CLS.label, text: (T.call || {}).arguments }),
+        form || el("div", { class: CLS.hint, text: (T.call || {}).no_arguments })),
       el("hr", { class: CLS.divider }),
       buttonRow(item)
     );
 
-    if (state.actionAnswer) {
-      var answer = state.actionAnswer;
+    if (state.callAnswer) {
+      var answer = state.callAnswer;
       body.append(
         el("hr", { class: CLS.divider }),
         el("div", {},
-          el("div", { class: CLS.label, text: (T.action || {}).reply }),
+          el("div", { class: CLS.label, text: (T.call || {}).reply }),
           answer.ok
             ? renderResult(answer.value) || el("div", { class: CLS.note, text: "" })
             : el("div", { class: CLS.noteError, text: answer.reason }))
@@ -1161,49 +1141,50 @@
 
   function buttonRow(item) {
     var gated = !item.ready.ok;
-    var why = item.ready.reason || (T.action || {}).blocked;
+    var why = item.ready.reason || (T.call || {}).blocked;
     var run = el("button", {
       class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
-      disabled: gated || state.actionBusy,
+      disabled: gated || state.callBusy,
+      title: gated ? why : "",
     });
-    var label = (T.action || {}).run;
+    var label = (T.call || {}).run;
     run.append(
-      icon(state.actionBusy ? "progress_activity" : "play_arrow",
-        state.actionBusy ? "size-[18px] animate-spin" : "size-[18px]"),
+      icon(state.callBusy ? "progress_activity" : "play_arrow",
+        state.callBusy ? "size-[18px] animate-spin" : "size-[18px]"),
       el("span", { text: label })
     );
     run.addEventListener("click", function () {
-      if (item.hazardous) arm(run, label, "play_arrow", function () { runAction(item); });
-      else runAction(item);
+      if (item.hazardous) arm(run, label, "play_arrow", function () { runCall(item); });
+      else runCall(item);
     });
 
-    return el("div", { class: "flex items-center gap-2" }, gated ? explains(run, why) : run);
+    return el("div", { class: "flex items-center gap-2" }, run);
   }
 
-  function adoptAction(item) {
-    state.action = item;
-    state.actionValues = JSON.parse(JSON.stringify(item.blank || {}));
-    state.actionAnswer = null;
+  function adoptCall(item) {
+    state.call = item;
+    state.callValues = JSON.parse(JSON.stringify(item.blank || {}));
+    state.callAnswer = null;
   }
 
-  function selectAction(item) {
-    adoptAction(item);
+  function selectCall(item) {
+    adoptCall(item);
     renderMain();
   }
 
-  function runAction(item) {
+  function runCall(item) {
     var sub = current();
-    state.actionBusy = true;
+    state.callBusy = true;
     renderMain();
-    api("/api/action/" + sub.id + "/" + keyOf(item), state.actionValues)
+    api("/api/call/" + sub.id + "/" + keyOf(item), state.callValues)
       .then(function (answer) {
-        state.actionBusy = false;
-        state.actionAnswer = answer;
+        state.callBusy = false;
+        state.callAnswer = answer;
         renderMain();
       })
       .catch(function (error) {
-        state.actionBusy = false;
-        state.actionAnswer = { ok: false, reason: error.message, value: null };
+        state.callBusy = false;
+        state.callAnswer = { ok: false, reason: error.message, value: null };
         renderMain();
       });
   }
@@ -1239,8 +1220,8 @@
           onclick: function () {
             state.current = sub;
             state.tool = "link";
-            state.action = null;
-            state.actionAnswer = null;
+            state.call = null;
+            state.callAnswer = null;
             renderMain();
             probe();
           },
@@ -1269,15 +1250,17 @@
     var bar = el("div", { class: CLS.tabbar });
     [
       { id: "link", label: (T.tool || {}).link, icon: "link", gated: false },
-      { id: "checks", label: (T.tool || {}).checks, icon: "vital_signs", gated: !up },
-      { id: "actions", label: (T.tool || {}).actions, icon: "data_object", gated: !up },
+      { id: "routines", label: (T.tool || {}).routines, icon: "vital_signs", gated: !up },
+      { id: "calls", label: (T.tool || {}).calls, icon: "data_object", gated: !up },
     ].forEach(function (tab) {
-      var button = el("button", {
-        class: tabClass(state.tool === tab.id),
-        disabled: tab.gated,
-        onclick: function () { state.tool = tab.id; renderMain(); },
-      }, icon(tab.icon, "size-4"), el("span", { text: tab.label }));
-      bar.append(tab.gated ? explains(button, (T.run || {}).needs_link) : button);
+      bar.append(
+        el("button", {
+          class: tabClass(state.tool === tab.id),
+          disabled: tab.gated,
+          title: tab.gated ? (T.run || {}).needs_link : "",
+          onclick: function () { state.tool = tab.id; renderMain(); },
+        }, icon(tab.icon, "size-4"), el("span", { text: tab.label }))
+      );
     });
     return bar;
   }
@@ -1300,10 +1283,10 @@
 
     if (state.tool === "link") {
       renderLink(dom.main);
-    } else if (state.tool === "checks") {
-      renderChecks(dom.main);
+    } else if (state.tool === "routines") {
+      renderRoutines(dom.main);
     } else {
-      renderActions(dom.main);
+      renderCalls(dom.main);
     }
   }
 
@@ -1354,7 +1337,6 @@
     dom.logBody = document.querySelector(".log-body");
     dom.logChips = document.querySelector(".log-chips");
     dom.toasts = document.querySelector(".toasts");
-    document.body.append(tip);
 
     document.querySelectorAll("[data-icon]").forEach(function (node) {
       node.prepend(icon(node.dataset.icon, "size-5"));

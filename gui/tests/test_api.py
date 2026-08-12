@@ -121,14 +121,14 @@ def test_connecting_is_refused_with_the_sentence_the_probe_produced(client, unpl
     assert verdict["reason"]
 
 
-def test_an_action_on_a_link_that_is_down_is_refused_by_its_precondition(client):
-    answer = client.post("/api/action/transport/sys.version", json={})
+def test_a_call_on_a_link_that_is_down_is_refused_by_its_precondition(client):
+    answer = client.post("/api/call/transport/sys.version", json={})
     assert answer.status_code == 409
     assert "not connected" in answer.json()["detail"]
 
 
-def test_an_action_nobody_declared_is_a_refusal(client):
-    assert client.post("/api/action/transport/no.such", json={}).status_code == 404
+def test_a_call_nobody_declared_is_a_refusal(client):
+    assert client.post("/api/call/transport/no.such", json={}).status_code == 404
 
 
 def test_a_routine_nobody_declared_is_a_refusal(client):

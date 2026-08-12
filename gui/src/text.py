@@ -32,8 +32,8 @@ def catalog() -> dict[str, Any]:
         },
         "tool": {
             "link": _("Link"),
-            "checks": _("Bench tests"),
-            "actions": _("Actions"),
+            "routines": _("Routines"),
+            "calls": _("Calls"),
             "before": _("Before connecting"),
         },
         "link": {
@@ -68,15 +68,15 @@ def catalog() -> dict[str, Any]:
             "needs_link": _("Connect first"),
             "refused": _("Refused"),
             "steps": _("Steps"),
-            "none": _("This subsystem declares no bench tests"),
+            "none": _("This subsystem declares no routines"),
         },
-        "action": {
+        "call": {
             "run": _("Run"),
             "namespace": _("Namespace"),
             "method": _("Method"),
             "arguments": _("Arguments"),
             "no_arguments": _("This method takes no arguments"),
-            "none": _("This subsystem declares no actions"),
+            "none": _("This subsystem declares no calls"),
             "reply": _("Reply"),
             "blocked": _("Not available"),
             "add_row": _("Add row"),
