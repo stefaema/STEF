@@ -1,7 +1,7 @@
 """Every record that crosses between a subsystem and a screen."""
 
 import enum
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -127,8 +127,7 @@ class Option(NamedTuple):
     label: str
 
 
-# Either a fixed sequence, an enum class, or a zero-argument callable returning one.
-Options = Any
+Options = Sequence[Any] | Callable[[], Sequence[Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +140,7 @@ class Input:
     unit: str | None = None
     min: int | None = None
     max: int | None = None
-    options: Options = None
+    options: Options | None = None
     columns: tuple["Input", ...] = ()
 
 

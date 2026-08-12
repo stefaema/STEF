@@ -7,8 +7,8 @@ which of the six a value gets, and carries every conversion that choice implies.
 import dataclasses
 import enum
 import typing
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, cast
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from shared.bench_api.records import (
     DeclarationError,
@@ -23,9 +23,20 @@ KINDS = ("choice", "boolean", "integer", "bitmask", "raw_bytes", "group")
 # ── Declaring one ────────────────────────────────────────────────────────────
 
 
-def choice(name: str, options: Options, *, hint: str | None = None) -> Input:
+def _fixed_or_fetcher(options: Options | type[enum.Enum]) -> Options:
+    """Return either the options themselves or the call that produces them, never a class."""
+    if isinstance(options, type) and issubclass(options, enum.Enum):
+        return tuple(options)
+    return options
+
+
+def choice(
+    name: str, options: Options | type[enum.Enum], *, hint: str | None = None
+) -> Input:
     """Return a pick-one control over a fixed sequence, an enum, or a live list."""
-    return Input(name=name, kind="choice", options=options, hint=hint)
+    return Input(
+        name=name, kind="choice", options=_fixed_or_fetcher(options), hint=hint
+    )
 
 
 def boolean(name: str, *, hint: str | None = None) -> Input:
@@ -45,9 +56,13 @@ def integer(
     return Input(name=name, kind="integer", unit=unit, min=min, max=max, hint=hint)
 
 
-def bitmask(name: str, options: Options, *, hint: str | None = None) -> Input:
+def bitmask(
+    name: str, options: Options | type[enum.Enum], *, hint: str | None = None
+) -> Input:
     """Return a pick-many control over the members of a flag set."""
-    return Input(name=name, kind="bitmask", options=options, hint=hint)
+    return Input(
+        name=name, kind="bitmask", options=_fixed_or_fetcher(options), hint=hint
+    )
 
 
 def raw_bytes(name: str, *, hint: str | None = None) -> Input:
@@ -145,26 +160,18 @@ def overridden(
 # ── The options a choice or a bitmask offers ─────────────────────────────────
 
 
-def _fetcher(item: Input) -> Callable[[], Sequence[Any]] | None:
-    """Return the callable the options must come from, or None where they are fixed."""
-    if callable(item.options) and not isinstance(item.options, type):
-        return cast(Callable[[], Sequence[Any]], item.options)
-    return None
-
-
 def options_are_live(item: Input) -> bool:
     """Whether the options are unknown until called for."""
-    return _fetcher(item) is not None
+    return callable(item.options)
 
 
 def current_options(item: Input) -> tuple[Any, ...]:
     """Return the options as they stand now, calling for them if that is needed."""
-    fetch = _fetcher(item)
-    if fetch is not None:
-        return tuple(fetch())
     if item.options is None:
         return ()
-    return tuple(cast(Iterable[Any], item.options))
+    if callable(item.options):
+        return tuple(item.options())
+    return tuple(item.options)
 
 
 def labelled_options(item: Input) -> tuple[dict[str, Any], ...]:
