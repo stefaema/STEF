@@ -282,11 +282,16 @@ class MethodSpec(NamedTuple):
 LIBRARY_CALL = {"raw": "tmc2209_"}
 
 
-def _prose(stem: str, attr: str) -> str | None:
-    """Return the prose the generator attached to one method, if any."""
+def _prose(stem: str, attr: str, member: str) -> str | None:
+    """Return what one method is documented as, from wherever that was written.
+
+    A namespace that binds a library is documented by that library's own call.
+    One that binds handlers of its own has nothing but the method enum, so the
+    comment beside the member is the only sentence there is.
+    """
     prefix = LIBRARY_CALL.get(stem.lower())
     if prefix is None:
-        return None
+        return abi.DOC.get(f"rpc_{stem.lower()}_method_t.{member}")
 
     note = abi.FUNCTION_DOC.get(f"{prefix}{attr}")
     if note is None:
@@ -321,7 +326,7 @@ def _methods(stem: str, ns: int, method_enum: Any) -> dict[str, MethodSpec]:
             ret=ret,
             fields=_positional_fields(args),
             wire=(args_wire, ret_wire),
-            doc=_prose(stem, attr),
+            doc=_prose(stem, attr, member.name),
         )
     return specs
 

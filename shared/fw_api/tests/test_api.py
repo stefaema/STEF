@@ -89,9 +89,14 @@ def test_every_raw_method_carries_the_prose_of_the_call_it_binds():
         assert spec.doc == fw_api.abi.FUNCTION_DOC[f"tmc2209_{name}"], spec.name
 
 
-def test_a_namespace_that_binds_no_library_carries_no_prose():
-    for spec in fw_api.namespaces()["sys"].values():
-        assert spec.doc is None
+def test_a_namespace_binding_no_library_is_documented_by_its_own_method_enum():
+    state = fw_api.namespaces()["sys"]["state"]
+
+    assert state.doc == fw_api.abi.DOC["rpc_sys_method_t.RPC_SYS_STATE"]
+
+
+def test_a_method_nobody_wrote_a_comment_beside_carries_no_prose():
+    assert fw_api.namespaces()["sys"]["version"].doc is None
 
 
 def test_no_terminator_became_a_method():

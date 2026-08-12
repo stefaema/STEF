@@ -59,6 +59,8 @@ from shared.bench_api.registry import (
     register_routine,
     routine,
     run_routine,
+    summary_and_body,
+    titled,
 )
 from shared.bench_api.wire import (
     as_json,
@@ -126,4 +128,6 @@ __all__ = [
     "routine_json",
     "run_routine",
     "subsystem_json",
+    "summary_and_body",
+    "titled",
 ]
