@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 import traceback
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -59,10 +58,10 @@ def wake() -> None:
     """
     for name in ROSTER:
         try:
-            package = bench_api.load_subsystem(name)
+            loaded = bench_api.load_subsystem(name)
         except (ImportError, KeyError):
             continue
-        sink = getattr(sys.modules[package.package], "logs_to", None)
+        sink = getattr(loaded.module, "logs_to", None)
         if sink is not None:
             sink(stream.sink(name))
     stream.say("gui", "ok", "gui", gettext("Backend ready"))

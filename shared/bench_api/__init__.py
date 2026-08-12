@@ -48,6 +48,7 @@ from shared.bench_api.records import (
     SubsystemState,
     Table,
     blocked,
+    crossing,
 )
 from shared.bench_api.registry import (
     REGISTRY,
@@ -108,6 +109,7 @@ __all__ = [
     "checked_inputs",
     "choice",
     "coerced_values",
+    "crossing",
     "current_options",
     "group",
     "input_json",

@@ -97,13 +97,7 @@ def load_subsystem(package: str) -> Subsystem:
     module = importlib.import_module(package)
     summary, description = prose_of(module)
     found = REGISTRY.add_subsystem(
-        Subsystem(
-            id=package.rpartition(".")[2],
-            summary=summary,
-            description=description,
-            package=package,
-            module=module,
-        )
+        Subsystem(module=module, summary=summary, description=description)
     )
     for info in pkgutil.walk_packages(module.__path__, f"{package}."):
         if not _is_declaration(info.name.removeprefix(f"{package}.")):

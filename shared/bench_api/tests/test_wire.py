@@ -44,6 +44,21 @@ def test_an_outcome_carries_its_step_and_whatever_it_found():
     assert packed["value"]["summary"] == "s"
 
 
+def test_a_property_the_record_marks_as_crossing_is_in_the_json(oven):
+    packed = bench_api.as_json(oven)
+
+    assert packed["id"] == "fixture"
+    assert packed["summary"].startswith("An oven")
+
+
+def test_a_plain_property_stays_behind(oven):
+    assert "package" not in bench_api.as_json(oven)
+
+
+def test_the_module_a_subsystem_reads_its_state_from_never_crosses(oven):
+    assert "module" not in bench_api.as_json(oven)
+
+
 # ── What never crosses ───────────────────────────────────────────────────────
 
 

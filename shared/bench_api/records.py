@@ -13,6 +13,10 @@ DROPPED = {"wire": "drop"}
 BY_NAME = {"wire": "name"}
 
 
+class crossing(property):
+    """A property that crosses, since a walker sees fields and no property is one."""
+
+
 # ── How a declaration refuses ────────────────────────────────────────────────
 
 
@@ -195,12 +199,20 @@ class Routine:
 class Subsystem:
     """One part of the machine, and every routine declared under its package."""
 
-    id: str
-    summary: str
-    description: str
-    package: str
-    module: Any = field(default=None, metadata=DROPPED)
+    module: Any = field(metadata=DROPPED)
+    summary: str = ""
+    description: str = ""
     routines: dict[str, Routine] = field(default_factory=dict)
+
+    @crossing
+    def id(self) -> str:
+        """Return the name this subsystem is known by, its package's last part."""
+        return self.package.rpartition(".")[2]
+
+    @property
+    def package(self) -> str:
+        """Return the dotted path every declaration under this subsystem starts with."""
+        return self.module.__name__
 
     def now(self) -> SubsystemState:
         """Return the state the package reports when asked, never one remembered here.
