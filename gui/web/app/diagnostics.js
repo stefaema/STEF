@@ -64,6 +64,7 @@
     cardHead: "flex items-center gap-3 px-4 py-2.5 border-b border-gray-300 dark:border-gray-700",
     cardBody: "flex flex-col gap-4 p-4",
     sub: "text-xs text-gray-500 dark:text-gray-400",
+    lede: "text-sm font-medium text-gray-900 dark:text-white",
     spacer: "flex-1",
     hint: "text-xs text-gray-500 dark:text-gray-400",
     mono: "font-mono text-sm tabular-nums",
@@ -1102,7 +1103,7 @@
   function methodCard(item, sub) {
     var body = el("div", { class: "flex flex-col gap-4 p-4" });
 
-    if (item.effect) body.append(el("div", { class: CLS.hint, text: item.effect }));
+    if (item.effect) body.append(el("div", { class: CLS.lede, text: item.effect }));
     if (item.description) {
       body.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
     }
@@ -1233,7 +1234,7 @@
   function implementationCard(sub) {
     var spec = LINK[sub.state] || LINK.down;
     var body = el("div", { class: "flex flex-col gap-2 p-4" },
-      el("span", { class: "text-sm font-medium text-gray-900 dark:text-white", text: sub.summary }),
+      el("span", { class: CLS.lede, text: sub.summary }),
       sub.description
         ? showMore(sub.description, "text-sm text-gray-600 dark:text-gray-300")
         : null);
