@@ -27,8 +27,15 @@ bench_api.load_subsystem("oven")
 bench_api.REGISTRY.subsystem("oven").routines
 ```
 
-Anything under a `tests/` directory or named `test_*` is skipped, so pytest
-never collects a routine and fails it on absent hardware.
+The walk skips anything under a `tests/` directory or named `test_*`, so loading
+a subsystem does not import its own test suite and the fixtures declared there
+never land in the live registry.
+
+The rule runs the other way too, and that half is a naming convention rather
+than something this package enforces: a module that declares routines must not
+look like a test module, or pytest collects it, imports it a second time, and
+every declaration in it registers twice. That is why the prelink ladder is
+`transport/bench/prelink.py` and not `bench/link_test.py`.
 
 ## Declare a routine
 

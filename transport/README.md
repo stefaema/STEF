@@ -59,13 +59,33 @@ settle, so `auto` refuses rather than guessing.
 | `fw_probe.py` | who is on a port, without disturbing them |
 | `fw_image.py` | what is installed here, and which of it this machine runs |
 | `transport.py` | the subsystem the bench sees, and the link it is reached through |
+| `device_profile.py` | which registers a driver is given, and what it is called |
 | `bench/rom.py` | what the bootloader answers, and how an image gets written |
-| `bench/link_test.py` | the ladder, as a routine an operator runs |
-| `bench/flash.py` | erasing and writing, refusing a board that is already right |
 
-`bench/link_test.py` matches pytest's `*_test.py` pattern, so `python_files` is
-pinned in `pyproject.toml`. Without it, collection imports the module and its
-declarations register twice.
+## What an operator runs
+
+Everything the screen offers is a `bench_api` routine, and `bench/` holds one
+module per stage of the link's life. A module's name is the group its routines
+answer to, so where a routine lives is what it is called:
+
+| module | category | what it holds |
+| --- | --- | --- |
+| `bench/link.py` | `LINK` | connect and disconnect, and what blocks each |
+| `bench/prelink.py` | `PRELINK` | the ladder, and flashing, while nothing holds the port |
+| `bench/setup.py` | `SETUP` | bringing a driver up to its baseline, once the link is open |
+| `bench/calls.py` | `CALL` | one routine per firmware method, declared in a loop |
+
+`prelink` runs only while the link is down, since both the probe ladder and a
+flash need the port to themselves. `setup` and `calls` run only while it is up.
+The category carries that rule, so neither module states it again.
+
+`calls.py` writes none of its twenty-six routines out. `fw_api` already
+generates one annotated dataclass per firmware method, which is what a form
+derives from, so the declarations are made in a loop over the ABI and a header
+change moves them without an edit here.
+
+A declaration module must not look like a test module, or pytest collects it,
+imports it a second time, and every routine in it registers twice.
 
 ## Tests
 

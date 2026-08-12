@@ -9,17 +9,19 @@ capture is decorated it appears here with no change to this module.
 
 ## What is served
 
-The diagnostics screen, for whatever subsystems `SUBSYSTEMS` in `src/app.py` lists. Operation,
+The diagnostics screen, for whatever subsystems `ROSTER` in `src/app.py` lists. Operation,
 settings and the standalone log are in the rail and disabled: operation needs an orchestrator
 that is not designed, and settings needs an editor for the firmware pin.
 
-Three tools per subsystem, which is what the contract declares:
+Everything a subsystem offers is a routine. The screen groups them by the category each one
+declares, and gates each group on the one thing the category already says:
 
-| tool | comes from | gated on |
+| panel | category | runnable when |
 | --- | --- | --- |
-| Link | `@link`'s form and its four methods | nothing |
-| Bench tests | `@bench_test` and `@link_test` | a link, except for link tests |
-| Actions | `@action` | a link |
+| Link | `LINK` | always. The connect and disconnect controls themselves |
+| Before connecting | `PRELINK` | the link is down, since these hold the port |
+| Routines | `SETUP` | the link is up |
+| Calls | `CALL` | the link is up |
 
 Connect is not gated on having run anything. It asks `can_connect` and shows whatever that
 refuses with, so the disabled button carries the sentence naming its own remedy rather than
@@ -30,15 +32,16 @@ refuses with, so the disabled button carries the sentence naming its own remedy 
     registry   →  backend    import, read typed objects
     backend    →  browser    JSON, so declarations are data by then
 
-Callables never cross. A live option list crosses as the name it is fetched under and the
-browser asks for it each time it draws the control, because ports appear when a board is plugged
-in and a list baked into the page is a snapshot of process start. `wire.py` is the only module
-that speaks both vocabularies, and the test for whether a subsystem's surface has leaked is that
-the payload survives a round trip through `json`.
+Callables never cross. A live option list crosses as the route it is fetched from and the
+browser asks each time it draws the control, because ports appear when a board is plugged in and
+a list baked into the page is a snapshot of process start.
 
-Coming back the other way costs something too: JSON has one number type and no bytes, so
-`wire.arguments` coerces what a form submits into what a declaration takes. That keeps the
-browser's limitations out of every subsystem's code.
+Both conversions live in `bench_api` rather than here, one function per record, because they are
+the contract's own vocabulary and a second screen would otherwise write them again. Coming back
+the other way costs something too: JSON has one number type and no bytes, so `coerced_values`
+turns what a form submits into what a declaration takes. That keeps the browser's limitations
+out of every subsystem's code. The test for whether a subsystem's surface has leaked is that the
+payload survives a round trip through `json`.
 
 ## One thing at a time
 
@@ -64,8 +67,8 @@ the identity function, so the screen reads correctly with none installed.
 | path | what it answers |
 | --- | --- |
 | `src/app.py` | the routes, and what a request is allowed to do |
-| `src/wire.py` | what crosses, both ways |
 | `src/runner.py` | the one slot, and the stream everything reports on |
+| `src/stef.py` | what the whole machine is doing. Placeholder until an orchestrator says |
 | `src/text.py` | every legend the browser writes |
 | `src/i18n.py` | where catalogs are looked for |
 | `src/templates/` | the shell the browser fills in |
