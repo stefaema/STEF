@@ -44,7 +44,7 @@ def test_an_outcome_carries_its_step_and_whatever_it_found():
     assert packed["value"]["summary"] == "s"
 
 
-def test_a_property_the_record_marks_as_crossing_is_in_the_json(oven):
+def test_a_property_asking_to_be_walked_as_a_field_is_in_the_json(oven):
     packed = bench_api.as_json(oven)
 
     assert packed["id"] == "fixture"

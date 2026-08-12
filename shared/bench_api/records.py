@@ -13,8 +13,8 @@ DROPPED = {"wire": "drop"}
 BY_NAME = {"wire": "name"}
 
 
-class crossing(property):
-    """A property that crosses, since a walker sees fields and no property is one."""
+class as_field(property):
+    """A property to be walked as though it were a field, since no property is one."""
 
 
 # ── How a declaration refuses ────────────────────────────────────────────────
@@ -204,7 +204,7 @@ class Subsystem:
     description: str = ""
     routines: dict[str, Routine] = field(default_factory=dict)
 
-    @crossing
+    @as_field
     def id(self) -> str:
         """Return the name this subsystem is known by, its package's last part."""
         return self.package.rpartition(".")[2]
