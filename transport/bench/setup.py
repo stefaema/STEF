@@ -26,6 +26,12 @@ HEALTH = "Health"
 
 CACHED = (fw_api.TMC2209_GCONF, fw_api.TMC2209_CHOPCONF)
 
+# What a driver reports at the end of a bring-up that is not news. Standing
+# still is the state this routine leaves it in, and open load is measured off
+# the coil current, so with the motor stopped it reports the stillness rather
+# than the wiring.
+EXPECTED = fw_api.TMC2209_STANDSTILL | fw_api.TMC2209_OPEN_LOAD
+
 
 def _hex(value: int) -> str:
     """Return one register word as it is written in a datasheet."""
@@ -42,6 +48,13 @@ def _flags(decoded: Any) -> tuple[tuple[str, str], ...]:
         for name, *_ in type(decoded)._fields_
         if not name.startswith("_")
         for value in (getattr(decoded, name),)
+    )
+
+
+def _named(conditions: fw_api.Tmc2209Condition) -> str:
+    """Return what poll_health reported, in the datasheet's words."""
+    return ", ".join(
+        flag.name.removeprefix("TMC2209_") for flag in conditions if flag.name
     )
 
 
@@ -143,15 +156,22 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
     )
 
     conditions = fw_api.Tmc2209Condition(raw.poll_health(idx=idx).conditions)
-    named = ", ".join(flag.name or "" for flag in conditions) or "nothing reported"
+    unexpected = conditions & ~EXPECTED
+    if unexpected:
+        summary = _named(unexpected)
+    elif conditions:
+        summary = f"{_named(conditions)}, which is what a driver at rest reports"
+    else:
+        summary = "nothing reported"
     yield StepOutcome(
-        WARNED if conditions else PASSED,
-        f"health: {named}",
+        WARNED if unexpected else PASSED,
+        f"health: {_named(conditions) or 'nothing reported'}",
         Result(
-            level=Level.WARN if conditions else Level.OK,
-            summary=named,
+            level=Level.WARN if unexpected else Level.OK,
+            summary=summary,
             note="Reported, not judged. Latched conditions survive until "
-            "clear_faults acknowledges them, and standstill is normal here.",
+            "clear_faults acknowledges them. Standstill and open load are what "
+            "a stopped driver reports, so neither is held against it here.",
             fields=(("conditions", _hex(int(conditions))),),
         ),
         step=HEALTH,
