@@ -323,12 +323,13 @@ def declare() -> tuple[str, ...]:
     for namespace in fw_api.namespaces().values():
         for spec in namespace.values():
             group, _, name = spec.name.partition(".")
+            summary, body = bench_api.summary_and_body(spec.doc or "")
             bench_api.register_routine(
                 module=__name__,
                 group=group,
                 name=name,
-                title=spec.name,
-                description=spec.doc or "",
+                title=bench_api.titled(summary) or spec.name,
+                description=body,
                 category=CALL,
                 hazardous=spec.name in HAZARDOUS,
                 inputs=_inputs(spec),
