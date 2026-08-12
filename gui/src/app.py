@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import traceback
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,8 +24,8 @@ from fastapi.templating import Jinja2Templates
 from gui.src import text, wire
 from gui.src.i18n import gettext, ngettext
 from gui.src.runner import Busy, Record, Slot, Stream, call_off_loop, stream_run
+from gui.src.stef import STEF, StefState
 from shared import bench_api
-from shared.bench_api.stef import STEF, StefState
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
@@ -47,36 +48,32 @@ templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyr
 
 stream = Stream()
 slot = Slot(stream)
-subsystems: dict[str, Any] = {}
 
 
 def wake() -> None:
-    """Import every declaration, then build the one instance of each subsystem.
+    """Load every subsystem package, which is what puts its routines in the registry.
 
-    A decorator runs when its module is imported, so the walk is the
+    A declaration runs when its module is imported, so the walk is the
     registration and skipping it leaves a subsystem that silently does not
     appear.
     """
     for name in ROSTER:
         try:
-            bench_api.load(f"{name}.bench")
-            record = bench_api.REGISTRY.subsystem(name)
+            package = bench_api.load_subsystem(name)
         except (ImportError, KeyError):
             continue
-        instance = record.target()
-        subsystems[name] = instance
-        link = getattr(instance, "link", None)
-        if link is not None and hasattr(link, "_on_log"):
-            link._on_log = stream.sink(name)
-        getattr(STEF, name).link = link
+        sink = getattr(sys.modules[package.package], "logs_to", None)
+        if sink is not None:
+            sink(stream.sink(name))
     stream.say("gui", "ok", "gui", gettext("Backend ready"))
 
 
-def owner(name: str) -> Any:
-    """Return one registered subsystem, or say there is no such thing."""
-    if name not in subsystems:
-        raise HTTPException(404, f"no subsystem {name!r}")
-    return subsystems[name]
+def subsystem_of(name: str) -> Any:
+    """Return one loaded subsystem, or say there is no such thing."""
+    try:
+        return bench_api.REGISTRY.subsystem(name)
+    except KeyError:
+        raise HTTPException(404, f"no subsystem {name!r}") from None
 
 
 def _failed(name: str, exc: BaseException) -> str:
@@ -93,10 +90,9 @@ def _failed(name: str, exc: BaseException) -> str:
 
 
 def _state(name: str) -> str:
-    """Return what a subsystem is doing, read off its link rather than remembered."""
-    instance = subsystems.get(name)
-    reported = getattr(instance, "state", None)
-    return getattr(reported, "value", "down")
+    """Return what a subsystem is doing, asked of its package rather than remembered."""
+    found = bench_api.REGISTRY.subsystems.get(name)
+    return found.now().value if found is not None else "down"
 
 
 # ── The screen ───────────────────────────────────────────────────────────────
@@ -127,7 +123,7 @@ def machine_state() -> dict[str, Any]:
     return {
         "state": STEF.state.value,
         "busy": slot.holder,
-        "subsystems": {name: _state(name) for name in subsystems},
+        "subsystems": {name: _state(name) for name in bench_api.REGISTRY.subsystems},
     }
 
 
@@ -140,7 +136,7 @@ def declarations() -> list[dict[str, Any]]:
     """
     found = []
     for name in ROSTER:
-        if name not in subsystems:
+        if name not in bench_api.REGISTRY.subsystems:
             found.append({"id": name, "available": False})
             continue
         record = bench_api.REGISTRY.subsystem(name)
@@ -163,13 +159,12 @@ async def options_for(name: str) -> list[dict[str, Any]]:
 # ── The link ─────────────────────────────────────────────────────────────────
 
 
-def _link_of(name: str) -> tuple[Any, Any]:
-    """Return one subsystem's link and the declaration describing it."""
-    record = bench_api.REGISTRY.subsystem(name)
-    link = getattr(owner(name), "link", None)
-    if link is None or record.link is None:
-        raise HTTPException(404, f"{name} declares no link")
-    return link, record.link
+def _link_of(name: str, which: str) -> Any:
+    """Return one of a subsystem's link routines, or say it declares none."""
+    try:
+        return wire.link_of(subsystem_of(name), which)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.post("/api/link/{name}/readiness")
@@ -179,10 +174,12 @@ async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
     Answered by asking rather than by remembering whether a panel was run, since
     a remembered answer goes stale on the next replug.
     """
-    link, declared = _link_of(name)
-    taken = bench_api.arguments(declared.params, values)
+    declared = _link_of(name, "connect")
+    taken = bench_api.coerced_values(declared.inputs, values)
     try:
-        verdict = await asyncio.to_thread(lambda: link.can_connect(**taken))
+        verdict = await asyncio.to_thread(
+            lambda: bench_api.readiness_with(declared, taken)
+        )
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
     return wire.readiness(verdict)
@@ -191,12 +188,12 @@ async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/link/{name}/connect")
 async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
     """Open the link, atomically, and say how it went."""
-    link, declared = _link_of(name)
-    taken = bench_api.arguments(declared.params, values)
+    declared = _link_of(name, "connect")
+    taken = bench_api.coerced_values(declared.inputs, values)
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"connect({shown})")
     try:
-        await call_off_loop(slot, f"{name}.connect", lambda: link.connect(**taken))
+        await call_off_loop(slot, f"{name}.connect", lambda: _settle(declared, taken))
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -208,14 +205,21 @@ async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/link/{name}/disconnect")
 async def disconnect(name: str) -> dict[str, Any]:
     """Close the link and everything it started."""
-    link, _ = _link_of(name)
+    declared = _link_of(name, "disconnect")
     stream.say(name, "ok", "command", "disconnect()")
     try:
-        await asyncio.to_thread(link.disconnect)
+        await asyncio.to_thread(lambda: _settle(declared, {}))
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": _failed(name, exc), "state": _state(name)}
     stream.say(name, "ok", "result", gettext("Disconnected"))
     return {"ok": True, "state": _state(name)}
+
+
+def _settle(declared: Any, values: dict[str, Any]) -> None:
+    """Run a one-step routine to the end, raising whatever it reported as a failure."""
+    for outcome in bench_api.run_routine(declared, values):
+        if outcome.status is bench_api.FAILED:
+            raise RuntimeError(outcome.detail)
 
 
 # ── Running a routine ────────────────────────────────────────────────────────
@@ -224,18 +228,14 @@ async def disconnect(name: str) -> dict[str, Any]:
 @app.post("/api/run/{name}/{test_id}")
 async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingResponse:
     """Run one routine, streaming each step's outcome as the run reaches it."""
-    record = bench_api.REGISTRY.subsystem(name)
-    if test_id not in record.bench_tests:
-        raise HTTPException(404, f"no bench test {name}.{test_id}")
-    test = record.bench_tests[test_id]
-    if not test.needs_link and _state(name) == "up":
-        raise HTTPException(
-            409,
-            f"{test_id} opens the port itself, so it cannot run while the link "
-            f"holds it. Disconnect first",
-        )
-    taken = bench_api.arguments(test.params, values)
-    instance = owner(name)
+    record = subsystem_of(name)
+    if test_id not in record.routines:
+        raise HTTPException(404, f"no routine {name}.{test_id}")
+    test = record.routines[test_id]
+    verdict = bench_api.readiness_of(test, record.now())
+    if not verdict:
+        raise HTTPException(409, str(verdict))
+    taken = bench_api.coerced_values(test.inputs, values)
 
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"{test_id}({shown})")
@@ -243,7 +243,7 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
     async def body() -> AsyncIterator[str]:
         try:
             produced = stream_run(
-                slot, f"{name}.{test_id}", lambda: test.run(instance, **taken)
+                slot, f"{name}.{test_id}", lambda: bench_api.run_routine(test, taken)
             )
             async for item in produced:
                 packed = item if isinstance(item, dict) else wire.outcome(item)
@@ -260,6 +260,15 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
     return StreamingResponse(body(), media_type="text/event-stream")
 
 
+def _one_result(declared: Any, values: dict[str, Any]) -> Any:
+    """Return what a single-step routine found, which is what a call used to return."""
+    settled = list(bench_api.run_routine(declared, values))
+    failed = next((o for o in settled if o.status is bench_api.FAILED), None)
+    if failed is not None:
+        raise RuntimeError(failed.detail)
+    return next((o.value for o in settled if o.value is not None), None)
+
+
 def _tone(status: str) -> str:
     """Return the level a step's status reads as on the log."""
     return {"passed": "ok", "warned": "warn", "failed": "error"}.get(status, "ok")
@@ -270,23 +279,22 @@ async def call_action(
     name: str, action_name: str, values: dict[str, Any]
 ) -> dict[str, Any]:
     """Make one call by hand, and return what it found."""
-    record = bench_api.REGISTRY.subsystem(name)
-    if action_name not in record.actions:
-        raise HTTPException(404, f"no action {name}.{action_name}")
-    declared = record.actions[action_name]
+    record = subsystem_of(name)
+    if action_name not in record.routines:
+        raise HTTPException(404, f"no routine {name}.{action_name}")
+    declared = record.routines[action_name]
 
-    if declared.precondition is not None:
-        verdict = declared.precondition()
-        if verdict is not None and not verdict:
-            raise HTTPException(409, str(verdict))
+    verdict = bench_api.readiness_of(declared, record.now())
+    if not verdict:
+        raise HTTPException(409, str(verdict))
 
-    taken = bench_api.arguments(declared.params, values)
+    taken = bench_api.coerced_values(declared.inputs, values)
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"{action_name}({shown})")
 
     try:
         answer = await call_off_loop(
-            slot, f"{name}.{action_name}", lambda: declared.call(taken)
+            slot, f"{name}.{action_name}", lambda: _one_result(declared, taken)
         )
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -331,4 +339,4 @@ async def events() -> StreamingResponse:
 
 app.mount("/web", StaticFiles(directory=str(WEB)), name="web")
 
-__all__ = ["Record", "StefState", "app", "slot", "stream", "subsystems"]
+__all__ = ["Record", "StefState", "app", "slot", "stream"]

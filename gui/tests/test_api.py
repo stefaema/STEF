@@ -38,7 +38,10 @@ def test_every_declaration_reaches_the_browser_as_json(client):
     subsystems = client.get("/api/subsystems").json()
     transport = next(s for s in subsystems if s["id"] == "transport")
     assert transport["link"]["params"][0]["name"] == "port"
-    assert {t["id"] for t in transport["link_tests"]} == {"verify_port", "flash_board"}
+    assert {t["id"] for t in transport["link_tests"]} == {
+        "prelink.verify_port",
+        "prelink.flash_board",
+    }
     assert len(transport["actions"]) == 26
 
 
@@ -64,16 +67,16 @@ def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
         return ("high", "low")
 
     record = bench_api.REGISTRY.subsystem("transport")
-    declared = record.actions["raw.write"]
+    declared = record.routines["raw.write"]
     column = bench_api.choice("gear", gears)
-    patched = (*declared.params, bench_api.group("rows", columns=(column,)))
-    record.actions["raw.write"] = dataclasses.replace(declared, params=patched)
+    patched = (*declared.inputs, bench_api.group("rows", columns=(column,)))
+    record.routines["raw.write"] = dataclasses.replace(declared, inputs=patched)
     try:
         offered = client.get("/api/options/gears")
         assert offered.status_code == 200
         assert [one["value"] for one in offered.json()] == ["high", "low"]
     finally:
-        record.actions["raw.write"] = declared
+        record.routines["raw.write"] = declared
 
 
 def test_the_port_list_offers_more_than_the_shortlist(client):
@@ -113,7 +116,7 @@ def test_an_action_nobody_declared_is_a_refusal(client):
     assert client.post("/api/action/transport/no.such", json={}).status_code == 404
 
 
-def test_a_bench_test_nobody_declared_is_a_refusal(client):
+def test_a_routine_nobody_declared_is_a_refusal(client):
     assert client.post("/api/run/transport/no_such_test", json={}).status_code == 404
 
 
@@ -122,19 +125,16 @@ def test_a_routine_that_opens_the_port_is_refused_while_the_link_holds_it(
 ):
     # Two owners of one serial port is a corrupted exchange rather than an
     # error, so this has to be refused rather than attempted.
-    from gui.src import app as backend
+    from shared import bench_api
+    from shared.bench_api import SubsystemState
 
-    monkeypatch.setitem(backend.subsystems, "transport", _Up())
-    answer = client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    package = bench_api.REGISTRY.subsystem("transport").module
+    monkeypatch.setattr(package, "state", lambda: SubsystemState.UP)
+    answer = client.post(
+        "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+    )
     assert answer.status_code == 409
-    assert "Disconnect first" in answer.json()["detail"]
-
-
-class _Up:
-    """A subsystem reporting a link that is up, without one being open."""
-
-    class state:
-        value = "up"
+    assert "disconnect first" in answer.json()["detail"]
 
 
 # ── Running ──────────────────────────────────────────────────────────────────
@@ -151,7 +151,9 @@ def outcomes(text):
 
 
 def test_a_run_streams_one_outcome_per_step_as_it_reaches_it(client, unplugged):
-    answer = client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    answer = client.post(
+        "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+    )
     assert answer.status_code == 200
     settled = outcomes(answer.text)
     assert len(settled) == 3
@@ -162,7 +164,7 @@ def test_a_step_with_nothing_to_report_writes_no_log_line(client, unplugged):
     from gui.src.app import stream
 
     before = len(stream._backlog)
-    client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
     written = stream._backlog[before:]
     assert written
     assert all(record.text for record in written)
@@ -172,7 +174,9 @@ def test_abandoning_leaves_the_steps_after_it_skipped_rather_than_failed(
     client, unplugged
 ):
     settled = outcomes(
-        client.post("/api/run/transport/verify_port", json={"port": "auto"}).text
+        client.post(
+            "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+        ).text
     )
     assert [s["status"] for s in settled[1:]] == ["skipped", "skipped"]
 

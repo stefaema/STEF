@@ -1,7 +1,9 @@
-"""What the registry holds, as JSON.
+"""The registry as the browser still expects it, until the browser is migrated.
 
-Every record carries callables the browser has no use for, and which ones to
-drop is a decision per field, so each is flattened by hand.
+`bench_api` holds one kind of thing now, a routine, and serialises it by one
+convention. The screen still asks for the three it used to be told about, so the
+translation is a grouping by category and a rename of two keys. Nothing here
+decides anything; when `diagnostics.js` speaks routines, this file goes.
 """
 
 from __future__ import annotations
@@ -9,158 +11,92 @@ from __future__ import annotations
 from typing import Any
 
 from shared import bench_api
-from shared.bench_api import (
-    Action,
-    BenchTest,
-    ParamSpec,
-    Readiness,
-    Result,
-    Subsystem,
-)
-from shared.bench_api.params import choices, initial, needs_fetch, options_name
-from shared.bench_api.results import StepOutcome
+from shared.bench_api import CALL, LINK, PRELINK, SETUP, Routine, Subsystem
+
+CONNECT = "connect"
 
 
-def readiness(verdict: Readiness | None) -> dict[str, Any]:
-    """Return a verdict as the two things a disabled control needs.
-
-    A probe that falls off the end returns None, which is falsy, so an absent
-    answer disables rather than enables.
-    """
-    if verdict is None:
-        return {"ok": False, "reason": None}
-    return {"ok": bool(verdict), "reason": verdict.reason}
-
-
-def param(item: ParamSpec) -> dict[str, Any]:
-    """Return one control as everything the browser needs to draw it.
-
-    Options that must be called for cross as the name to call for them by, since
-    ports appear when a board is plugged in and a snapshot would say otherwise.
-    """
+def _routine(item: Routine, state: Any) -> dict[str, Any]:
+    """Return one routine under the keys a bench test used to cross with."""
+    shown = bench_api.routine_json(item, state)
     return {
-        "name": item["name"],
-        "kind": item["kind"],
-        "hint": item.get("hint"),
-        "unit": item.get("unit"),
-        "min": item.get("min"),
-        "max": item.get("max"),
-        "options_name": options_name(item),
-        "options": None if needs_fetch(item) else list(choices(item)),
-        "columns": [param(column) for column in item.get("columns", ())],
-    }
-
-
-def form(params: tuple[ParamSpec, ...]) -> dict[str, Any]:
-    """Return a whole form: its controls, and what they start at."""
-    return {
-        "params": [param(item) for item in params],
-        "values": {item["name"]: initial(item) for item in params},
-    }
-
-
-def result(item: Result | None) -> dict[str, Any] | None:
-    """Return what a call found, in the one shape every panel renders."""
-    if item is None:
-        return None
-    return {
-        "level": item.level.value,
-        "summary": item.summary,
-        "note": item.note,
-        "raw": item.raw.hex(" ") if item.raw else None,
-        "fields": [list(pair) for pair in item.fields],
-        "table": (
-            {"head": list(item.table.head), "rows": [list(r) for r in item.table.rows]}
-            if item.table
-            else None
-        ),
-    }
-
-
-def outcome(item: StepOutcome) -> dict[str, Any]:
-    """Return how one step settled."""
-    return {
-        "status": item.status.value,
-        "detail": item.detail,
-        "value": result(item.value),
-    }
-
-
-def bench_test(item: BenchTest) -> dict[str, Any]:
-    """Return one routine, its prose, its steps and the form that starts it."""
-    return {
-        "id": item.id,
-        "qualified": item.qualified,
+        "id": f"{item.group}.{item.name}",
+        "qualified": item.id,
         "title": item.title,
         "description": item.description,
         "hazardous": item.hazardous,
-        "needs_link": item.needs_link,
-        "steps": [{"name": s.name, "title": s.title} for s in item.steps],
-        **form(item.params),
+        "needs_link": item.category in (SETUP, CALL),
+        "steps": [{"name": title, "title": title} for title in item.steps],
+        "params": shown["inputs"],
+        "values": shown["blank"],
     }
 
 
-def action(item: Action) -> dict[str, Any]:
-    """Return one call, its prose, and whether it is worth looking at before it goes."""
+def _action(item: Routine, state: Any) -> dict[str, Any]:
+    """Return one generated call under the keys an action used to cross with."""
+    shown = bench_api.routine_json(item, state)
     return {
-        "name": item.name,
-        "qualified": item.qualified,
-        "effect": item.effect,
+        "name": f"{item.group}.{item.name}",
+        "qualified": item.id,
+        "effect": item.title,
         "description": item.description,
         "hazardous": item.hazardous,
-        "has_digest": item.digest is not None,
-        **form(item.params),
+        "has_digest": False,
+        "params": shown["inputs"],
+        "values": shown["blank"],
     }
+
+
+def _link(item: Subsystem, state: Any) -> dict[str, Any] | None:
+    """Return the connect form, which is the whole of what a link used to declare."""
+    connect = bench_api.link_routine(item, CONNECT)
+    if connect is None:
+        return None
+    shown = bench_api.routine_json(connect, state)
+    return {"params": shown["inputs"], "values": shown["blank"]}
 
 
 def subsystem(item: Subsystem, state: str) -> dict[str, Any]:
     """Return one subsystem and everything declared against it."""
-    summary, _, body = item.description.partition("\n")
+    now = item.now()
     return {
         "id": item.id,
-        "summary": summary.strip(),
-        "description": body.strip(),
+        "summary": item.summary,
+        "description": item.description,
         "state": state,
-        "link": form(item.link.params) if item.link else None,
-        "bench_tests": [
-            bench_test(t) for t in item.bench_tests.values() if t.needs_link
-        ],
-        "link_tests": [bench_test(t) for t in item.link_tests],
-        "actions": [action(a) for a in item.actions.values()],
+        "link": _link(item, now),
+        "bench_tests": [_routine(r, now) for r in item.by_category(SETUP)],
+        "link_tests": [_routine(r, now) for r in item.by_category(PRELINK)],
+        "actions": [_action(r, now) for r in item.by_category(CALL)],
     }
 
 
+def outcome(item: Any) -> dict[str, Any]:
+    """Return how one step settled."""
+    return bench_api.as_json(item)
+
+
+def result(item: Any) -> dict[str, Any] | None:
+    """Return what a step found, or nothing where it found nothing worth a panel."""
+    return None if item is None else bench_api.as_json(item)
+
+
+def readiness(verdict: Any) -> dict[str, Any]:
+    """Return a verdict as the two things a disabled control needs."""
+    return bench_api.readiness_json(verdict)
+
+
 def options_for(name: str) -> list[dict[str, Any]]:
-    """Return a set of options by the name they are fetched under.
-
-    Callables do not cross, so the browser holds the name and asks for the list
-    each time it draws the control.
-    """
-    for item in bench_api.REGISTRY.subsystems.values():
-        for params in _every_form(item):
-            for entry in _with_columns(params):
-                if options_name(entry) == name:
-                    return list(choices(entry))
-    raise KeyError(name)
+    """Return a live option list, by the name its callable crosses under."""
+    return bench_api.options_named(name)
 
 
-def _every_form(item: Subsystem) -> list[tuple[ParamSpec, ...]]:
-    """Return every form one subsystem declares, wherever it declared it."""
-    forms = [item.link.params] if item.link else []
-    forms += [t.params for t in item.bench_tests.values()]
-    forms += [a.params for a in item.actions.values()]
-    return forms
-
-
-def _with_columns(params: tuple[ParamSpec, ...]) -> list[ParamSpec]:
-    """Return one form's controls, counting a group's columns as controls too.
-
-    A column is drawn by the same code as a top-level control and may fetch its
-    list the same way, so a walk that stops at the top would answer 404 for a
-    name the screen is going to ask for.
-    """
-    found: list[ParamSpec] = []
-    for entry in params:
-        found.append(entry)
-        found += _with_columns(tuple(entry.get("columns", ())))
+def link_of(item: Subsystem, name: str) -> Routine:
+    """Return one of a subsystem's link routines, or say it declares none."""
+    found = bench_api.link_routine(item, name)
+    if found is None:
+        raise KeyError(f"{item.id} declares no {name}")
     return found
+
+
+LINK_CATEGORY = LINK
