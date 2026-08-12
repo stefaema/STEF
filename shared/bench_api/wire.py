@@ -10,33 +10,25 @@ from shared.bench_api.inputs import (
     options_are_live,
     options_name,
 )
-from shared.bench_api.records import (
-    Input,
-    Readiness,
-    Routine,
-    Subsystem,
-    treat_as_field,
-)
+from shared.bench_api.records import Input, Readiness, Routine, Subsystem
 from shared.bench_api.registry import REGISTRY, readiness_of
 
 # ── The one convention ───────────────────────────────────────────────────────
 
 
 def as_json(value: Any) -> Any:
-    """Return any record as JSON, honouring what each field said about crossing.
+    """Return any record as JSON, leaving out whatever the record does rather than holds.
 
-    A field marked dropped never crosses, and a callable marked by name crosses
-    as the name to fetch it under, since a list captured now would be a snapshot.
+    A record says which of its members are not data, and those are the ones a
+    screen has no use for anyway: what it runs and what it asks before running.
     """
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        crossed = {
-            f.name: _field_as_json(value, f)
+        behaviour = getattr(type(value), "NOT_DATA", ())
+        return {
+            f.name: as_json(getattr(value, f.name))
             for f in dataclasses.fields(value)
-            if f.metadata.get("wire") != "drop"
+            if f.name not in behaviour
         }
-        for name in _properties_treated_as_fields(type(value)):
-            crossed[name] = as_json(getattr(value, name))
-        return crossed
     if isinstance(value, enum.Enum):
         return value.value
     if isinstance(value, bytes):
@@ -46,21 +38,6 @@ def as_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: as_json(item) for key, item in value.items()}
     return value
-
-
-def _properties_treated_as_fields(record: type) -> tuple[str, ...]:
-    """Return the names of the properties this record asked to be walked as fields."""
-    return tuple(
-        name for name, attr in vars(record).items() if isinstance(attr, treat_as_field)
-    )
-
-
-def _field_as_json(owner: Any, spec: dataclasses.Field) -> Any:
-    """Return one field's value as JSON, or the name a callable is fetched under."""
-    value = getattr(owner, spec.name)
-    if spec.metadata.get("wire") == "name":
-        return None if value is None else getattr(value, "__name__", None)
-    return as_json(value)
 
 
 # ── What a screen receives ───────────────────────────────────────────────────

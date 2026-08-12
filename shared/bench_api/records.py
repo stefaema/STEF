@@ -3,19 +3,10 @@
 import enum
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 # What a subsystem package is asked for its state by.
 STATE_ATTRIBUTE = "state"
-
-# A field the browser must never receive, and one whose callable crosses as its name.
-DROPPED = {"wire": "drop"}
-BY_NAME = {"wire": "name"}
-
-
-class treat_as_field(property):
-    """A property to be walked as though it were a field, since no property is one."""
-
 
 # ── How a declaration refuses ────────────────────────────────────────────────
 
@@ -150,8 +141,12 @@ class Input:
     unit: str | None = None
     min: int | None = None
     max: int | None = None
-    options: Options = field(default=None, metadata=BY_NAME)
+    options: Options = None
     columns: tuple["Input", ...] = ()
+
+    # Where the options come from, which is a live list as often as a fixed one.
+    # What crosses is what they are right now, or the name to ask under.
+    NOT_DATA: ClassVar[tuple[str, ...]] = ("options",)
 
 
 # ── What an operator runs ────────────────────────────────────────────────────
@@ -186,25 +181,28 @@ class Routine:
     hazardous: bool
     steps: tuple[str, ...]
     inputs: tuple[Input, ...]
-    run: Callable[..., Iterator[StepOutcome]] = field(metadata=DROPPED)
-    precondition: Callable[[], Readiness | None] | None = field(
-        default=None, metadata=DROPPED
-    )
-    may_run: Callable[..., Readiness | None] | None = field(
-        default=None, metadata=DROPPED
-    )
+    run: Callable[..., Iterator[StepOutcome]]
+    precondition: Callable[[], Readiness | None] | None = None
+    may_run: Callable[..., Readiness | None] | None = None
+
+    # What this record does, as against what it holds. A screen is given the
+    # rest of it; these three are only ever called.
+    NOT_DATA: ClassVar[tuple[str, ...]] = ("run", "precondition", "may_run")
 
 
 @dataclass
 class Subsystem:
     """One part of the machine, and every routine declared under its package."""
 
-    module: Any = field(metadata=DROPPED)
+    module: Any = None
     summary: str = ""
     description: str = ""
     routines: dict[str, Routine] = field(default_factory=dict)
 
-    @treat_as_field
+    # The live package, which is asked for state and never described to anyone.
+    NOT_DATA: ClassVar[tuple[str, ...]] = ("module",)
+
+    @property
     def id(self) -> str:
         """Return the name this subsystem is known by, its package's last part."""
         return self.package.rpartition(".")[2]

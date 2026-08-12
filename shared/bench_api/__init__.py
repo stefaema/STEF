@@ -23,7 +23,6 @@ from shared.bench_api.inputs import (
 )
 from shared.bench_api.records import (
     CALL,
-    DROPPED,
     FAILED,
     LINK,
     PASSED,
@@ -48,7 +47,6 @@ from shared.bench_api.records import (
     SubsystemState,
     Table,
     blocked,
-    treat_as_field,
 )
 from shared.bench_api.registry import (
     REGISTRY,
@@ -74,7 +72,6 @@ from shared.bench_api.wire import (
 
 __all__ = [
     "CALL",
-    "DROPPED",
     "FAILED",
     "LINK",
     "PASSED",
@@ -129,7 +126,6 @@ __all__ = [
     "routine_json",
     "run_routine",
     "subsystem_json",
-    "treat_as_field",
     "summary_and_body",
     "titled",
 ]
