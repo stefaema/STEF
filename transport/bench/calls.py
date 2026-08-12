@@ -50,6 +50,11 @@ ANSWERS = {
 # A method whose reply is one register the caller named, in this argument.
 ANSWERS_WHAT_WAS_ASKED = {"raw.read", "raw.poll_raw"}
 
+# The relay hands a driver a datagram the caller assembled, and everything an
+# operator would ask for is already a method one level up, in raw. Declaring it
+# would only offer the chance to hand-build a frame.
+UNDECLARED = ("relay",)
+
 HAZARDOUS = {
     "raw.move",
     "raw.retarget",
@@ -61,7 +66,6 @@ HAZARDOUS = {
     "raw.clear_faults",
     "raw.invalidate_owned",
     "raw.bringup",
-    "relay.send",
 }
 
 
@@ -320,8 +324,10 @@ def _inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
 def declare() -> tuple[str, ...]:
     """Register one routine per generated method, and return what was registered."""
     declared = []
-    for namespace in fw_api.namespaces().values():
-        for spec in namespace.values():
+    for namespace, methods in fw_api.namespaces().items():
+        if namespace in UNDECLARED:
+            continue
+        for spec in methods.values():
             group, _, name = spec.name.partition(".")
             summary, body = bench_api.summary_and_body(spec.doc or "")
             bench_api.register_routine(

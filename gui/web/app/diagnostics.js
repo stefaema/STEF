@@ -130,6 +130,33 @@
     }, "idle");
   }
 
+  // The browser's own tooltip is a square box nothing here can style, and a
+  // disabled control swallows the pointer, so the reason rides a wrapper and is
+  // drawn in the same visual language as everything else.
+  var tip = el("div", {
+    class: "fixed z-50 hidden max-w-xs px-2 py-1 rounded-md shadow-lg text-xs bg-gray-900 text-gray-50 dark:bg-gray-100 dark:text-gray-900",
+  });
+
+  function explains(node, text) {
+    if (!text) return node;
+    var wrap = el("div", { class: "inline-flex" }, node);
+    wrap.addEventListener("mouseenter", function () {
+      var box = wrap.getBoundingClientRect();
+      tip.textContent = text;
+      tip.classList.remove("hidden");
+      tip.style.left = Math.round(box.left) + "px";
+      tip.style.top = Math.round(box.bottom + 6) + "px";
+    });
+    wrap.addEventListener("mouseleave", function () { tip.classList.add("hidden"); });
+    return wrap;
+  }
+
+  function hazardMark() {
+    return el("span", {
+      class: "inline-flex items-center gap-1 text-xs font-medium text-red-500",
+    }, icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous }));
+  }
+
   function outcomeMark(status, withLabel) {
     var spec = OUTCOME[status] || OUTCOME.idle;
     var label = (T.status || {})[spec.key] || spec.key;
@@ -160,10 +187,16 @@
     });
   }
 
-  // A live list is asked for again where the control says to, and never cached:
-  // ports appear when a board is plugged in, and the point of asking is freshness.
-  function reload(at) {
-    return api(at);
+  // What a live list last answered, by the address it was asked at. A redraw
+  // must not blank a list the screen has already been told, so the control
+  // paints what is remembered and replaces it when the fresh answer lands.
+  var known = {};
+
+  function ask(at) {
+    return api(at).then(function (list) {
+      known[at] = list;
+      return list;
+    });
   }
 
   // ── What the screen is showing ─────────────────────────────────────────────
@@ -494,7 +527,7 @@
     // A fixed list crossed with the payload. One that can move crossed as an
     // address instead, and is asked for whenever this control is drawn.
     var box = fieldBox(spec, select);
-    fill(spec.options);
+    fill(spec.options || known[spec.reload]);
     if (spec.reload) {
       var row = el("div", { class: "flex items-center gap-2" });
       select.classList.add("flex-1");
@@ -502,12 +535,12 @@
         class: CLS.btnQuiet,
         title: (T.link || {}).refresh,
         onclick: function () {
-          reload(spec.reload).then(fill);
+          ask(spec.reload).then(fill);
         },
       }, icon("sync", "size-4"));
       box = fieldBox(spec, row);
       row.append(select, refresh);
-      reload(spec.reload).then(fill);
+      ask(spec.reload).then(fill);
     }
     return box;
   }
@@ -844,16 +877,12 @@
       },
       caret,
       el("span", { class: "truncate", title: test.title, text: test.title }),
-      test.hazardous
-        ? el("span", { class: "inline-flex items-center gap-1 text-xs font-medium text-red-500" },
-            icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous }))
-        : null
+      test.hazardous ? hazardMark() : null
     );
 
     var runButton = el("button", {
       class: test.hazardous ? CLS.btnDanger : CLS.btn,
       disabled: gated || entry.status === "running",
-      title: gated ? why : "",
     });
     var label = entry.status === "running"
       ? (T.run || {}).running
@@ -868,7 +897,7 @@
       title,
       outcomeMark(entry.status, true),
       el("span", { class: "font-mono text-xs text-gray-500", text: entry.when || "" }),
-      runButton
+      gated ? explains(runButton, why) : runButton
     );
     row.append(head);
 
@@ -1075,14 +1104,6 @@
       }
     );
 
-    // A namespace is never hazardous, only a method is, so the marker rides the
-    // method control and sits after the name rather than in front of it.
-    if (state.action.hazardous) {
-      method.append(el("span", {
-        class: "inline-flex items-center gap-1 mt-1 text-xs text-red-600",
-      }, icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous })));
-    }
-
     return el("div", { class: "flex flex-wrap items-start gap-4 p-4" }, namespace, method);
   }
 
@@ -1133,15 +1154,17 @@
       );
     }
 
-    return card(item.id, body);
+    // A namespace is never hazardous, only a method is, so the marker sits in
+    // the header of the card that names the method.
+    return card(item.id, body, item.hazardous ? hazardMark() : null);
   }
 
   function buttonRow(item) {
     var gated = !item.ready.ok;
+    var why = item.ready.reason || (T.action || {}).blocked;
     var run = el("button", {
       class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
       disabled: gated || state.actionBusy,
-      title: gated ? item.ready.reason || (T.action || {}).blocked : "",
     });
     var label = (T.action || {}).run;
     run.append(
@@ -1154,7 +1177,7 @@
       else runAction(item);
     });
 
-    return el("div", { class: "flex items-center gap-2" }, run);
+    return el("div", { class: "flex items-center gap-2" }, gated ? explains(run, why) : run);
   }
 
   function adoptAction(item) {
@@ -1249,14 +1272,12 @@
       { id: "checks", label: (T.tool || {}).checks, icon: "vital_signs", gated: !up },
       { id: "actions", label: (T.tool || {}).actions, icon: "data_object", gated: !up },
     ].forEach(function (tab) {
-      bar.append(
-        el("button", {
-          class: tabClass(state.tool === tab.id),
-          disabled: tab.gated,
-          title: tab.gated ? (T.run || {}).needs_link : "",
-          onclick: function () { state.tool = tab.id; renderMain(); },
-        }, icon(tab.icon, "size-4"), el("span", { text: tab.label }))
-      );
+      var button = el("button", {
+        class: tabClass(state.tool === tab.id),
+        disabled: tab.gated,
+        onclick: function () { state.tool = tab.id; renderMain(); },
+      }, icon(tab.icon, "size-4"), el("span", { text: tab.label }));
+      bar.append(tab.gated ? explains(button, (T.run || {}).needs_link) : button);
     });
     return bar;
   }
@@ -1333,6 +1354,7 @@
     dom.logBody = document.querySelector(".log-body");
     dom.logChips = document.querySelector(".log-chips");
     dom.toasts = document.querySelector(".toasts");
+    document.body.append(tip);
 
     document.querySelectorAll("[data-icon]").forEach(function (node) {
       node.prepend(icon(node.dataset.icon, "size-5"));
