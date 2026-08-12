@@ -60,6 +60,7 @@ def load(name: str) -> dict[str, Any]:
 
 
 def ops(profile: dict[str, Any]) -> tuple[Any, ...]:
+    """Return the ten register writes a bring-up covers, in order."""
     wanted = owned()
     unknown = sorted(set(profile) - set(wanted))
     if unknown:
@@ -81,11 +82,20 @@ def ops(profile: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def value_of(name: str, written: Any) -> int:
-    if not isinstance(written, dict):
-        raise ProfileError(f"{name} is a table, not {written!r}")
+    """Return the number to write for one register, given what the profile says about it."""
     if name in CODECS:
         struct_type, encode = CODECS[name]
         return int(encode(ctypes.byref(_filled(name, struct_type, written))))
+    return _one_number(name, written)
+
+
+def _one_number(name: str, written: Any) -> int:
+    """Return the number a scalar register's table holds, refusing any other shape."""
+    if not isinstance(written, dict):
+        raise ProfileError(
+            f"write [{name}] with {SCALAR} = {written!r} on the line below it; "
+            f"every owned register is a table, even the ones holding one number"
+        )
 
     unknown = sorted(set(written) - {SCALAR})
     if unknown:

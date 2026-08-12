@@ -21,8 +21,8 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from gui.src.stef import STEF, StefState
 from shared.bench_api import Level
-from shared.bench_api.stef import STEF, StefState
 
 DEPTH = 512
 BACKLOG = 200

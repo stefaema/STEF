@@ -1,134 +1,130 @@
-"""The fixture's bench tests, in both of the forms the contract accepts.
+"""Every shape of routine, declared the way a subsystem declares one."""
 
-Nothing here is named `test_*`, or pytest and `ci_cd.discovery.has_py_tests()`
-would collect it.
-"""
+from collections.abc import Iterator
+from typing import Any
 
 from shared import bench_api
-from shared.bench_api import StepOutcome, StepStatus
-
-
-@bench_api.bench_test
-class General:
-    """General check.
-
-    Reads the version, the state and the board table.
-    """
-
-    @bench_api.step
-    def version(self, bench):
-        """Protocol version."""
-        return StepOutcome(StepStatus.PASSED, "protocol 1")
-
-    @bench_api.step
-    def state(self, bench):
-        """Firmware state."""
-        return StepOutcome(StepStatus.PASSED, "idle, ready")
-
-    @bench_api.step
-    def devices(self, bench):
-        """Board table."""
-        return StepOutcome(StepStatus.WARNED, "1 device, expected 3")
-
-
-@bench_api.bench_test(hazardous=True)
-class Ramp:
-    """Acceleration ramp.
-
-    Emits a profile and compares the declared count against the emitted one.
-    Moves the capstan.
-    """
-
-    def __init__(self):
-        """Start with nothing emitted, so the steps can share it."""
-        self.emitted = 0
-
-    @bench_api.step
-    def enable(self, bench):
-        """Enable the stage."""
-        return StepOutcome(StepStatus.PASSED, "stage enabled")
-
-    @bench_api.step
-    def run(self, bench):
-        """Run of 4000 pulses."""
-        self.emitted = 4000
-        return StepOutcome(StepStatus.PASSED, f"emitted {self.emitted}")
-
-    @bench_api.step
-    def counted(self, bench):
-        """Pulses emitted."""
-        return StepOutcome(StepStatus.PASSED, f"emitted {self.emitted}, running 0")
-
-
-@bench_api.bench_test
-def sweep(bench):
-    """Register sweep.
-
-    The generator form.
-    """
-    yield StepOutcome(StepStatus.PASSED, "protocol 1")
-    yield StepOutcome(StepStatus.PASSED, "idle, ready")
-    yield StepOutcome(StepStatus.WARNED, "1 device, expected 3")
-
-
-@bench_api.bench_test
-class Otp:
-    """OTP read.
-
-    Raises before any step settles.
-    """
-
-    @bench_api.step
-    def dump(self, bench):
-        """OTP dump."""
-        raise PermissionError("OTP_READ is not in this firmware's access policy")
-
-
-@bench_api.bench_test(
-    hazardous=True,
-    params=(bench_api.choice("image", lambda: ("auto", "v1", "v2")),),
+from shared.bench_api import (
+    LINK,
+    PASSED,
+    PRELINK,
+    READY,
+    WARNED,
+    Abandoned,
+    Level,
+    Option,
+    Readiness,
+    Result,
+    StepOutcome,
+    blocked,
 )
-class Reflash:
-    """Reflash the board.
+from shared.bench_api.tests.fixture import hardware
+from shared.bench_api.tests.fixture.payloads import RampArgs
 
-    Carries a form, and stops early when there is nothing to write.
+WARMING = "Warming"
+HOLDING = "Holding"
+COOLING = "Cooling"
+
+
+def ports() -> tuple[Option, ...]:
+    """Return the ports the oven might be on, which is a live list."""
+    return (Option("/dev/oven0", "oven, front"),)
+
+
+def probe_is_warm(port: str = "") -> Readiness:
+    """Say whether the port named is one this fixture will open."""
+    return READY if port.endswith("0") else blocked(f"nothing answers on {port!r}")
+
+
+# ── The link ─────────────────────────────────────────────────────────────────
+
+
+@bench_api.routine(
+    category=LINK,
+    inputs=[bench_api.choice("port", ports)],
+    can_run_with=probe_is_warm,
+)
+def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Connect."""
+    hardware.set_state(bench_api.SubsystemState.UP)
+    yield StepOutcome(PASSED, f"open on {values['port']}")
+
+
+@bench_api.routine(category=LINK)
+def disconnect(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Disconnect."""
+    hardware.set_state(bench_api.SubsystemState.DOWN)
+    yield StepOutcome(PASSED, "closed")
+
+
+# ── Before there is a link ───────────────────────────────────────────────────
+
+
+@bench_api.routine(category=PRELINK, steps=[WARMING, HOLDING])
+def check_probe(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Check the probe.
+
+    Reads the thermocouple twice, which needs the port to itself.
     """
-
-    def __init__(self, image="auto"):
-        """Take the image the form chose, which the steps read off self."""
-        self.image = image
-
-    @bench_api.step
-    def compare(self, bench):
-        """Installed against chosen."""
-        if self.image == "auto":
-            raise bench_api.Abandoned("already running v2")
-        return StepOutcome(StepStatus.PASSED, f"chose {self.image}")
-
-    @bench_api.step
-    def write(self, bench):
-        """Write the image."""
-        return StepOutcome(StepStatus.PASSED, f"wrote {self.image}")
+    yield StepOutcome(PASSED, "probe reads 21 C")
+    yield StepOutcome(WARNED, "drifted 2 C", Result(level=Level.WARN, summary="drift"))
 
 
-@bench_api.bench_test(params=(bench_api.choice("slot", ("a", "b")),))
-def probe(bench, slot):
-    """Probe one slot.
+# ── With a link ──────────────────────────────────────────────────────────────
 
-    The generator form, carrying a form of its own.
+
+@bench_api.routine(hazardous=True, steps=[WARMING, HOLDING, COOLING])
+def ramp(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Ramp the oven.
+
+    Warms it, holds it, and lets it cool.
     """
-    yield StepOutcome(StepStatus.PASSED, f"slot {slot}")
-    raise bench_api.Abandoned("nothing further to read")
+    yield StepOutcome(PASSED, f"warming to {values.get('celsius', 0)}")
+    yield StepOutcome(PASSED, "held", step=HOLDING)
+    yield StepOutcome(PASSED, "cooled", step=COOLING)
 
 
-@bench_api.link_test
-class IdentifyBoard:
-    """Identify the board.
+@bench_api.routine(steps=[WARMING, HOLDING, COOLING])
+def ramp_that_gives_up(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Ramp, and find there is nothing to do."""
+    yield StepOutcome(PASSED, "warming")
+    raise Abandoned("already at temperature", PASSED)
 
-    Reads the descriptor without opening a link.
-    """
 
-    @bench_api.step
-    def descriptor(self, bench):
-        """USB descriptor."""
-        return StepOutcome(StepStatus.PASSED, "one board")
+@bench_api.routine(steps=[WARMING, HOLDING])
+def ramp_that_breaks(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Ramp, and hit something nobody caught."""
+    yield StepOutcome(PASSED, "warming")
+    raise RuntimeError("the element is open circuit")
+
+
+@bench_api.routine()
+def read_each_step(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Read as many times as it takes, which nobody can preview."""
+    for reading in (21, 22):
+        yield StepOutcome(PASSED, f"{reading} C")
+
+
+@bench_api.routine(inputs=bench_api.inputs_for(RampArgs))
+def derived_form(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Take a form nobody wrote out by hand."""
+    yield StepOutcome(PASSED, "taken")
+
+
+@bench_api.routine(steps=[WARMING, HOLDING])
+def ramp_that_never_starts(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Fail before any step settles."""
+    raise ValueError("no oven here")
+    yield  # pragma: no cover
+
+
+bench_api.register_routine(
+    module=__name__,
+    group="generated",
+    name="ramp_once",
+    title="Ramp once",
+    description="Registered from parts, the way a generated family is.",
+    hazardous=True,
+    inputs=[bench_api.integer("celsius", unit="C", max=300)],
+    run=lambda values: iter([StepOutcome(PASSED, f"{values['celsius']} C")]),
+)

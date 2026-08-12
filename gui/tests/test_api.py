@@ -6,7 +6,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from gui.src import wire
 from gui.src.app import app
 
 
@@ -34,24 +33,36 @@ def test_the_screen_renders_without_asking_any_subsystem_anything(client):
     assert "STEF" in page.text
 
 
+def routines_of(payload, category):
+    """Return one subsystem's routines of a category, the way the screen filters them."""
+    return [r for r in payload["routines"] if r["category"] == category]
+
+
 def test_every_declaration_reaches_the_browser_as_json(client):
     subsystems = client.get("/api/subsystems").json()
     transport = next(s for s in subsystems if s["id"] == "transport")
-    assert transport["link"]["params"][0]["name"] == "port"
-    assert {t["id"] for t in transport["link_tests"]} == {"verify_port", "flash_board"}
-    assert len(transport["actions"]) == 26
+    assert connect_form(transport)["inputs"][0]["name"] == "port"
+    assert {t["name"] for t in routines_of(transport, "prelink")} == {
+        "verify_port",
+        "flash_board",
+    }
 
 
-def test_a_live_option_list_crosses_as_its_name_and_not_as_a_snapshot(client):
+def connect_form(payload):
+    """Return the routine the connection card draws itself from."""
+    return next(r for r in routines_of(payload, "link") if r["name"] == "connect")
+
+
+def test_a_live_option_list_crosses_undrawn_and_says_where_to_ask_for_it(client):
     transport = client.get("/api/subsystems").json()[0]
-    port = transport["link"]["params"][0]
-    assert port["options_name"] == "serial_ports"
+    port = connect_form(transport)["inputs"][0]
     assert port["options"] is None
-    assert client.get("/api/options/serial_ports").status_code == 200
+    assert port["reload"] == "/api/options/transport/link.connect/port"
+    assert client.get(port["reload"]).status_code == 200
 
 
 def test_options_nobody_declared_are_a_refusal(client):
-    assert client.get("/api/options/nothing_declares_this").status_code == 404
+    assert client.get("/api/options/transport/link.connect/nope").status_code == 404
 
 
 def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
@@ -64,29 +75,36 @@ def test_a_live_list_a_group_column_declares_is_reachable_by_its_name(client):
         return ("high", "low")
 
     record = bench_api.REGISTRY.subsystem("transport")
-    declared = record.actions["raw.write"]
+    declared = record.routines["raw.write"]
     column = bench_api.choice("gear", gears)
-    patched = (*declared.params, bench_api.group("rows", columns=(column,)))
-    record.actions["raw.write"] = dataclasses.replace(declared, params=patched)
+    patched = (*declared.inputs, bench_api.group("rows", columns=(column,)))
+    record.routines["raw.write"] = dataclasses.replace(declared, inputs=patched)
     try:
-        offered = client.get("/api/options/gears")
+        offered = client.get("/api/options/transport/raw.write/gear")
         assert offered.status_code == 200
         assert [one["value"] for one in offered.json()] == ["high", "low"]
     finally:
-        record.actions["raw.write"] = declared
+        record.routines["raw.write"] = declared
 
 
 def test_the_port_list_offers_more_than_the_shortlist(client):
-    offered = client.get("/api/options/serial_ports").json()
+    offered = client.get("/api/options/transport/link.connect/port").json()
     assert offered[0]["value"] == "auto"
     assert all("value" in one and "label" in one for one in offered)
 
 
 def test_a_derived_form_keeps_the_shape_the_firmware_declared(client):
     transport = client.get("/api/subsystems").json()[0]
-    write = next(a for a in transport["actions"] if a["name"] == "raw.write")
-    ops = next(p for p in write["params"] if p["kind"] == "group")
+    write = next(a for a in routines_of(transport, "call") if a["name"] == "write")
+    ops = next(p for p in write["inputs"] if p["kind"] == "group")
     assert {c["name"] for c in ops["columns"]} == {"reg", "value"}
+
+
+def test_a_routine_crosses_carrying_the_address_every_route_takes(client):
+    transport = client.get("/api/subsystems").json()[0]
+    write = next(a for a in routines_of(transport, "call") if a["name"] == "write")
+    assert f"{write['group']}.{write['name']}" == "raw.write"
+    assert write["id"] == "transport.raw.write"
 
 
 def test_nothing_that_crosses_can_be_spelled_in_ctypes(client):
@@ -103,17 +121,17 @@ def test_connecting_is_refused_with_the_sentence_the_probe_produced(client, unpl
     assert verdict["reason"]
 
 
-def test_an_action_on_a_link_that_is_down_is_refused_by_its_precondition(client):
-    answer = client.post("/api/action/transport/sys.version", json={})
+def test_a_call_on_a_link_that_is_down_is_refused_by_its_precondition(client):
+    answer = client.post("/api/call/transport/sys.version", json={})
     assert answer.status_code == 409
     assert "not connected" in answer.json()["detail"]
 
 
-def test_an_action_nobody_declared_is_a_refusal(client):
-    assert client.post("/api/action/transport/no.such", json={}).status_code == 404
+def test_a_call_nobody_declared_is_a_refusal(client):
+    assert client.post("/api/call/transport/no.such", json={}).status_code == 404
 
 
-def test_a_bench_test_nobody_declared_is_a_refusal(client):
+def test_a_routine_nobody_declared_is_a_refusal(client):
     assert client.post("/api/run/transport/no_such_test", json={}).status_code == 404
 
 
@@ -122,19 +140,16 @@ def test_a_routine_that_opens_the_port_is_refused_while_the_link_holds_it(
 ):
     # Two owners of one serial port is a corrupted exchange rather than an
     # error, so this has to be refused rather than attempted.
-    from gui.src import app as backend
+    from shared import bench_api
+    from shared.bench_api import SubsystemState
 
-    monkeypatch.setitem(backend.subsystems, "transport", _Up())
-    answer = client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    package = bench_api.REGISTRY.subsystem("transport").module
+    monkeypatch.setattr(package, "state", lambda: SubsystemState.UP)
+    answer = client.post(
+        "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+    )
     assert answer.status_code == 409
-    assert "Disconnect first" in answer.json()["detail"]
-
-
-class _Up:
-    """A subsystem reporting a link that is up, without one being open."""
-
-    class state:
-        value = "up"
+    assert "disconnect first" in answer.json()["detail"]
 
 
 # ── Running ──────────────────────────────────────────────────────────────────
@@ -151,7 +166,9 @@ def outcomes(text):
 
 
 def test_a_run_streams_one_outcome_per_step_as_it_reaches_it(client, unplugged):
-    answer = client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    answer = client.post(
+        "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+    )
     assert answer.status_code == 200
     settled = outcomes(answer.text)
     assert len(settled) == 3
@@ -162,7 +179,7 @@ def test_a_step_with_nothing_to_report_writes_no_log_line(client, unplugged):
     from gui.src.app import stream
 
     before = len(stream._backlog)
-    client.post("/api/run/transport/verify_port", json={"port": "auto"})
+    client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
     written = stream._backlog[before:]
     assert written
     assert all(record.text for record in written)
@@ -172,7 +189,9 @@ def test_abandoning_leaves_the_steps_after_it_skipped_rather_than_failed(
     client, unplugged
 ):
     settled = outcomes(
-        client.post("/api/run/transport/verify_port", json={"port": "auto"}).text
+        client.post(
+            "/api/run/transport/prelink.verify_port", json={"port": "auto"}
+        ).text
     )
     assert [s["status"] for s in settled[1:]] == ["skipped", "skipped"]
 
@@ -200,8 +219,8 @@ def test_a_late_listener_is_caught_up_on_what_it_missed():
 
 
 def test_a_readiness_crosses_as_its_verdict_and_its_reason():
+    from shared import bench_api
     from shared.bench_api import READY, blocked
 
-    assert wire.readiness(READY) == {"ok": True, "reason": None}
-    assert wire.readiness(blocked("no")) == {"ok": False, "reason": "no"}
-    assert wire.readiness(None) == {"ok": False, "reason": None}
+    assert bench_api.readiness_json(READY) == {"ok": True, "reason": None}
+    assert bench_api.readiness_json(blocked("no")) == {"ok": False, "reason": "no"}

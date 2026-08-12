@@ -1,135 +1,130 @@
 # bench_api
 
-UI-scoped: a direct channel from the screen to each subsystem, with as little
-coupling as the two ends can get away with.
+One vocabulary a subsystem declares in and one screen renders. The subsystem
+says what only it can know, the GUI owns the rest, and neither imports the
+other.
 
-A subsystem gets that channel by importing `bench_api` and decorating what it
-already has. A decorator runs when its module is imported, so the walk is the
-registration:
+## Declare a subsystem
 
-```python
-bench_api.load("oven")
-bench_api.REGISTRY.subsystem("oven").bench_tests
-```
-
-## Declarations
-
-Each finds its subsystem from the module it was written in, so a declaration
-never names its own subsystem twice.
-
-| decorator | on | carries |
-| --- | --- | --- |
-| `@subsystem(id, description)` | class | the id and the prose |
-| `@link(params=())` | class | the connection form, and four methods |
-| `@bench_test(hazardous=False, params=())` | class or generator | a routine an operator runs |
-| `@link_test(hazardous=False, params=())` | class or generator | the same, for one that runs before connecting |
-| `@step` | method | a marker inside a bench test class |
-| `@action(name, ...)` | function | one call, and the residue an annotation cannot carry |
-
-Take an oven with a thermocouple on a serial port:
+A subsystem is a package. Its last name part is the id, its docstring is the
+prose the screen shows, and a `state` attribute is how it reports whether it is
+reachable:
 
 ```python
-@bench_api.subsystem("oven", "One heating element and the probe watching it.")
-class Oven:
-    """Owns the port and the polling behind it."""
+"""The oven.
 
+One heating element and the probe watching it.
+"""
 
-@bench_api.link(params=(bench_api.choice("port", serial_ports),))
-class OvenLink:
-    def can_connect(self, port) -> Readiness: ...
-    def connect(self, port): ...
-    def can_disconnect(self) -> Readiness: ...
-    def disconnect(self): ...
-
-
-@bench_api.action("set_target", hazardous=True, params=(
-    bench_api.integer("celsius", unit="C", max=300),
-))
-def set_target(args: TargetArgs): ...
+from oven.oven import state
 ```
 
-`@subsystem` and `@link` sit on the subsystem's own classes, wherever those
-live. The rest lives under `bench/`.
+Loading it imports everything below it, so every routine declared under the
+package registers on the way in:
 
-A bench test comes in two forms, a class of `@step` methods or a generator, and
-`run()` yields one `StepOutcome` per step as the run reaches it. It lives on the
-registry's record rather than on the decorated class, so both forms look the
-same to whoever calls them. The docstring is the prose: first line the title,
-the rest the description, for the test and for each step.
+```python
+bench_api.load_subsystem("oven")
+bench_api.REGISTRY.subsystem("oven").routines
+```
 
-A test that needs the operator to choose something declares `params` the way
-`@link` does, and the values arrive where the routine starts: the constructor in
-the class form, the call in the generator one. Never at a step, so no step is
-handed values it does not use, and each form has exactly one place to check the
-declaration against. Declared rather than derived, because the choices a routine
-offers are usually a live list of strings, and no annotation can say where that
-list comes from.
+Anything under a `tests/` directory or named `test_*` is skipped, so pytest
+never collects a routine and fails it on absent hardware.
 
-A routine that finds there is nothing left to do has not failed. Raising
-`Abandoned` settles the step that raised it and skips the rest, which is how a
-flash says the board already carries the image without either lying that it
-wrote one or failing over a healthy board.
+## Declare a routine
 
-## Forms
+A routine is one thing an operator runs. It is a generator that yields one
+`StepOutcome` per step:
 
-An annotated argument dataclass already says most of what a control needs, so
-`derive.py` reads the form off it rather than making anyone write it twice:
-`bool` an on-or-off, `int` a number, an `IntEnum` a pick-one, an `IntFlag` a set
-of bits, `bytes` a raw field, `list[T]` a repeating group. A type nothing knows
-how to draw fails at import naming the field, on the grounds that it is a type
-nobody decided how to draw.
+```python
+@bench_api.routine(
+    category=bench_api.SETUP,
+    hazardous=True,
+    steps=["Profile", "Write"],
+    inputs=[bench_api.integer("celsius", unit="C", max=300)],
+    can_run=element_is_cold,
+)
+def preheat(values: dict[str, Any]) -> Iterator[StepOutcome]:
+    """Preheat the oven.
 
-A type says what a value is, never what it means, so what a declaration adds is
-whatever the type could not have said: what the number measures, what range is
-real rather than merely representable, and what has to be true before the call
-may be made at all. The last of those is a call rather than a value, because it
-is answered when the operator is looking at the control, not when the module was
-imported.
+    Writes one setpoint and waits for the probe to agree with it.
+    """
+    yield StepOutcome(PASSED, f"target {values['celsius']} C")
+```
 
-Prose travels the same way. A field's own `metadata` becomes the control's hint,
-so the sentence explaining a parameter is written beside the parameter and still
-reaches the screen without either side importing the other.
+The docstring is the prose: first line the title, the rest the description. The
+id is where it lives, `subsystem.module.function`, so nothing names itself
+twice.
 
-Options that can differ between one render and the next are given as a
-zero-argument callable instead of a sequence, and called each time they are
-drawn. Anything fixed at import would be a snapshot of the world as it was when
-the process started.
+`category` says when it may run, and one state read answers for a whole screen:
 
-A parameter is a dictionary, and every conversion its kind implies lives beside
-it: what the control starts at, how an option is labelled, and what a submitted
-value becomes back in Python. A second renderer costs no second copy of them.
+| category | may run |
+| --- | --- |
+| `LINK` | always. These are the connect and disconnect routines themselves |
+| `PRELINK` | while the link is down, since it holds the port |
+| `SETUP`, `CALL` | while the link is up |
+
+`can_run` adds a second gate, cheap enough to ask for every routine on the
+screen. `can_run_with` gets the filled form and may cost a probe, so it is asked
+once, when the operator submits. Both return `READY` or `blocked("why not")`,
+and the sentence is what a disabled button shows.
+
+A routine that finds nothing left to do has not failed. `Abandoned` settles the
+step that raised it and skips the rest, which is how a flash reports that the
+board already carries the image without lying that it wrote one.
+
+## Declare what it takes
+
+Six kinds, each carrying every conversion it implies: `choice`, `boolean`,
+`integer`, `bitmask`, `raw_bytes`, `group`. What a declaration adds is whatever
+a type could not have said, the unit, the real range, the hint.
+
+Options that differ between one render and the next are a zero-argument callable
+rather than a sequence. Anything fixed at import is a snapshot of the world as
+the process started:
+
+```python
+bench_api.choice("port", serial_ports, hint="Which port the board is on.")
+```
+
+Where the values already exist as an annotated dataclass, `inputs_for` reads the
+form off it and `overridden` replaces the fields the annotation could not
+describe. That is how `transport/bench/calls.py` declares twenty-six firmware
+methods in a loop rather than by hand.
+
+## Run it
+
+```python
+for outcome in bench_api.run_routine(item, values):
+    ...
+```
+
+Outcomes stream as the run reaches them, and the stream cannot break: an
+uncaught exception becomes one failed step, and whatever was never reached
+arrives as skipped. A step that yields no title takes the next one from `steps`,
+so the preview an operator saw is the list that fills in.
 
 ## Layout
 
 | file | what it answers |
 | --- | --- |
-| `decorators.py` | the six declarations, and the errors they raise at import |
-| `registry.py` | what the decorators build, and where it lands |
-| `derive.py` | the dataclass a call takes, mapped to controls and rebuilt from them |
-| `params.py` | the six kinds of control, and every conversion a kind implies |
-| `readiness.py` | may this proceed, and why not when it may not |
-| `results.py` | what a call found and how a step settled, whoever made it |
-| `digest.py` | what a call will put on the wire, before it goes |
-| `events.py` | one record on the stream every subsystem writes to |
-| `state.py` | what a subsystem is doing |
-| `stef.py` | what the whole machine is doing. Placeholder until an orchestrator says |
+| `records.py` | every record that crosses, and nothing that behaves |
+| `inputs.py` | the six kinds, what an annotated dataclass implies, and both conversions |
+| `registry.py` | where a declaration lands, what gates it, how it is run |
+| `json_helpers.py` | each record as the JSON a screen receives, one function per record |
 
-What crosses is a dictionary or a frozen record, so nothing here can be spelled
-in `ctypes` and no subsystem hands the screen something only it can interpret.
-`Readiness` is truthy when a control may be used and carries the reason when it
-may not, so a disabled button explains itself. `SubsystemState` is read off the
-link when asked rather than tracked beside it, since a flag maintained in
-parallel is a flag that goes stale.
+What crosses is a dictionary or a frozen record, so nothing here is spelled in
+`ctypes` and no subsystem hands the screen something only it can interpret.
+`SubsystemState` is read off the package when asked rather than tracked beside
+it, since a flag maintained in parallel goes stale.
 
-Six things fail at import, each because its failure mode is otherwise silence:
-a declaration in a package with no `@subsystem`, a duplicate id, a
-`@bench_test` class with no `@step`, a `params` entry naming a field the call
-does not take, a declared param that its receiver does not take, whether that
-receiver is `connect` and `can_connect` or a routine's own constructor, and a
-param naming a kind, or carrying a key, that no control renders.
+Live options are not serialised. The control carries the route to ask again,
+`/api/options/{subsystem}/{key}/{name}`, so a list that moves is fetched rather
+than sent.
 
-Bench test callables must not be named `test_*` or sit in a `tests/` directory,
-or pytest collects them and fails on absent hardware.
+A declaration fails at import where its failure mode is otherwise silence: a
+module under no loaded subsystem, a duplicate id, an input of a kind no control
+renders, a choice with no options, a group with no columns, an override naming
+no field, and a dataclass field of a type nothing knows how to draw.
 
 ## Tests
 

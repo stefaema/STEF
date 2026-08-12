@@ -64,6 +64,7 @@
     cardHead: "flex items-center gap-3 px-4 py-2.5 border-b border-gray-300 dark:border-gray-700",
     cardBody: "flex flex-col gap-4 p-4",
     sub: "text-xs text-gray-500 dark:text-gray-400",
+    lede: "text-sm font-medium text-gray-900 dark:text-white",
     spacer: "flex-1",
     hint: "text-xs text-gray-500 dark:text-gray-400",
     mono: "font-mono text-sm tabular-nums",
@@ -129,6 +130,12 @@
     }, "idle");
   }
 
+  function hazardMark() {
+    return el("span", {
+      class: "inline-flex items-center gap-1 text-xs font-medium text-red-500",
+    }, icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous }));
+  }
+
   function outcomeMark(status, withLabel) {
     var spec = OUTCOME[status] || OUTCOME.idle;
     var label = (T.status || {})[spec.key] || spec.key;
@@ -159,12 +166,14 @@
     });
   }
 
-  var fetched = {};
+  // What a live list last answered, by the address it was asked at. A redraw
+  // must not blank a list the screen has already been told, so the control
+  // paints what is remembered and replaces it when the fresh answer lands.
+  var known = {};
 
-  function options(name) {
-    if (fetched[name]) return Promise.resolve(fetched[name]);
-    return api("/api/options/" + encodeURIComponent(name)).then(function (list) {
-      fetched[name] = list;
+  function ask(at) {
+    return api(at).then(function (list) {
+      known[at] = list;
       return list;
     });
   }
@@ -180,10 +189,10 @@
     linkError: null,
     linkReason: null,
     runs: {},
-    action: null,
-    actionValues: {},
-    actionAnswer: null,
-    actionBusy: false,
+    call: null,
+    callValues: {},
+    callAnswer: null,
+    callBusy: false,
     records: [],
     seen: 0,
     cleared: 0,
@@ -196,29 +205,42 @@
 
   function current() { return state.current; }
 
-  function linkRoutines() {
+  // What every route addresses a routine by, and what the payload calls it are
+  // not the same: the address is scoped to its subsystem, the id is not.
+  function keyOf(item) { return item.group + "." + item.name; }
+
+  function routinesOf(category) {
     var sub = current();
-    if (!sub) return [];
-    return sub.link_tests.slice().sort(function (a, b) {
-      if (a.id === "verify_port") return -1;
-      if (b.id === "verify_port") return 1;
+    if (!sub || !sub.routines) return [];
+    return sub.routines.filter(function (one) { return one.category === category; });
+  }
+
+  function linkRoutines() {
+    return routinesOf("prelink").slice().sort(function (a, b) {
+      if (a.name === "verify_port") return -1;
+      if (b.name === "verify_port") return 1;
       return a.hazardous - b.hazardous;
     });
   }
 
-  function benchRoutines() {
-    var sub = current();
-    return sub ? sub.bench_tests : [];
+  function setupRoutines() {
+    return routinesOf("setup");
+  }
+
+  function connectRoutine() {
+    return routinesOf("link").filter(function (one) {
+      return one.name === "connect";
+    })[0] || null;
   }
 
   function runFor(test) {
-    var key = current().id + "." + test.id;
+    var key = current().id + "." + keyOf(test);
     if (!state.runs[key]) {
       state.runs[key] = {
         status: "idle",
         when: null,
         open: false,
-        values: JSON.parse(JSON.stringify(test.values || {})),
+        values: JSON.parse(JSON.stringify(test.blank || {})),
         outcomes: [],
       };
     }
@@ -481,23 +503,23 @@
       }
     }
 
+    // A fixed list crossed with the payload. One that can move crossed as an
+    // address instead, and is asked for whenever this control is drawn.
     var box = fieldBox(spec, select);
-    if (spec.options_name) {
+    fill(spec.options || known[spec.reload]);
+    if (spec.reload) {
       var row = el("div", { class: "flex items-center gap-2" });
       select.classList.add("flex-1");
       var refresh = el("button", {
         class: CLS.btnQuiet,
         title: (T.link || {}).refresh,
         onclick: function () {
-          delete fetched[spec.options_name];
-          options(spec.options_name).then(fill);
+          ask(spec.reload).then(fill);
         },
       }, icon("sync", "size-4"));
       box = fieldBox(spec, row);
       row.append(select, refresh);
-      options(spec.options_name).then(fill);
-    } else {
-      fill(spec.options);
+      ask(spec.reload).then(fill);
     }
     return box;
   }
@@ -546,7 +568,7 @@
       if (spec.min != null || spec.max != null) {
         box.append(el("div", {
           class: CLS.hint + " mt-1",
-          text: (T.action || {}).range + " " + (spec.min == null ? "" : spec.min) +" to "+ (spec.max == null ? "" : spec.max),
+          text: (T.call || {}).range + " " + (spec.min == null ? "" : spec.min) +" to "+ (spec.max == null ? "" : spec.max),
         }));
       }
       return box;
@@ -607,9 +629,9 @@
 
   function describeHex(text) {
     var stripped = String(text || "").replace(/\s|^0x/gi, "");
-    if (!stripped) return "0 " + (T.action || {}).bytes;
-    if (!/^[0-9a-f]+$/i.test(stripped)) return (T.action || {}).invalid_hex;
-    return Math.ceil(stripped.length / 2) + " " + (T.action || {}).bytes;
+    if (!stripped) return "0 " + (T.call || {}).bytes;
+    if (!/^[0-9a-f]+$/i.test(stripped)) return (T.call || {}).invalid_hex;
+    return Math.ceil(stripped.length / 2) + " " + (T.call || {}).bytes;
   }
 
   function groupControl(spec, values, onChange) {
@@ -640,7 +662,7 @@
           if (label) label.remove();
           return el("td", { class: CLS.td }, cell);
         });
-        var remove = el("button", { class: CLS.btnQuiet, title: (T.action || {}).remove_row }, icon("close", "size-4"));
+        var remove = el("button", { class: CLS.btnQuiet, title: (T.call || {}).remove_row }, icon("close", "size-4"));
         remove.addEventListener("click", function () {
           rows.splice(index, 1);
           draw();
@@ -654,7 +676,7 @@
 
     var wrapper = fieldBox(spec, el("div", { class: "overflow-x-auto" }, table));
     var add = el("button", { class: CLS.btn });
-    add.append(icon("add"), el("span", { text: (T.action || {}).add_row }));
+    add.append(icon("add"), el("span", { text: (T.call || {}).add_row }));
     add.addEventListener("click", function () {
       rows.push(blankRow(spec.columns));
       draw();
@@ -690,8 +712,9 @@
     var sub = current();
     var body = el("div", { class: CLS.cardBody });
 
-    if (sub.link && sub.link.params.length) {
-      body.append(formGrid(sub.link.params, state.linkValues, function () { probe(); }));
+    var opening = connectRoutine();
+    if (opening && opening.inputs.length) {
+      body.append(formGrid(opening.inputs, state.linkValues, function () { probe(); }));
     }
 
     if (state.linkReason) {
@@ -725,14 +748,17 @@
     if (routines.length) {
       container.append(sectionLabel((T.card || {}).before));
       var group = el("div", { class: "flex flex-col gap-2" });
-      routines.forEach(function (test) { group.append(routineCard(test, sub)); });
+      routines.forEach(function (test) { group.append(routineCard(test)); });
       container.append(group);
     }
   }
 
   function probe() {
     var sub = current();
-    if (!sub.link || sub.state === "up") { state.linkReason = null; return Promise.resolve(); }
+    if (!connectRoutine() || sub.state === "up") {
+      state.linkReason = null;
+      return Promise.resolve();
+    }
     return api("/api/link/" + sub.id + "/readiness", state.linkValues).then(function (verdict) {
       state.linkReason = verdict.ok ? null : verdict.reason;
       renderMain();
@@ -771,9 +797,8 @@
 
   // ── Bench tests ────────────────────────────────────────────────────────────
 
-  function renderChecks(container) {
-    var sub = current();
-    var list = benchRoutines();
+  function renderRoutines(container) {
+    var list = setupRoutines();
 
     if (!list.length) {
       container.append(card(null, el("div", { class: CLS.cardBody },
@@ -783,12 +808,12 @@
 
     container.append(
       sectionLabel(
-        (T.tool || {}).checks,
+        (T.tool || {}).routines,
         outcomeMark(worst(list.map(function (test) { return runFor(test).status; })), true)
       )
     );
     var group = el("div", { class: "flex flex-col gap-2" });
-    list.forEach(function (test) { group.append(routineCard(test, sub)); });
+    list.forEach(function (test) { group.append(routineCard(test)); });
     container.append(group);
   }
 
@@ -802,10 +827,12 @@
       aside || null);
   }
 
-  function routineCard(test, sub) {
+  function routineCard(test) {
     var entry = runFor(test);
-    var gated = test.needs_link ? sub.state !== "up" : sub.state === "up";
-    var why = test.needs_link ? (T.run || {}).needs_link : (T.run || {}).owns_port;
+    // The subsystem answered this when the payload was built, reason and all,
+    // so the screen shows its sentence rather than guessing one from the state.
+    var gated = !test.ready.ok;
+    var why = test.ready.reason || (T.run || {}).needs_link;
     var row = el("div", { class: CLS.card });
 
     var caret = el("span", {
@@ -829,10 +856,7 @@
       },
       caret,
       el("span", { class: "truncate", title: test.title, text: test.title }),
-      test.hazardous
-        ? el("span", { class: "inline-flex items-center gap-1 text-xs font-medium text-red-500" },
-            icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous }))
-        : null
+      test.hazardous ? hazardMark() : null
     );
 
     var runButton = el("button", {
@@ -864,7 +888,7 @@
       );
     }
 
-    var form = formGrid(test.params, entry.values, function () {});
+    var form = formGrid(test.inputs, entry.values, function () {});
     if (form) body.append(form);
 
     body.append(stepList(test, entry));
@@ -887,8 +911,8 @@
     );
 
     var declared = test.steps.length
-      ? test.steps.map(function (step, index) {
-          return { title: step.title, settled: entry.outcomes[index] || null };
+      ? test.steps.map(function (title, index) {
+          return { title: title, settled: entry.outcomes[index] || null };
         })
       : entry.outcomes.map(function (settled, index) {
           return { title: "#" + (index + 1), settled: settled };
@@ -939,7 +963,7 @@
     entry.when = clock(Date.now() / 1000);
     renderMain();
 
-    streamPost("/api/run/" + sub.id + "/" + test.id, entry.values, function (event, payload) {
+    streamPost("/api/run/" + sub.id + "/" + keyOf(test), entry.values, function (event, payload) {
       if (event === "outcome") {
         if (payload.error) {
           entry.outcomes.push({ status: "failed", detail: payload.error, value: null });
@@ -1000,84 +1024,65 @@
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  function namespaceOf(item) {
-    var cut = item.name.indexOf(".");
-    return cut < 0 ? "" : item.name.slice(0, cut);
-  }
-
-  function methodOf(item) {
-    var cut = item.name.indexOf(".");
-    return cut < 0 ? item.name : item.name.slice(cut + 1);
-  }
-
-  function namespaceGroups(actions) {
+  function namespaceGroups(calls) {
     var order = [];
     var methods = {};
-    actions.forEach(function (item) {
-      var ns = namespaceOf(item);
-      if (!methods[ns]) { methods[ns] = []; order.push(ns); }
-      methods[ns].push(item);
+    calls.forEach(function (item) {
+      if (!methods[item.group]) { methods[item.group] = []; order.push(item.group); }
+      methods[item.group].push(item);
     });
     return order.map(function (ns) { return { name: ns, methods: methods[ns] }; });
   }
 
-  function renderActions(container) {
-    var sub = current();
-    if (!sub.actions.length) {
-      container.append(card((T.tool || {}).actions, el("div", { class: CLS.cardBody },
-        el("div", { class: CLS.hint, text: (T.action || {}).none }))));
+  function renderCalls(container) {
+    var calls = routinesOf("call");
+    if (!calls.length) {
+      container.append(card((T.tool || {}).calls, el("div", { class: CLS.cardBody },
+        el("div", { class: CLS.hint, text: (T.call || {}).none }))));
       return;
     }
 
-    // A refresh replaces every declaration, so the pick is held by name. Re-reading
-    // it rather than re-adopting is what keeps a half-filled form filled.
-    var groups = namespaceGroups(sub.actions);
-    var live = state.action && sub.actions.filter(function (one) {
-      return one.name === state.action.name;
+    // A refresh replaces every declaration, so the pick is held by address.
+    // Re-reading it rather than re-adopting is what keeps a half-filled form filled.
+    var groups = namespaceGroups(calls);
+    var live = state.call && calls.filter(function (one) {
+      return keyOf(one) === keyOf(state.call);
     })[0];
-    if (live) state.action = live;
-    else adoptAction(groups[0].methods[0]);
+    if (live) state.call = live;
+    else adoptCall(groups[0].methods[0]);
 
-    container.append(card((T.tool || {}).actions, picker(groups)));
-    container.append(methodCard(state.action, sub));
+    container.append(card((T.tool || {}).calls, picker(groups)));
+    container.append(methodCard(state.call));
   }
 
   function picker(groups) {
-    var chosen = namespaceOf(state.action);
+    var chosen = state.call.group;
     var group = groups.filter(function (one) { return one.name === chosen; })[0];
 
     var namespace = pickerBox(
-      (T.action || {}).namespace,
+      (T.call || {}).namespace,
       groups.map(function (one) {
         return { value: one.name, label: one.name + " (" + one.methods.length + ")" };
       }),
       chosen,
       function (picked) {
         var next = groups.filter(function (one) { return one.name === picked; })[0];
-        selectAction(next.methods[0]);
+        selectCall(next.methods[0]);
       }
     );
 
     var method = pickerBox(
-      (T.action || {}).method,
+      (T.call || {}).method,
       group.methods.map(function (one) {
-        return { value: one.name, label: methodOf(one) };
+        return { value: keyOf(one), label: one.name };
       }),
-      state.action.name,
+      keyOf(state.call),
       function (picked) {
-        selectAction(group.methods.filter(function (one) {
-          return one.name === picked;
+        selectCall(group.methods.filter(function (one) {
+          return keyOf(one) === picked;
         })[0]);
       }
     );
-
-    // A namespace is never hazardous, only a method is, so the marker rides the
-    // method control and sits after the name rather than in front of it.
-    if (state.action.hazardous) {
-      method.append(el("span", {
-        class: "inline-flex items-center gap-1 mt-1 text-xs text-red-600",
-      }, icon("warning", "size-4"), el("span", { text: (T.run || {}).hazardous })));
-    }
 
     return el("div", { class: "flex flex-wrap items-start gap-4 p-4" }, namespace, method);
   }
@@ -1099,91 +1104,87 @@
       select);
   }
 
-  function methodCard(item, sub) {
+  function methodCard(item) {
     var body = el("div", { class: "flex flex-col gap-4 p-4" });
 
-    if (item.effect) body.append(el("div", { class: CLS.hint, text: item.effect }));
+    if (item.title) body.append(el("div", { class: CLS.lede, text: item.title }));
     if (item.description) {
       body.append(showMore(item.description, "text-sm text-gray-600 dark:text-gray-300"));
     }
 
-    var form = formGrid(item.params, state.actionValues, function () {});
+    var form = formGrid(item.inputs, state.callValues, function () {});
     body.append(
       el("hr", { class: CLS.divider }),
       el("div", {},
-        el("div", { class: CLS.label, text: (T.action || {}).arguments }),
-        form || el("div", { class: CLS.hint, text: (T.action || {}).no_arguments })),
+        el("div", { class: CLS.label, text: (T.call || {}).arguments }),
+        form || el("div", { class: CLS.hint, text: (T.call || {}).no_arguments })),
       el("hr", { class: CLS.divider }),
-      buttonRow(item, sub)
+      buttonRow(item)
     );
 
-    if (state.actionAnswer) {
-      var answer = state.actionAnswer;
+    if (state.callAnswer) {
+      var answer = state.callAnswer;
       body.append(
         el("hr", { class: CLS.divider }),
         el("div", {},
-          el("div", { class: CLS.label, text: (T.action || {}).reply }),
+          el("div", { class: CLS.label, text: (T.call || {}).reply }),
           answer.ok
             ? renderResult(answer.value) || el("div", { class: CLS.note, text: "" })
             : el("div", { class: CLS.noteError, text: answer.reason }))
       );
     }
 
-    return card(item.qualified || item.name, body);
+    // A namespace is never hazardous, only a method is, so the marker sits in
+    // the header of the card that names the method.
+    return card(item.id, body, item.hazardous ? hazardMark() : null);
   }
 
-  function buttonRow(item, sub) {
-    var gated = sub.state !== "up";
+  function buttonRow(item) {
+    var gated = !item.ready.ok;
+    var why = item.ready.reason || (T.call || {}).blocked;
     var run = el("button", {
       class: item.hazardous ? CLS.btnDanger : CLS.btnPrimary,
-      disabled: gated || state.actionBusy,
-      title: gated ? (T.action || {}).blocked : "",
+      disabled: gated || state.callBusy,
+      title: gated ? why : "",
     });
-    var label = (T.action || {}).run;
+    var label = (T.call || {}).run;
     run.append(
-      icon(state.actionBusy ? "progress_activity" : "play_arrow",
-        state.actionBusy ? "size-[18px] animate-spin" : "size-[18px]"),
+      icon(state.callBusy ? "progress_activity" : "play_arrow",
+        state.callBusy ? "size-[18px] animate-spin" : "size-[18px]"),
       el("span", { text: label })
     );
     run.addEventListener("click", function () {
-      if (item.hazardous) arm(run, label, "play_arrow", function () { runAction(item); });
-      else runAction(item);
+      if (item.hazardous) arm(run, label, "play_arrow", function () { runCall(item); });
+      else runCall(item);
     });
 
-    var digest = el("button", {
-      class: CLS.btn,
-      disabled: !item.has_digest,
-      title: item.has_digest ? "" : (T.action || {}).no_digest,
-    });
-    digest.append(icon("receipt_long"), el("span", { text: (T.action || {}).digest }));
-
-    return el("div", { class: "flex items-center gap-2" }, run, digest);
+    return el("div", { class: "flex items-center gap-2" }, run);
   }
 
-  function adoptAction(item) {
-    state.action = item;
-    state.actionValues = JSON.parse(JSON.stringify(item.values || {}));
-    state.actionAnswer = null;
+  function adoptCall(item) {
+    state.call = item;
+    state.callValues = JSON.parse(JSON.stringify(item.blank || {}));
+    state.callAnswer = null;
   }
 
-  function selectAction(item) {
-    adoptAction(item);
+  function selectCall(item) {
+    adoptCall(item);
     renderMain();
   }
 
-  function runAction(item) {
+  function runCall(item) {
     var sub = current();
-    state.actionBusy = true;
+    state.callBusy = true;
     renderMain();
-    api("/api/action/" + sub.id + "/" + item.name, state.actionValues)
+    api("/api/call/" + sub.id + "/" + keyOf(item), state.callValues)
       .then(function (answer) {
-        state.actionBusy = false;
-        state.actionAnswer = answer;
+        state.callBusy = false;
+        state.callAnswer = answer;
         renderMain();
       })
       .catch(function (error) {
-        state.actionBusy = false;
-        state.actionAnswer = { ok: false, reason: error.message, value: null };
+        state.callBusy = false;
+        state.callAnswer = { ok: false, reason: error.message, value: null };
         renderMain();
       });
   }
@@ -1219,8 +1220,8 @@
           onclick: function () {
             state.current = sub;
             state.tool = "link";
-            state.action = null;
-            state.actionAnswer = null;
+            state.call = null;
+            state.callAnswer = null;
             renderMain();
             probe();
           },
@@ -1233,7 +1234,7 @@
   function implementationCard(sub) {
     var spec = LINK[sub.state] || LINK.down;
     var body = el("div", { class: "flex flex-col gap-2 p-4" },
-      el("span", { class: "text-sm font-medium text-gray-900 dark:text-white", text: sub.summary }),
+      el("span", { class: CLS.lede, text: sub.summary }),
       sub.description
         ? showMore(sub.description, "text-sm text-gray-600 dark:text-gray-300")
         : null);
@@ -1249,8 +1250,8 @@
     var bar = el("div", { class: CLS.tabbar });
     [
       { id: "link", label: (T.tool || {}).link, icon: "link", gated: false },
-      { id: "checks", label: (T.tool || {}).checks, icon: "vital_signs", gated: !up },
-      { id: "actions", label: (T.tool || {}).actions, icon: "data_object", gated: !up },
+      { id: "routines", label: (T.tool || {}).routines, icon: "vital_signs", gated: !up },
+      { id: "calls", label: (T.tool || {}).calls, icon: "data_object", gated: !up },
     ].forEach(function (tab) {
       bar.append(
         el("button", {
@@ -1282,10 +1283,10 @@
 
     if (state.tool === "link") {
       renderLink(dom.main);
-    } else if (state.tool === "checks") {
-      renderChecks(dom.main);
+    } else if (state.tool === "routines") {
+      renderRoutines(dom.main);
     } else {
-      renderActions(dom.main);
+      renderCalls(dom.main);
     }
   }
 
