@@ -53,17 +53,21 @@ target_include_directories(rpc PUBLIC ${RPC_DIR}/include)
 add_executable(unit_tests
     main.c
     test_rpc.c
+    test_ramp.c
     fake_devices.c
     ${TMC2209_DIR}/test/mock_tmc2209.c
 
     ${RPC_BIND_DIR}/rpc_raw.c
     ${RPC_BIND_DIR}/rpc_relay.c
-    ${RPC_BIND_DIR}/rpc_status.c)
+    ${RPC_BIND_DIR}/rpc_status.c
 
-# rpc_status.h is private to rpc_bind, so both of its directories are named.
-# devices.h comes from tmc2209_bind; the tests link a fake for it.
+    # Freestanding, which is the point: the ramp arithmetic runs here.
+    ${TMC_BIND_DIR}/ramp.c)
+
+# rpc_status.h is private to rpc_bind, so both of its directories are named,
+# and ramp.h is private to tmc2209_bind for the same reason.
 target_include_directories(unit_tests PRIVATE
-    ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR}/include
+    ${RPC_BIND_DIR} ${RPC_BIND_DIR}/include ${TMC_BIND_DIR} ${TMC_BIND_DIR}/include
     ${FW_API_DIR}/include ${TMC2209_DIR}/test)
 target_link_libraries(unit_tests PRIVATE tmc2209 rpc unity)
 

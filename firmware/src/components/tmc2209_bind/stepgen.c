@@ -1,3 +1,15 @@
+/*
+ * stepgen.c: one RMT symbol per pulse, and a counter watching the pad.
+ *
+ * One symbol per pulse is what makes a bounded run exact: the hardware cannot
+ * emit a symbol the encoder never wrote. The count comes off PCNT rather than
+ * off the encoder because the encoder runs ahead of the pad, so after a cut
+ * mid-train its number is pulses encoded and PCNT's is pulses emitted.
+ *
+ * What rate a symbol carries is ramp.c's answer, and it is asked once per chunk
+ * of pulses rather than once per pulse. This file only shapes the symbol.
+ */
+
 #include "backends.h"
 
 #include <stdbool.h>
@@ -8,16 +20,27 @@
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
 #include "esp_log.h"
+#include "ramp.h"
 #include "sdkconfig.h"
 
 #define STEPGEN_RESOLUTION_HZ 1000000U
-#define STEPGEN_PULSE_TICKS   2U
 #define STEPGEN_TICK_NS       (1000000000U / STEPGEN_RESOLUTION_HZ)
-#define STEPGEN_MAX_PPS       ((uint32_t)CONFIG_STEF_STEPGEN_MAX_PPS)
-#define STEPGEN_MIN_PPS       ((STEPGEN_RESOLUTION_HZ / 32767U) + 1U)
-#define STEPGEN_MEM_SYMBOLS   48U
-#define STEPGEN_PCNT_HIGH     10000
-#define STEPGEN_PCNT_LOW      (-1)
+
+/* A period is split evenly between the two halves of its symbol rather than
+   spent on the narrowest pulse the part will accept. The datasheet's floor is
+   around 100 ns and a fixed 2 tick pulse cleared it twenty times over, but a
+   narrow pulse is the first thing a long jumper wire and a poor ground return
+   take apart, and every reference driver for this part sends a square wave. So
+   the margin goes where it costs nothing: at the top rate the half is still a
+   microsecond, and at the bottom both halves carry the 15 bit duration field
+   instead of one, which is what doubles the slow end. */
+#define STEPGEN_DURATION_MAX 32767U
+#define STEPGEN_MIN_PERIOD   2U
+#define STEPGEN_MAX_PPS      ((uint32_t)CONFIG_STEF_STEPGEN_MAX_PPS)
+#define STEPGEN_MIN_PPS      ((STEPGEN_RESOLUTION_HZ / (2U * STEPGEN_DURATION_MAX)) + 1U)
+#define STEPGEN_MEM_SYMBOLS  48U
+#define STEPGEN_PCNT_HIGH    10000
+#define STEPGEN_PCNT_LOW     (-1)
 
 static const char *TAG = "stepgen";
 
@@ -26,19 +49,15 @@ typedef struct {
     rmt_encoder_handle_t encoder;
     pcnt_unit_handle_t   pcnt;
 
-    uint32_t pulses;
-    uint32_t pullin_pps;
-    uint64_t pullin_sq;
-    uint32_t accel_pps_s;
+    /* Owned by the encoder, which runs in the RMT interrupt. */
+    ramp_t ramp;
 
+    /* Written by the commanding task, read by the encoder. 32-bit and aligned,
+       so each load is whole even though the pair is not. */
     volatile uint32_t target_pps;
     volatile uint32_t cur_pps;
     volatile bool     stopping;
     volatile bool     running;
-
-    uint64_t v_sq;
-    uint32_t v;
-    uint32_t rem;
 } stepgen_t;
 
 static stepgen_t         s_gen[BACKENDS_MAX_DRIVERS];
@@ -46,79 +65,8 @@ static tmc2209_stepgen_t s_backend[BACKENDS_MAX_DRIVERS];
 static bool              s_present[BACKENDS_MAX_DRIVERS];
 static bool              s_ready;
 
-/* ── The ramp ───────────────────────────────────────────────────────────── */
+/* ── The symbols ────────────────────────────────────────────────────────── */
 
-static uint64_t squared(uint32_t rate)
-{
-    return (uint64_t)rate * (uint64_t)rate;
-}
-
-/*
- * v dv/dn = a with n in pulses, so the square of the rate moves by a constant
- * 2a every pulse and the square root is the only thing that costs anything.
- * Seeded with the previous rate, which is within one increment, so it lands in
- * the first iteration and the other two are there to make that a fact rather
- * than an expectation.
- */
-static uint32_t rate_from_square(uint64_t v_sq, uint32_t seed)
-{
-    uint32_t x = seed ? seed : 1U;
-
-    for (int i = 0; i < 3; i++) {
-        x = (uint32_t)((x + (v_sq / x)) / 2U);
-        if (x == 0U) {
-            x = 1U;
-        }
-    }
-
-    return x;
-}
-
-/*
- * Where the down ramp begins is not decided in advance. Every pulse asks
- * whether the pulses still owed are as few as the pulses it would take to
- * reach the pull-in rate from here, and brakes the moment they are. A run too
- * short to finish accelerating starts braking before it ever reaches cruise,
- * which is the triangle, and a rate retargeted mid-flight moves the braking
- * point with it for free.
- */
-static void advance_rate(stepgen_t *g, uint32_t index)
-{
-    const uint64_t step = 2ULL * (uint64_t)g->accel_pps_s;
-    if (step == 0U) {
-        return;
-    }
-
-    uint64_t goal_sq;
-    if (g->stopping) {
-        goal_sq = g->pullin_sq;
-    } else if (g->pulses != 0U) {
-        const uint64_t excess = (g->v_sq > g->pullin_sq) ? (g->v_sq - g->pullin_sq) : 0U;
-        const uint64_t brake  = excess / step;
-        goal_sq = ((uint64_t)(g->pulses - index) <= brake) ? g->pullin_sq : squared(g->target_pps);
-    } else {
-        goal_sq = squared(g->target_pps);
-    }
-
-    if (g->v_sq < goal_sq) {
-        g->v_sq += step;
-        if (g->v_sq > goal_sq) {
-            g->v_sq = goal_sq;
-        }
-    } else if (g->v_sq > goal_sq) {
-        g->v_sq = (g->v_sq > goal_sq + step) ? (g->v_sq - step) : goal_sq;
-    }
-
-    g->v = rate_from_square(g->v_sq, g->v);
-}
-
-/*
- * One symbol is one pulse, which is what makes the count exact: the hardware
- * cannot emit a symbol that was never encoded. The period divides unevenly at
- * most rates, so the remainder carries into the next pulse rather than being
- * dropped. Each period is then off by at most one tick and the mean rate is
- * the rate asked for, which is the difference between jitter and drift.
- */
 static size_t encode_run(const void *data, size_t data_size, size_t symbols_written,
                          size_t symbols_free, rmt_symbol_word_t *symbols, bool *done, void *arg)
 {
@@ -128,42 +76,37 @@ static size_t encode_run(const void *data, size_t data_size, size_t symbols_writ
     stepgen_t *g = (stepgen_t *)arg;
 
     size_t budget = symbols_free;
-    if (g->pulses != 0U) {
-        const size_t owed = g->pulses - symbols_written;
+    if (g->ramp.pulses != 0U) {
+        const size_t owed = g->ramp.pulses - symbols_written;
         if (budget > owed) {
             budget = owed;
         }
     }
 
-    size_t n      = 0;
-    bool   braked = false;
+    size_t n     = 0;
+    bool   ended = false;
 
-    while (n < budget) {
-        advance_rate(g, (uint32_t)(symbols_written + n));
+    while (n < budget && !ended) {
+        ramp_chunk_t chunk;
+        ramp_next(&g->ramp, (uint32_t)(symbols_written + n), (uint32_t)(budget - n), g->target_pps,
+                  g->stopping, &chunk);
 
-        const uint32_t num    = STEPGEN_RESOLUTION_HZ + g->rem;
-        uint32_t       period = num / g->v;
-        g->rem                = num - (period * g->v);
+        for (uint32_t i = 0; i < chunk.count; i++) {
+            const uint32_t period = ramp_period(&g->ramp, &chunk);
+            const uint32_t high   = period / 2U;
 
-        if (period <= STEPGEN_PULSE_TICKS) {
-            period = STEPGEN_PULSE_TICKS + 1U;
+            symbols[n].level0    = 1;
+            symbols[n].duration0 = high;
+            symbols[n].level1    = 0;
+            symbols[n].duration1 = period - high;
+            n++;
         }
 
-        symbols[n].level0    = 1;
-        symbols[n].duration0 = STEPGEN_PULSE_TICKS;
-        symbols[n].level1    = 0;
-        symbols[n].duration1 = period - STEPGEN_PULSE_TICKS;
-        n++;
-
-        if (g->stopping && g->v <= g->pullin_pps) {
-            braked = true;
-            break;
-        }
+        g->cur_pps = chunk.rate_pps;
+        ended      = chunk.last;
     }
 
-    g->cur_pps = g->v;
-
-    *done = braked || (g->pulses != 0U && (symbols_written + n) >= g->pulses);
+    *done = ended || (g->ramp.pulses != 0U && (symbols_written + n) >= g->ramp.pulses);
     return n;
 }
 
@@ -199,17 +142,19 @@ static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
         return -1;
     }
 
-    g->pulses      = plan->pulses;
-    g->pullin_pps  = plan->pullin_pps;
-    g->pullin_sq   = squared(plan->pullin_pps);
-    g->accel_pps_s = plan->accel_pps_s;
-    g->target_pps  = plan->cruise_pps;
-    g->stopping    = false;
-    g->v           = plan->pullin_pps;
-    g->v_sq        = g->pullin_sq;
-    g->rem         = 0U;
-    g->cur_pps     = plan->pullin_pps;
-    g->running     = true;
+    const ramp_plan_t rp = {
+        .pulses           = plan->pulses,
+        .pullin_pps       = plan->pullin_pps,
+        .accel_pps_s      = plan->accel_pps_s,
+        .resolution_hz    = STEPGEN_RESOLUTION_HZ,
+        .min_period_ticks = STEPGEN_MIN_PERIOD,
+    };
+    ramp_begin(&g->ramp, &rp);
+
+    g->target_pps = plan->cruise_pps;
+    g->stopping   = false;
+    g->cur_pps    = plan->pullin_pps;
+    g->running    = true;
 
     const rmt_transmit_config_t cfg = {
         .loop_count = 0,
@@ -232,6 +177,10 @@ static int gen_retarget(void *ctx, uint32_t cruise_pps)
     if (!g->running) {
         return -1;
     }
+    /* A run already braking has one destination left, and it is not this one. */
+    if (g->stopping) {
+        return -1;
+    }
     if (cruise_pps < STEPGEN_MIN_PPS || cruise_pps > STEPGEN_MAX_PPS) {
         return -1;
     }
@@ -243,8 +192,9 @@ static int gen_retarget(void *ctx, uint32_t cruise_pps)
 /*
  * The ramped form only asks: the encoder is already a pipeline of pulses the
  * hardware has not emitted yet, so the run ends when those are out and not
- * when the request lands. The immediate form cuts mid-symbol, which is why the
- * count is not kept here.
+ * when the request lands. A bounded run whose tail is already encoded ignores
+ * it, which is right, since the brake it would ask for is in that tail. The
+ * immediate form cuts mid-symbol, which is why the count is not kept here.
  */
 static int gen_halt(void *ctx, bool immediate)
 {
@@ -286,7 +236,9 @@ static int gen_state(void *ctx, tmc2209_run_state_t *out)
         return -1;
     }
 
-    out->emitted  = (count > 0) ? (uint32_t)count : 0U;
+    /* The unit only ever counts up, so this is a reinterpretation and not a
+       clamp: an unbounded run past 2^31 pulses keeps counting, and wraps. */
+    out->emitted  = (uint32_t)count;
     out->rate_pps = rate;
     out->running  = running;
 
@@ -418,9 +370,8 @@ esp_err_t backends_stepgen_init(const board_t *board)
         }
 
         if (err != ESP_OK) {
-            /* The chip has four of each and the bench image spends one channel
-               on the status LED, so running out is a real outcome and not a
-               theoretical one. Say which resource, because the fix differs. */
+            /* Four RMT channels and four PCNT units on this part, one of each
+               per driver that pulses. Say which resource, because the fix differs. */
             ESP_LOGE(TAG, "%s step on gpio%d: %s", d->name, d->step, esp_err_to_name(err));
             return err;
         }
@@ -432,7 +383,8 @@ esp_err_t backends_stepgen_init(const board_t *board)
             .state        = gen_state,
             .ctx          = &s_gen[i],
             .max_pps      = STEPGEN_MAX_PPS,
-            .min_pulse_ns = STEPGEN_PULSE_TICKS * STEPGEN_TICK_NS,
+            /* Half of the shortest period this backend will encode. */
+            .min_pulse_ns = (STEPGEN_MIN_PERIOD / 2U) * STEPGEN_TICK_NS,
         };
         s_present[i] = true;
 
