@@ -33,12 +33,12 @@ CACHED = (fw_api.TMC2209_GCONF, fw_api.TMC2209_CHOPCONF)
 EXPECTED = fw_api.TMC2209_STANDSTILL | fw_api.TMC2209_OPEN_LOAD
 
 
-def _hex(value: int) -> str:
+def hex_word(value: int) -> str:
     """Return one register word as it is written in a datasheet."""
     return f"0x{value & 0xFFFFFFFF:08x}"
 
 
-def _flags(decoded: Any) -> tuple[tuple[str, str], ...]:
+def flag_rows(decoded: Any) -> tuple[tuple[str, str], ...]:
     """Return a decoded register as the named bits it stands for."""
     return tuple(
         (
@@ -51,7 +51,7 @@ def _flags(decoded: Any) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _named(conditions: fw_api.Tmc2209Condition) -> str:
+def named_conditions(conditions: fw_api.Tmc2209Condition) -> str:
     """Return what poll_health reported, in the datasheet's words."""
     return ", ".join(
         flag.name.removeprefix("TMC2209_") for flag in conditions if flag.name
@@ -63,7 +63,7 @@ def _written(ops: tuple[Any, ...]) -> Table:
     return Table(
         head=("register", "value"),
         rows=tuple(
-            (device_profile.register_name(op.reg), _hex(op.value)) for op in ops
+            (device_profile.register_name(op.reg), hex_word(op.value)) for op in ops
         ),
     )
 
@@ -119,13 +119,13 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
     found = raw.bringup(idx=idx, ops=list(ops)).gstat_at_bringup
     yield StepOutcome(
         PASSED,
-        f"the driver holds {name}, and GSTAT was {_hex(found)} when it was claimed",
+        f"the driver holds {name}, and GSTAT was {hex_word(found)} when it was claimed",
         Result(
             level=Level.OK,
-            summary=f"GSTAT as found, {_hex(found)}",
+            summary=f"GSTAT as found, {hex_word(found)}",
             note="What the driver went through before this firmware owned it. "
             "Cleared by the bring-up that reported it.",
-            fields=_flags(fw_api.tmc2209_gstat_decode(found)),
+            fields=flag_rows(fw_api.tmc2209_gstat_decode(found)),
         ),
         step=BRING_UP,
     )
@@ -141,7 +141,7 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
                 summary="the driver holds something else",
                 note="Only GCONF and CHOPCONF read back; the other eight owned "
                 "registers are write-only.",
-                fields=(("mismatched", _hex(agreed.mismatched)),),
+                fields=(("mismatched", hex_word(agreed.mismatched)),),
             ),
         )
     yield StepOutcome(
@@ -150,7 +150,7 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
         Result(
             level=Level.OK,
             summary="GCONF and CHOPCONF agree",
-            fields=(("mismatched", _hex(agreed.mismatched)),),
+            fields=(("mismatched", hex_word(agreed.mismatched)),),
         ),
         step=READ_BACK,
     )
@@ -158,21 +158,23 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
     conditions = fw_api.Tmc2209Condition(raw.poll_health(idx=idx).conditions)
     unexpected = conditions & ~EXPECTED
     if unexpected:
-        summary = _named(unexpected)
+        summary = named_conditions(unexpected)
     elif conditions:
-        summary = f"{_named(conditions)}, which is what a driver at rest reports"
+        summary = (
+            f"{named_conditions(conditions)}, which is what a driver at rest reports"
+        )
     else:
         summary = "nothing reported"
     yield StepOutcome(
         WARNED if unexpected else PASSED,
-        f"health: {_named(conditions) or 'nothing reported'}",
+        f"health: {named_conditions(conditions) or 'nothing reported'}",
         Result(
             level=Level.WARN if unexpected else Level.OK,
             summary=summary,
             note="Reported, not judged. Latched conditions survive until "
             "clear_faults acknowledges them. Standstill and open load are what "
             "a stopped driver reports, so neither is held against it here.",
-            fields=(("conditions", _hex(int(conditions))),),
+            fields=(("conditions", hex_word(int(conditions))),),
         ),
         step=HEALTH,
     )
@@ -180,5 +182,5 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
     for reg in CACHED:
         held = raw.read(idx=idx, reg=int(reg)).value
         yield StepOutcome(
-            PASSED, f"{device_profile.register_name(int(reg))} holds {_hex(held)}"
+            PASSED, f"{device_profile.register_name(int(reg))} holds {hex_word(held)}"
         )
