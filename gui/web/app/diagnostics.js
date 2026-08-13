@@ -451,15 +451,59 @@
     return el("div", { class: "overflow-x-auto" }, table);
   }
 
-  function renderResult(answer) {
+  function resultRecord(answer) {
+    var out = {};
+    if (answer.summary) out.summary = answer.summary;
+    if (answer.note) out.note = answer.note;
+    if (answer.raw) out.raw = answer.raw;
+    if (answer.fields && answer.fields.length) {
+      out.fields = {};
+      answer.fields.forEach(function (pair) { out.fields[pair[0]] = pair[1]; });
+    }
+    if (answer.table) {
+      var head = answer.table.head || [];
+      out.table = (answer.table.rows || []).map(function (row) {
+        var record = {};
+        row.forEach(function (cell, index) { record[head[index] || String(index)] = cell; });
+        return record;
+      });
+    }
+    return out;
+  }
+
+  function copyButton(payload) {
+    var label = (T.misc || {}).copy;
+    var button = el("button", { class: CLS.btnQuiet + " shrink-0", type: "button", title: label });
+    function rest() {
+      clear(button).append(icon("content_copy", "size-4"), el("span", { text: label }));
+    }
+    button.addEventListener("click", function () {
+      var written = navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(payload())
+        : Promise.reject(new Error(""));
+      written.then(
+        function () {
+          clear(button).append(icon("check_circle", "size-4"), el("span", { text: (T.misc || {}).copied }));
+          window.setTimeout(rest, 1500);
+        },
+        function () { toast("error", (T.misc || {}).copy_failed); }
+      );
+    });
+    rest();
+    return button;
+  }
+
+  function renderResult(answer, copyable) {
     if (!answer) return null;
     var card = el("div", { class: CLS.card + " overflow-hidden" });
     card.append(
       el(
         "div",
-        { class: "px-3 py-2 border-b border-gray-300 dark:border-gray-700" },
-        el("div", { class: CLS.mono + " text-gray-900 dark:text-white", text: answer.summary }),
-        answer.note ? el("div", { class: CLS.hint, text: answer.note }) : null
+        { class: "flex items-start gap-2 px-3 py-2 border-b border-gray-300 dark:border-gray-700" },
+        el("div", { class: "min-w-0 flex-1" },
+          el("div", { class: CLS.mono + " text-gray-900 dark:text-white", text: answer.summary }),
+          answer.note ? el("div", { class: CLS.hint, text: answer.note }) : null),
+        copyable ? copyButton(function () { return JSON.stringify(resultRecord(answer), null, 2); }) : null
       )
     );
     if (answer.raw) {
@@ -928,13 +972,40 @@
       open ? " border-b border-gray-300 dark:border-gray-700" : "");
   }
 
+  function runRecord(test, entry) {
+    var titles = test.steps.length ? test.steps : entry.outcomes.map(function (_, index) {
+      return "#" + (index + 1);
+    });
+    return JSON.stringify({
+      subsystem: current().id,
+      routine: keyOf(test),
+      title: test.title,
+      status: entry.status,
+      when: entry.when || null,
+      inputs: entry.values,
+      steps: entry.outcomes.map(function (settled, index) {
+        var step = { step: titles[index] || "#" + (index + 1), status: settled.status };
+        if (settled.detail) step.detail = settled.detail;
+        if (settled.value) step.result = resultRecord(settled.value);
+        return step;
+      }),
+    }, null, 2);
+  }
+
   function stepList(test, entry) {
     var card = el("div", { class: CLS.card + " overflow-hidden" });
     card.append(
       el("div", {
-        class: "px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700 text-xs font-semibold uppercase tracking-wider text-gray-500",
-        text: (T.run || {}).steps,
-      })
+        class: "flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700",
+      },
+        el("div", {
+          class: "flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500",
+          text: (T.run || {}).steps,
+        }),
+        entry.outcomes.length
+          ? copyButton(function () { return runRecord(test, entry); })
+          : null
+      )
     );
 
     var declared = test.steps.length
@@ -967,7 +1038,7 @@
             text: settled.detail,
           })
         : null;
-      var value = settled && settled.value ? renderResult(settled.value) : null;
+      var value = settled && settled.value ? renderResult(settled.value, false) : null;
       card.append(
         el("div", { class: "step-grid px-3 py-2 border-t border-gray-300 first:border-t-0 dark:border-gray-700" },
           el("div", { class: "min-w-0" },
@@ -1156,7 +1227,7 @@
         el("div", {},
           el("div", { class: CLS.label, text: (T.call || {}).reply }),
           answer.ok
-            ? renderResult(answer.value) || el("div", { class: CLS.note, text: "" })
+            ? renderResult(answer.value, true) || el("div", { class: CLS.note, text: "" })
             : el("div", { class: CLS.noteError, text: answer.reason }))
       );
     }

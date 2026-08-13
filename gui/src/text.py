@@ -103,5 +103,8 @@ def catalog() -> dict[str, Any]:
             "protocol": _("Protocol"),
             "more": _("Show more"),
             "less": _("Show less"),
+            "copy": _("Copy"),
+            "copied": _("Copied"),
+            "copy_failed": _("Could not reach the clipboard"),
         },
     }
