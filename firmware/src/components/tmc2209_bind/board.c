@@ -3,24 +3,53 @@
 #include "sdkconfig.h"
 
 /*
- * One entry today, because the bench board is one driver socketed onto one
- * ESP32. The carrier board is three entries in this array and nothing else:
- * every layer above addresses a driver by the name written here, so growing
- * the machine is growing the table.
+ * The machine, as this image believes it to be. Every layer above addresses a
+ * driver by the name written here, so growing the machine is growing this
+ * table, and the table grows from menuconfig rather than from an edit here.
  *
  * The name is what the PC says. Keep it mechanical rather than electrical:
  * "capstan" survives a rewiring, "drv0" does not.
  */
+
+#if !defined(CONFIG_STEF_DRV0_ENABLED) && !defined(CONFIG_STEF_DRV1_ENABLED) && \
+    !defined(CONFIG_STEF_DRV2_ENABLED)
+#error "No driver is fitted. Enable at least one under STEF Board in menuconfig."
+#endif
+
+/* clang-format off */
 static const board_driver_t drivers[] = {
+#ifdef CONFIG_STEF_DRV0_ENABLED
     {
-     .name = CONFIG_STEF_DRV0_NAME,
-     .addr = CONFIG_STEF_DRV0_ADDR,
-     .enn  = CONFIG_STEF_DRV0_ENN_GPIO,
-     .dir  = CONFIG_STEF_DRV0_DIR_GPIO,
-     .step = CONFIG_STEF_DRV0_STEP_GPIO,
-     .diag = CONFIG_STEF_DRV0_DIAG_GPIO,
-     },
+        .name = CONFIG_STEF_DRV0_NAME,
+        .addr = CONFIG_STEF_DRV0_ADDR,
+        .enn  = CONFIG_STEF_DRV0_ENN_GPIO,
+        .dir  = CONFIG_STEF_DRV0_DIR_GPIO,
+        .step = CONFIG_STEF_DRV0_STEP_GPIO,
+        .diag = CONFIG_STEF_DRV0_DIAG_GPIO,
+    },
+#endif
+#ifdef CONFIG_STEF_DRV1_ENABLED
+    {
+        .name = CONFIG_STEF_DRV1_NAME,
+        .addr = CONFIG_STEF_DRV1_ADDR,
+        .enn  = CONFIG_STEF_DRV1_ENN_GPIO,
+        .dir  = CONFIG_STEF_DRV1_DIR_GPIO,
+        .step = CONFIG_STEF_DRV1_STEP_GPIO,
+        .diag = CONFIG_STEF_DRV1_DIAG_GPIO,
+    },
+#endif
+#ifdef CONFIG_STEF_DRV2_ENABLED
+    {
+        .name = CONFIG_STEF_DRV2_NAME,
+        .addr = CONFIG_STEF_DRV2_ADDR,
+        .enn  = CONFIG_STEF_DRV2_ENN_GPIO,
+        .dir  = CONFIG_STEF_DRV2_DIR_GPIO,
+        .step = CONFIG_STEF_DRV2_STEP_GPIO,
+        .diag = CONFIG_STEF_DRV2_DIAG_GPIO,
+    },
+#endif
 };
+/* clang-format on */
 
 static const board_t board = {
     .uart_num = CONFIG_STEF_TMC_UART_NUM,

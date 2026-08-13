@@ -55,58 +55,165 @@ menu "STEF Board"
         range 1000 300000
         default 100000
         help
-            Not a limit of the RMT peripheral, which reaches further. It is
-            what the ramp arithmetic sustains with every driver on the board
-            running at once, since each one refills its channel from an
-            interrupt. A rate above this is refused rather than clamped: a move
-            that ran slower than believed is a position error.
+            Not a limit of the RMT peripheral, which reaches 333k. It is what
+            the board sustains with every driver running at once, since each
+            one refills its channel from an interrupt. A rate above this is
+            refused rather than clamped: a move that ran slower than believed
+            is a position error.
 
             Pulses, not steps. One full step holds up to 256 of them.
 
-    comment "Driver 0"
+    comment "Which drivers exist"
 
-    config STEF_DRV0_NAME
-        string "Name"
-        default "capstan"
-        help
-            What the PC calls this driver. Name it after what it moves, so the
-            name survives a rewiring.
+    #
+    # One block per driver, each toggled on its own. A driver that is off
+    # leaves no entry in the board table, so nothing above it can name it and
+    # the peripherals it would have claimed stay free.
+    #
+    # Every driver on the wire needs a different address, and each STEP pin
+    # spends one RMT channel and one PCNT unit. This part has four of each.
+    #
 
-    config STEF_DRV0_ADDR
-        int "Address (MS1/MS2 straps)"
-        range 0 3
-        default 0
-        help
-            MS1 is bit 0 and MS2 is bit 1. Both pins carry internal pull-downs,
-            so a driver whose straps are left open answers on 0.
+    menu "Driver 0"
 
-    config STEF_DRV0_ENN_GPIO
-        int "ENN GPIO"
-        range -1 48
-        default 40
-        help
-            Active low: high disables the power stage. -1 if not wired, which
-            makes every call naming it a clean refusal.
+        config STEF_DRV0_ENABLED
+            bool "Fitted on this board"
+            default y
 
-            Wants a pull-up to VIO as well. The pin carries no internal one, so
-            the level while the ESP32 is in reset or being flashed is whatever
-            the board gives it.
+        if STEF_DRV0_ENABLED
 
-    config STEF_DRV0_DIR_GPIO
-        int "DIR GPIO"
-        range -1 48
-        default -1
+        config STEF_DRV0_NAME
+            string "Name"
+            default "capstan"
+            help
+                What the PC calls this driver. Name it after what it moves, so
+                the name survives a rewiring.
 
-    config STEF_DRV0_STEP_GPIO
-        int "STEP GPIO"
-        range -1 48
-        default -1
+        config STEF_DRV0_ADDR
+            int "Address (MS1/MS2 straps)"
+            range 0 3
+            default 0
+            help
+                MS1 is bit 0 and MS2 is bit 1. Both pins carry internal
+                pull-downs, so a driver whose straps are left open answers on 0.
 
-    config STEF_DRV0_DIAG_GPIO
-        int "DIAG GPIO"
-        range -1 48
-        default -1
-        help
-            Input. Driver error or StallGuard, depending on GCONF.
+        config STEF_DRV0_ENN_GPIO
+            int "ENN GPIO"
+            range -1 48
+            default 11
+            help
+                Active low: high disables the power stage. -1 if not wired,
+                which makes every call naming it a clean refusal.
+
+                Wants a pull-up to VIO as well. The pin carries no internal one,
+                so the level while the ESP32 is in reset or being flashed is
+                whatever the board gives it.
+
+        config STEF_DRV0_STEP_GPIO
+            int "STEP GPIO"
+            range -1 48
+            default 12
+            help
+                One pulse per microstep. Claims an RMT channel and a PCNT unit
+                when set; -1 leaves this driver with no pulse source, and every
+                motion call on it is refused rather than ignored.
+
+        config STEF_DRV0_DIR_GPIO
+            int "DIR GPIO"
+            range -1 48
+            default 13
+
+        config STEF_DRV0_DIAG_GPIO
+            int "DIAG GPIO"
+            range -1 48
+            default -1
+            help
+                Input. Driver error or StallGuard, depending on GCONF.
+
+        endif
+
+    endmenu
+
+    menu "Driver 1"
+
+        config STEF_DRV1_ENABLED
+            bool "Fitted on this board"
+            default y
+
+        if STEF_DRV1_ENABLED
+
+        config STEF_DRV1_NAME
+            string "Name"
+            default "supply"
+
+        config STEF_DRV1_ADDR
+            int "Address (MS1/MS2 straps)"
+            range 0 3
+            default 1
+
+        config STEF_DRV1_ENN_GPIO
+            int "ENN GPIO"
+            range -1 48
+            default 15
+
+        config STEF_DRV1_STEP_GPIO
+            int "STEP GPIO"
+            range -1 48
+            default 16
+
+        config STEF_DRV1_DIR_GPIO
+            int "DIR GPIO"
+            range -1 48
+            default 17
+
+        config STEF_DRV1_DIAG_GPIO
+            int "DIAG GPIO"
+            range -1 48
+            default -1
+
+        endif
+
+    endmenu
+
+    menu "Driver 2"
+
+        config STEF_DRV2_ENABLED
+            bool "Fitted on this board"
+            default y
+
+        if STEF_DRV2_ENABLED
+
+        config STEF_DRV2_NAME
+            string "Name"
+            default "takeup"
+
+        config STEF_DRV2_ADDR
+            int "Address (MS1/MS2 straps)"
+            range 0 3
+            default 2
+
+        config STEF_DRV2_ENN_GPIO
+            int "ENN GPIO"
+            range -1 48
+            default 40
+
+        config STEF_DRV2_STEP_GPIO
+            int "STEP GPIO"
+            range -1 48
+            default 39
+
+        config STEF_DRV2_DIR_GPIO
+            int "DIR GPIO"
+            range -1 48
+            default 38
+
+        config STEF_DRV2_DIAG_GPIO
+            int "DIAG GPIO"
+            range -1 48
+            default -1
+
+        endif
+
+    endmenu
 
 endmenu
