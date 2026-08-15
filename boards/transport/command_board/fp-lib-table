@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "stef") (type "KiCad") (uri "/home/stefer/Projects/collegeware/STEF/boards/lib/stef.pretty") (options "") (descr ""))
+)
