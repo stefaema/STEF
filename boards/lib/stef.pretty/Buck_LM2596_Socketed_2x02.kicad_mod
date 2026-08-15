@@ -1,0 +1,139 @@
+(footprint "Buck_LM2596_Socketed_2x02"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(tags "LM2596 buck converter step-down module socketed")
+	(property "Reference" "REF**"
+		(at 20.32 22.86 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "2c40f067-db06-45b4-a408-7950e5d19041")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+		)
+	)
+	(property "Value" "Buck_LM2596_Socketed_2x02"
+		(at 20.32 25.4 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "a64994a7-9cc9-4a5c-9c0c-d6673dfb75b0")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "ad93d0e5-baaa-4d17-9b53-20785e1a118f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" "LM2596 buck converter module, socketed, 40.64mm x 17.78mm pad spacing"
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "a5991901-dad6-4105-b2f3-f403027750a1")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -1.45 -1.35)
+		(end 42.05 19.15)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "fd24c566-dada-4f64-babe-78f633938285")
+	)
+	(fp_rect
+		(start -1.2 -1.1)
+		(end 41.8 18.9)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "b66ab71f-0f86-4f92-ad02-dac5af4380ec")
+	)
+	(fp_text user "Vin+"
+		(at -5.08 0 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "c767118e-bf4e-4833-9047-89275cb5beee")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+			(justify left bottom)
+		)
+	)
+	(fp_text user "${REFERENCE}"
+		(at 20.32 27.94 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "6547d2c0-2a37-447d-818e-4054690eaac5")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" thru_hole rect
+		(at 0 0)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "91c17ce4-6a4f-440d-a781-b51cd219d55e")
+	)
+	(pad "2" thru_hole circle
+		(at 0 17.78)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "f046b90a-2024-4526-accd-da1ef7e2a9fa")
+	)
+	(pad "3" thru_hole circle
+		(at 40.64 0)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "8c9472ea-fda3-47fb-8e8c-af3dddbf9a6c")
+	)
+	(pad "4" thru_hole circle
+		(at 40.64 17.78)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "c90aadab-73c0-4cbf-9ecc-c15130cfc71c")
+	)
+	(embedded_fonts no)
+)
