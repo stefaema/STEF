@@ -100,7 +100,7 @@ menu "STEF Board"
         config STEF_DRV0_ENN_GPIO
             int "ENN GPIO"
             range -1 48
-            default 11
+            default 6
             help
                 Active low: high disables the power stage. -1 if not wired,
                 which makes every call naming it a clean refusal.
@@ -112,7 +112,7 @@ menu "STEF Board"
         config STEF_DRV0_STEP_GPIO
             int "STEP GPIO"
             range -1 48
-            default 12
+            default 5
             help
                 One pulse per microstep. Claims an RMT channel and a PCNT unit
                 when set; -1 leaves this driver with no pulse source, and every
@@ -121,7 +121,7 @@ menu "STEF Board"
         config STEF_DRV0_DIR_GPIO
             int "DIR GPIO"
             range -1 48
-            default 13
+            default 4
 
         config STEF_DRV0_DIAG_GPIO
             int "DIAG GPIO"
@@ -144,7 +144,7 @@ menu "STEF Board"
 
         config STEF_DRV1_NAME
             string "Name"
-            default "supply"
+            default "feed"
 
         config STEF_DRV1_ADDR
             int "Address (MS1/MS2 straps)"
@@ -154,7 +154,7 @@ menu "STEF Board"
         config STEF_DRV1_ENN_GPIO
             int "ENN GPIO"
             range -1 48
-            default 15
+            default 17
 
         config STEF_DRV1_STEP_GPIO
             int "STEP GPIO"
@@ -164,7 +164,7 @@ menu "STEF Board"
         config STEF_DRV1_DIR_GPIO
             int "DIR GPIO"
             range -1 48
-            default 17
+            default 15
 
         config STEF_DRV1_DIAG_GPIO
             int "DIAG GPIO"
