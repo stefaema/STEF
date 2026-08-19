@@ -1,0 +1,21 @@
+# How this installation reaches its camera.
+#
+# The shipped copy names no host: a camera's address belongs to the machine it
+# is plugged into, not to the program. Put yours in the same file under
+# config_dir(), where it is laid over this one key by key.
+
+[camera]
+port = 8080
+ssl = false
+
+# The newest API version this build has been tried against. A camera offering
+# more is not automatically better: a firmware update would otherwise move every
+# call to a version nobody here has seen.
+accepted_version = "ver140"
+
+timeout = 5.0
+retries = 3
+
+# Only when an account is registered on the camera under its CCAPI settings.
+# username = ""
+# password = ""

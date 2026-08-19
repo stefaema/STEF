@@ -123,6 +123,7 @@ class Link:
         self._owns_transport = transport is None
         self._state = LinkState.DOWN
         self._failure: str | None = None
+        self._manifest_body: dict[str, Any] = {}
         self._lock = threading.Lock()
 
     # ── Where it is ──────────────────────────────────────────────────────────
@@ -140,6 +141,10 @@ class Link:
         return self._state is LinkState.UP
 
     @property
+    def manifest(self) -> dict[str, Any]:
+        return dict(self._manifest_body)
+
+    @property
     def version(self) -> str | None:
         found = self.registry.versions
         return found[-1] if found else None
@@ -155,6 +160,7 @@ class Link:
         try:
             manifest = self._manifest()
             self.registry.load(manifest)
+            self._manifest_body = manifest
             if not self.registry.loaded:
                 raise UnacceptableVersionError(
                     "the camera offers no API version this client accepts: "
@@ -188,6 +194,7 @@ class Link:
         if self.up:
             log.info("disconnecting from %s", self.config.base_url)
         self.registry.clear()
+        self._manifest_body = {}
         self._state = LinkState.DOWN
         self._failure = None
         if self._owns_transport and self._transport is not None:

@@ -1,0 +1,11 @@
+[project]
+name = "stef-capture"
+version = "0.1.0"
+description = "The camera, over the network"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.32,<3", "loguru>=0.7,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["../.."]
+testpaths = ["tests"]
+cache_dir = "build/pytest"
