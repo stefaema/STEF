@@ -188,6 +188,7 @@
     linkBusy: false,
     linkError: null,
     linkReason: null,
+    linkKnown: false,
     runs: {},
     call: null,
     callValues: {},
@@ -250,6 +251,14 @@
   // since the alternative is a routine an operator cannot reach.
   function categoryLabel(name) {
     return (T.category || {})[name] || name;
+  }
+
+  function forgetLink() {
+    state.linkValues = {};
+    state.linkBusy = false;
+    state.linkError = null;
+    state.linkReason = null;
+    state.linkKnown = false;
   }
 
   function connectRoutine() {
@@ -799,14 +808,19 @@
       off.append(icon("link_off"), el("span", { text: (T.link || {}).disconnect }));
       buttons.append(off);
     } else {
+      var waiting = state.linkBusy || !state.linkKnown;
       var on = el("button", {
         class: CLS.btnPrimary,
-        disabled: state.linkBusy || Boolean(state.linkReason),
+        disabled: waiting || Boolean(state.linkReason),
         onclick: connect,
       });
       on.append(
-        icon(state.linkBusy ? "progress_activity" : "link", state.linkBusy ? "size-[18px] animate-spin" : "size-[18px]"),
-        el("span", { text: state.linkBusy ? (T.link || {}).connecting : (T.link || {}).connect })
+        icon(waiting ? "progress_activity" : "link", waiting ? "size-[18px] animate-spin" : "size-[18px]"),
+        el("span", {
+          text: state.linkBusy
+            ? (T.link || {}).connecting
+            : (!state.linkKnown ? (T.link || {}).checking : (T.link || {}).connect),
+        })
       );
       buttons.append(on);
     }
@@ -826,10 +840,15 @@
     var sub = current();
     if (!connectRoutine() || sub.state === "up") {
       state.linkReason = null;
+      state.linkKnown = true;
       return Promise.resolve();
     }
+    state.linkKnown = false;
+    renderMain();
     return api("/api/link/" + sub.id + "/readiness", state.linkValues).then(function (verdict) {
+      if (!current() || current().id !== sub.id) return;
       state.linkReason = verdict.ok ? null : verdict.reason;
+      state.linkKnown = true;
       renderMain();
     });
   }
@@ -841,14 +860,15 @@
     renderMain();
     api("/api/link/" + sub.id + "/connect", state.linkValues)
       .then(function (answer) {
-        state.linkBusy = false;
-        if (!answer.ok) {
-          state.linkError = answer.reason;
-          toast("error", (T.link || {}).blocked, answer.reason);
+        if (current() && current().id === sub.id) {
+          state.linkBusy = false;
+          if (!answer.ok) state.linkError = answer.reason;
         }
+        if (!answer.ok) toast("error", (T.link || {}).blocked, answer.reason);
         return refreshState();
       })
       .catch(function (error) {
+        if (current() && current().id !== sub.id) return;
         state.linkBusy = false;
         state.linkError = error.message;
         renderMain();
@@ -858,8 +878,11 @@
   function disconnect() {
     var sub = current();
     api("/api/link/" + sub.id + "/disconnect", {}).then(function () {
-      state.linkReason = null;
-      state.linkError = null;
+      if (current() && current().id === sub.id) {
+        state.linkReason = null;
+        state.linkError = null;
+        state.linkKnown = false;
+      }
       refreshState();
     });
   }
@@ -1316,10 +1339,12 @@
           disabled: !sub.available,
           title: sub.available ? "" : (T.card || {}).unavailable,
           onclick: function () {
+            if (state.current && state.current.id === sub.id) return;
             state.current = sub;
             state.tool = "link";
             state.call = null;
             state.callAnswer = null;
+            forgetLink();
             renderMain();
             probe();
           },
@@ -1396,11 +1421,13 @@
       var byId = {};
       list.forEach(function (one) { byId[one.id] = one; });
       var reachable = list.filter(function (one) { return one.available; });
+      var was = state.current ? state.current.id : null;
       state.subsystems = list;
       state.current =
         (state.current && byId[state.current.id] && byId[state.current.id].available
           ? byId[state.current.id]
           : reachable[0]) || null;
+      if ((state.current ? state.current.id : null) !== was) forgetLink();
       renderMain();
       return state.current ? probe() : null;
     });

@@ -43,6 +43,7 @@ def catalog() -> dict[str, Any]:
             "connect": _("Connect"),
             "disconnect": _("Disconnect"),
             "connecting": _("Connecting"),
+            "checking": _("Checking"),
             "refresh": _("Refresh"),
             "blocked": _("Cannot connect"),
             "form": _("Connection"),
