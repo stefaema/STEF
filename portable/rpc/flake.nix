@@ -1,5 +1,5 @@
 {
-  description = "STEF - framed request/response over a serial link";
+  description = "STEF - framed remote procedure calls over a serial link";
 
   inputs = {
     base.url = "path:../dev_base";

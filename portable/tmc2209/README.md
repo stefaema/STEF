@@ -8,9 +8,7 @@ and for the host tests.
 
 ## Layout
 
-A driver is reached through three unrelated channels, and none of the three
-knows the other two exist. `tmc2209_t` carries all of them, so a caller has one
-device and one thing to call.
+A driver is reached through three near-independent channels (UART, lines and step trains). `tmc2209_t` carries all of them:
 
 | file | what it answers |
 |------|-----------------|

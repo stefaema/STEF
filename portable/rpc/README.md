@@ -3,7 +3,7 @@
 A remote procedure call protocol over a byte stream: COBS-delimited frames, CRC-16
 validated, dispatched to registered handlers.
 
-Depends on nothing, not even ESP-IDF, so the same sources compile for the
+Depends on nothing, so the same sources compile for the
 target, for the host tests, and for the PC side.
 
 ## Layout
