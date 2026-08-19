@@ -151,7 +151,7 @@ class Function:
 class Abi:
     """Everything worth emitting, in the order it will be written."""
 
-    constants: list[tuple[str, int]] = field(default_factory=list)
+    constants: list[tuple[str, int | str]] = field(default_factory=list)
     enums: list[Enum] = field(default_factory=list)
     records: list[Record] = field(default_factory=list)
     aliases: list[tuple[str, str]] = field(default_factory=list)
@@ -256,6 +256,24 @@ def macro_names(root: cindex.Cursor, owned: dict[str, bool]) -> dict[str, str]:
             continue
         names[cursor.spelling] = header
     return names
+
+
+def string_macros(root: cindex.Cursor, owned: dict[str, bool]) -> dict[str, str]:
+    """Return each macro that expands to one string literal, as that literal.
+
+    Kept apart from the rest because the integer probe below evaluates a macro
+    by making an enum of it, which a string is not.
+    """
+    found: dict[str, str] = {}
+    for cursor in root.get_children():
+        if cursor.kind != CursorKind.MACRO_DEFINITION or not cursor.location.file:
+            continue
+        if Path(cursor.location.file.name).name not in owned:
+            continue
+        tokens = list(cursor.get_tokens())
+        if len(tokens) == 2 and tokens[1].spelling.startswith('"'):
+            found[cursor.spelling] = tokens[1].spelling
+    return found
 
 
 def macro_values(names: list[str]) -> list[tuple[str, int]]:
@@ -498,9 +516,11 @@ def collect() -> Abi:
     records: set[str] = set()
 
     macro_headers = macro_names(root, owned)
+    literals = string_macros(root, owned)
+    numbers = dict(macro_values([n for n in macro_headers if n not in literals]))
     macros = [
-        (rank[macro_headers[name]], (name, value))
-        for name, value in macro_values(list(macro_headers))
+        (rank[macro_headers[name]], (name, {**numbers, **literals}[name]))
+        for name in macro_headers
     ]
 
     enum_constants: list[tuple[int, tuple[str, int]]] = []

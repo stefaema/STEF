@@ -105,11 +105,10 @@ def test_a_port_that_is_probably_something_else_is_offered_without_a_claim(attac
 class Reply:
     """What `sys.version` answers, without a board to answer it."""
 
-    def __init__(self, version=b"0.3.1", protocol=None, project=b"stef-fw"):
-        self.protocol = fw_api.RPC_PROTOCOL_VERSION if protocol is None else protocol
+    def __init__(self, version=None, backend=None):
         self.reset_reason = 1
-        self.project = project
-        self.version = version
+        self.backend = fw_api.FW_API_BACKEND.encode() if backend is None else backend
+        self.version = fw_api.FW_API_VERSION.encode() if version is None else version
         self.idf = b"v5.2"
 
 
@@ -130,45 +129,37 @@ def answering(monkeypatch, attached):
     return speak
 
 
-def test_the_installed_version_answering_is_the_only_finding_that_is_ok(answering):
-    answering(Reply(version=b"0.3.1"))
-    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+def test_what_this_build_speaks_answering_is_the_only_finding_that_is_ok(answering):
+    answering(Reply())
+    verdict = fw.probe.identify("/dev/ttyACM0")
     assert verdict.finding is fw.probe.Finding.RUNNING
     assert verdict
-    assert verdict.version == "0.3.1"
+    assert verdict.version == fw_api.FW_API_VERSION
 
 
-def test_another_version_answering_names_both_of_them(answering):
-    answering(Reply(version=b"0.2.9"))
-    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw.probe.Finding.STALE
+def test_another_version_names_both_sides_of_the_disagreement(answering):
+    answering(Reply(version=b"0.0.9"))
+    verdict = fw.probe.identify("/dev/ttyACM0")
+    assert verdict.finding is fw.probe.Finding.INCOMPATIBLE
     assert not verdict
-    assert "0.2.9" in verdict.sentence and "0.3.1" in verdict.sentence
+    assert "0.0.9" in verdict.sentence and fw_api.FW_API_VERSION in verdict.sentence
 
 
-def test_a_protocol_disagreement_is_told_apart_from_a_stale_build(answering):
-    answering(Reply(version=b"0.3.1", protocol=fw_api.RPC_PROTOCOL_VERSION + 7))
-    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw.probe.Finding.PROTOCOL
-
-
-def test_with_nothing_installed_the_running_version_is_reported_and_not_judged(
-    answering,
-):
-    answering(Reply(version=b"0.2.9"))
-    verdict = fw.probe.identify("/dev/ttyACM0", None)
-    assert verdict.finding is fw.probe.Finding.RUNNING
-    assert "no firmware is installed" in verdict.sentence
+def test_another_backend_at_our_version_is_still_not_ours(answering):
+    answering(Reply(backend=b"rp2040-drv8825"))
+    verdict = fw.probe.identify("/dev/ttyACM0")
+    assert verdict.finding is fw.probe.Finding.INCOMPATIBLE
+    assert "rp2040-drv8825" in verdict.sentence
 
 
 def test_a_fixed_width_string_is_read_up_to_its_terminator(answering):
-    answering(Reply(version=b"0.3.1\x00\x00\x00\x00"))
-    assert fw.probe.identify("/dev/ttyACM0", "0.3.1").version == "0.3.1"
+    answering(Reply(version=b"0.0.9\x00\x00\x00\x00"))
+    assert fw.probe.identify("/dev/ttyACM0").version == "0.0.9"
 
 
 def test_silence_carries_the_silicon_so_the_advice_can_differ(answering):
     answering(fw.link.LinkTimeout("nothing"))
-    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    verdict = fw.probe.identify("/dev/ttyACM0")
     assert verdict.finding is fw.probe.Finding.SILENT
     assert verdict.silicon is fw.probe.Silicon.ESPRESSIF
     assert "held in reset" in verdict.sentence
@@ -176,7 +167,7 @@ def test_silence_carries_the_silicon_so_the_advice_can_differ(answering):
 
 def test_a_port_that_will_not_open_is_not_the_same_as_one_that_says_nothing(answering):
     answering(PermissionError("busy"))
-    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    verdict = fw.probe.identify("/dev/ttyACM0")
     assert verdict.finding is fw.probe.Finding.ABSENT
     assert "would not open" in verdict.sentence
 

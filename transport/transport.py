@@ -42,14 +42,6 @@ def named_port(port: str) -> str | None:
     return None if port == AUTO else port
 
 
-def installed_version() -> str | None:
-    """Return the version this machine has installed, treating an unreadable one as none."""
-    try:
-        return fw.image.expected()
-    except fw.image.ImageError:
-        return None
-
-
 # ── The link ─────────────────────────────────────────────────────────────────
 
 

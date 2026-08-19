@@ -1,18 +1,23 @@
-"""What counts as an installed image, and which one a board ought to be running."""
+"""What counts as an installed image, and which one this build can talk to."""
 
 import hashlib
 import json
 
 import pytest
 
+from shared import fw_api
 from transport import fw
 
 BOOTLOADER = b"bootloader bytes"
 APP = b"app bytes"
 
 
-def install(root, version, chip="esp32c3", corrupt=False, manifest=True):
+def install(
+    root, version=None, chip="esp32c3", corrupt=False, manifest=True, backend=None
+):
     """Write one release into the inventory, as a build would have packaged it."""
+    version = fw_api.FW_API_VERSION if version is None else version
+    backend = fw_api.FW_API_BACKEND if backend is None else backend
     directory = root / version
     directory.mkdir(parents=True)
     files = {"bootloader.bin": BOOTLOADER, "app.bin": APP}
@@ -27,7 +32,7 @@ def install(root, version, chip="esp32c3", corrupt=False, manifest=True):
         json.dumps(
             {
                 "version": version,
-                "project": "stef-fw",
+                "backend": backend,
                 "idf": "v5.2",
                 "chip": chip,
                 "flash_size": "4MB",
@@ -87,31 +92,31 @@ def test_an_empty_inventory_is_empty_rather_than_an_error(inventory):
     assert fw.image.versions() == (fw.image.AUTO,)
 
 
-# ── The one this installation runs ───────────────────────────────────────────
+# ── The one this build can talk to ───────────────────────────────────────────
 
 
-def test_the_installed_release_is_what_a_board_ought_to_be_running(inventory):
-    install(inventory, "0.3.1")
-    assert fw.image.expected() == "0.3.1"
-    assert fw.image.resolve().version == "0.3.1"
+def test_the_release_this_build_speaks_is_the_one_auto_names(inventory):
+    install(inventory)
+    assert fw.image.usable()[0].version == fw_api.FW_API_VERSION
+    assert fw.image.resolve().version == fw_api.FW_API_VERSION
 
 
-def test_nothing_installed_settles_nothing(inventory):
-    assert fw.image.expected() is None
-
-
-def test_several_installed_is_a_question_rather_than_the_newest(inventory):
-    install(inventory, "0.2.9")
-    install(inventory, "0.3.1")
-    assert fw.image.expected() is None
-    with pytest.raises(fw.image.ImageError, match="installing replaces"):
+def test_nothing_installed_speaking_our_contract_settles_nothing(inventory):
+    install(inventory, "0.0.9")
+    assert fw.image.usable() == ()
+    with pytest.raises(fw.image.ImageError, match="nothing installed speaks"):
         fw.image.resolve()
 
 
-def test_a_named_version_is_taken_over_the_installed_one(inventory):
-    install(inventory, "0.2.9")
-    install(inventory, "0.3.1")
-    assert fw.image.resolve("0.2.9").version == "0.2.9"
+def test_another_backend_at_our_version_does_not_count_as_usable(inventory):
+    install(inventory, backend="rp2040-drv8825")
+    assert fw.image.usable() == ()
+
+
+def test_a_named_version_is_taken_over_the_one_that_fits(inventory):
+    install(inventory, "0.0.9")
+    install(inventory)
+    assert fw.image.resolve("0.0.9").version == "0.0.9"
 
 
 def test_a_version_that_is_not_installed_names_what_is(inventory):

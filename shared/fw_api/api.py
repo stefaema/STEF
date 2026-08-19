@@ -415,6 +415,19 @@ def attach(carry: Any) -> dict[str, Namespace]:
     return {name: Namespace(carry, specs) for name, specs in namespaces().items()}
 
 
+# ── Whether the far end is one we can talk to ────────────────────────────────
+
+
+def compatible(backend: str, version: str) -> bool:
+    """Whether a board reporting these can be talked to by this build.
+
+    The one place the rule lives, so the verdict a connect gives and the image a
+    flash picks can never disagree about it. Exact equality today; loosening it
+    to "same x.y" is this body and nothing else.
+    """
+    return backend == abi.FW_API_BACKEND and version == abi.FW_API_VERSION
+
+
 # ── Everything the ABI already names ─────────────────────────────────────────
 
 

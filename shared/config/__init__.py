@@ -1,3 +1,5 @@
+"""A file's shipped default and this machine's copy of it, read as one."""
+
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -8,10 +10,14 @@ SUFFIX = ".toml"
 
 
 class ConfigError(Exception):
-    pass
+    """Anything that leaves a setting unreadable."""
 
 
 def get(package: str, *parts: str) -> dict[str, Any]:
+    """Return one file's settings, yours laid over the shipped copy key by key.
+
+    `parts` names the file below either root, one path segment per argument.
+    """
     found = paths.readable(package, *parts)
     if not found:
         shipped, mine = paths.layered(package, *parts)
@@ -23,6 +29,10 @@ def get(package: str, *parts: str) -> dict[str, Any]:
 
 
 def available(package: str, *parts: str) -> tuple[str, ...]:
+    """Return the stem of every TOML file there is to choose from, each named once.
+
+    `parts` names the directory to look in, where `get` names a file in it.
+    """
     found: set[str] = set()
     for directory in (
         paths.builtin(package, *parts),
@@ -39,6 +49,7 @@ def available(package: str, *parts: str) -> tuple[str, ...]:
 
 
 def _read(file: Path) -> dict[str, Any]:
+    """Return the file parsed, naming it in either way it can fail."""
     try:
         text = file.read_text()
     except OSError as exc:
@@ -50,6 +61,11 @@ def _read(file: Path) -> dict[str, Any]:
 
 
 def _overlaid(under: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
+    """Return `under` with `over` on top, merging tables and replacing all else.
+
+    A list in `over` therefore stands in for the shipped list rather than adding
+    to it: there is no key to merge two entries by.
+    """
     settled = dict(under)
     for key, value in over.items():
         beneath = settled.get(key)

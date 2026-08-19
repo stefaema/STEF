@@ -13,7 +13,8 @@ RPC_CRC_LEN = 2
 RPC_MAX_PAYLOAD = 502
 RPC_NS_MAX = 8
 RPC_STATUS_TRANSPORT_BASE = 240
-RPC_PROTOCOL_VERSION = 1
+FW_API_BACKEND = "esp32-tmc2209"
+FW_API_VERSION = "0.1.0"
 RPC_MAX_OPS = 32
 RPC_RELAY_MAX_BYTES = 32
 RPC_MAX_DEVICES = 4
@@ -660,10 +661,11 @@ class rpc_op_t(ctypes.Structure):
 class rpc_sys_version_ret(ctypes.Structure):
     """What `sys.version` answers. Takes no arguments.
 
-    The protocol version leads and is fixed width, so a PC built against a
-    different protocol can read that field, decide it does not understand the
-    rest, and say so, which is the whole point of asking. Nothing may ever be
-    inserted before it.
+    The version leads and is fixed width, so a PC built against a different one
+    can read that field, decide it does not understand the rest, and say so,
+    which is the whole point of asking. The backend follows for the same reason:
+    an end that disagrees about the version still has to be able to say whether
+    this is even our firmware. Nothing may ever be inserted before them.
 
     The strings are fixed rather than variable for the same reason. This reply
     has to be readable by an end that disagrees about everything after it, and a
@@ -675,12 +677,11 @@ class rpc_sys_version_ret(ctypes.Structure):
     """
 
     _fields_ = [
-        ("protocol", ctypes.c_uint16),
-        ("reset_reason", ctypes.c_uint8),
-        ("_pad", ctypes.c_uint8),
-        ("project", ctypes.c_char * 32),
         ("version", ctypes.c_char * 32),
+        ("backend", ctypes.c_char * 32),
         ("idf", ctypes.c_char * 32),
+        ("reset_reason", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 3),
     ]
 
 

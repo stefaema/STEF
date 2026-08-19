@@ -27,12 +27,11 @@ from shared.bench_api import (
 from transport import fw
 from transport.bench import rom
 from transport.bench.link import PORT
-from transport.transport import AUTO, installed_version, named_port
+from transport.transport import AUTO, named_port
 
 STATUS = {
     fw.probe.Finding.RUNNING: PASSED,
-    fw.probe.Finding.STALE: WARNED,
-    fw.probe.Finding.PROTOCOL: FAILED,
+    fw.probe.Finding.INCOMPATIBLE: FAILED,
     fw.probe.Finding.ABSENT: FAILED,
 }
 
@@ -126,7 +125,7 @@ def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
         step=DESCRIPTOR,
     )
 
-    verdict = fw.probe.identify(port, installed_version())
+    verdict = fw.probe.identify(port)
     if verdict.finding is not fw.probe.Finding.SILENT:
         settled = STATUS[verdict.finding]
         raise Abandoned(verdict.sentence, settled, _panel(settled, verdict))
@@ -192,8 +191,8 @@ def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
             FAILED,
         )
 
-    running = fw.probe.identify(port, release.version)
-    if running.finding is fw.probe.Finding.RUNNING and not values.get("force"):
+    running = fw.probe.identify(port)
+    if running.version == release.version and not values.get("force"):
         raise Abandoned(
             f"{port} already runs {release.version}, so there is nothing to write",
             PASSED,
@@ -243,7 +242,7 @@ def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
         PASSED, f"all {len(release.binaries)} images read back as written"
     )
 
-    settled = fw.probe.identify(port, release.version)
+    settled = fw.probe.identify(port)
     yield StepOutcome(
         PASSED if settled else WARNED, settled.sentence, _result_for(settled)
     )

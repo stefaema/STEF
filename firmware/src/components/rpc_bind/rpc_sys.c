@@ -35,11 +35,13 @@ static rpc_status_t sys_version(const void *args, void *ret)
     rpc_sys_version_ret  *out = ret;
     const esp_app_desc_t *app = esp_app_get_description();
 
-    out->protocol     = RPC_PROTOCOL_VERSION;
     out->reset_reason = (uint8_t)esp_reset_reason();
 
-    set_str(out->project, sizeof(out->project), app ? app->project_name : "");
-    set_str(out->version, sizeof(out->version), app ? app->version : "");
+    /* From the header both ends compile, never from the build's own labels:
+     * what is compared cannot come from a name someone may rename. */
+    set_str(out->version, sizeof(out->version), FW_API_VERSION);
+    set_str(out->backend, sizeof(out->backend), FW_API_BACKEND);
+
     set_str(out->idf, sizeof(out->idf), app ? app->idf_ver : "");
 
     return RPC_OK;

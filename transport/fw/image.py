@@ -6,8 +6,8 @@ offsets were. So the unit here is a directory holding those binaries and one
 manifest saying where each goes, and the inventory is a directory of those.
 
 A machine holds one release at a time, because installing replaces rather than
-adds. So the version a board ought to be running is the one that is installed,
-and nothing has to declare it.
+adds. Which of them a board ought to be running is not declared anywhere: it is
+whichever one `fw_api` says this build can talk to.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from shared import paths
+from shared import fw_api, paths
 
 MANIFEST = "manifest.json"
 AUTO = "auto"
@@ -47,7 +47,7 @@ class Release:
     """One version's worth of binaries, and what the build knew about them."""
 
     version: str
-    project: str
+    backend: str
     idf: str
     chip: str
     flash_size: str
@@ -89,7 +89,7 @@ def read(directory: Path) -> Release:
     try:
         return Release(
             version=described["version"],
-            project=described["project"],
+            backend=described["backend"],
             idf=described.get("idf", ""),
             chip=described["chip"],
             flash_size=described.get("flash_size", "keep"),
@@ -121,26 +121,20 @@ def installed() -> tuple[Release, ...]:
 
 
 def versions() -> tuple[str, ...]:
-    """Return the versions a form may offer, with the installed one standing for itself."""
+    """Return the versions a form may offer, with the usable one standing for itself."""
     return (AUTO, *(release.version for release in installed()))
 
 
 # ── The one this installation runs ───────────────────────────────────────────
 
 
-def expected() -> str | None:
-    """Return the version a board ought to be running, or None where nothing settles it.
-
-    The installed release is the answer, since there is meant to be one. Several
-    means something was added rather than installed, which only the operator can
-    settle.
-    """
-    have = installed()
-    return have[0].version if len(have) == 1 else None
+def usable() -> tuple[Release, ...]:
+    """Return the installed releases this build could talk to once one is flashed."""
+    return tuple(r for r in installed() if fw_api.compatible(r.backend, r.version))
 
 
 def resolve(version: str = AUTO) -> Release:
-    """Return the release a form's choice names, `auto` meaning the installed one."""
+    """Return the release a form's choice names, `auto` meaning the one that fits."""
     have = installed()
     if not have:
         raise ImageError(
@@ -155,15 +149,21 @@ def resolve(version: str = AUTO) -> Release:
             )
         return found
 
-    wanted = expected()
-    if wanted is None:
-        names = ", ".join(r.version for r in have)
+    fit = usable()
+    if len(fit) == 1:
+        return fit[0]
+    if not fit:
+        names = ", ".join(f"{r.backend} {r.version}" for r in have)
         raise ImageError(
-            f"several versions are installed, so 'auto' names nothing; installing "
-            f"replaces rather than adds, so remove the ones that do not belong "
-            f"here or choose: {names}"
+            f"nothing installed speaks {fw_api.FW_API_BACKEND} "
+            f"{fw_api.FW_API_VERSION}, so 'auto' names nothing; have: {names}"
         )
-    return resolve(wanted)
+    names = ", ".join(r.version for r in fit)
+    raise ImageError(
+        f"several installed releases speak {fw_api.FW_API_VERSION}, so 'auto' names "
+        f"nothing; installing replaces rather than adds, so remove the ones that do "
+        f"not belong here or choose: {names}"
+    )
 
 
 # ── Whether what is on disk is what the build made ───────────────────────────

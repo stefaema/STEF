@@ -123,8 +123,7 @@ class Finding(enum.Enum):
     """What asking settled, ordered by how much of the stack answered."""
 
     RUNNING = "running"
-    STALE = "stale"
-    PROTOCOL = "protocol"
+    INCOMPATIBLE = "incompatible"
     SILENT = "silent"
     ABSENT = "absent"
 
@@ -174,14 +173,12 @@ def _ask(port: str, grace: float) -> Any:
                     raise
 
 
-def identify(
-    port: str, expected: str | None = None, *, grace: float = BOOT_GRACE
-) -> Verdict:
+def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
     """Return what is on this port, asking the app and never the bootloader.
 
-    `expected` is the version this machine has installed. Without one the running
-    firmware is reported and not judged, since nothing here says what it should
-    have been.
+    Nothing is passed in to judge against. What a board must report to be usable
+    is compiled into this build, so the only question is whether the far end
+    agrees with `fw_api`.
     """
     seen = attached(port)
     if seen is None:
@@ -214,42 +211,31 @@ def identify(
         )
 
     running = _text(reply.version)
+    backend = _text(reply.backend)
     fields = (
         *common,
-        ("project", _text(reply.project)),
+        ("backend", backend),
         ("version", running),
         ("idf", _text(reply.idf)),
-        ("protocol", str(reply.protocol)),
         ("reset reason", str(reply.reset_reason)),
     )
 
-    if reply.protocol != fw_api.RPC_PROTOCOL_VERSION:
+    if not fw_api.compatible(backend, running):
         return Verdict(
-            Finding.PROTOCOL,
+            Finding.INCOMPATIBLE,
             port,
-            f"the board speaks protocol {reply.protocol} and this build speaks "
-            f"{fw_api.RPC_PROTOCOL_VERSION}, so the link is unusable. Flash it",
+            f"the board is {backend} {running} and this build speaks "
+            f"{fw_api.FW_API_BACKEND} {fw_api.FW_API_VERSION}, so the link is "
+            f"unusable. Flash it",
             fields,
             running,
             seen.silicon,
         )
 
-    if expected is not None and running != expected:
-        return Verdict(
-            Finding.STALE,
-            port,
-            f"your firmware, wrong build: {running} is running and {expected} "
-            f"is installed. Flash it",
-            fields,
-            running,
-            seen.silicon,
-        )
-
-    unjudged = "" if expected is not None else ", and no firmware is installed here"
     return Verdict(
         Finding.RUNNING,
         port,
-        f"{_text(reply.project)} {running} is answering on {port}{unjudged}",
+        f"{backend} {running} is answering on {port}",
         fields,
         running,
         seen.silicon,

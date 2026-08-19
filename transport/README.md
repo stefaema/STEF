@@ -29,10 +29,9 @@ asks it first and never resets a board that is working. Only silence is
 ambiguous, and only silence is worth a reset to resolve, which is why the ROM
 tier lives under `bench/` and nothing on the connect path reaches it.
 
-`identify()` returns one of five findings, and each is a different sentence
-because each has a different remedy: the installed firmware answering, another
-build answering, a protocol the PC cannot read, silence, and a port that is gone
-or will not open. `can_connect` runs the same call and blocks with the same
+`identify()` returns one of four findings, and each is a different sentence
+because each has a different remedy: our firmware answering, something the PC
+cannot talk to, silence, and a port that is gone or will not open. `can_connect` runs the same call and blocks with the same
 sentence, so a disabled Connect button names what it found rather than asking
 the operator to go and run something first.
 
@@ -44,10 +43,16 @@ partition table and an app at three offsets that only the build knows, so the
 unit is those binaries plus the `manifest.json` recording where each goes and
 what it hashes to.
 
-A machine holds one release, because installing replaces rather than adds. So
-the version a board ought to be running is simply the one installed, and no file
-declares it. Several directories mean something was added by hand rather than
-installed, and `auto` refuses rather than guessing which was meant.
+A machine holds one release, because installing replaces rather than adds. Which
+one a board ought to be running is not declared anywhere: `auto` takes the
+installed release that `fw_api.compatible()` accepts, which is the same rule the
+connect verdict applies to the board itself. Nothing usable, or more than one,
+and `auto` refuses rather than guessing.
+
+`fw_api` names the pair both ends check, `FW_API_BACKEND` and `FW_API_VERSION`.
+The backend says whether the far end is ours at all; the version says whether
+its contract is the one this build compiled. Both come from the header the
+firmware compiles and the PC imports, so neither can drift.
 
 ## Layout
 

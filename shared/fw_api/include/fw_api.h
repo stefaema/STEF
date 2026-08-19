@@ -48,12 +48,23 @@
 #include "tmc2209_reg.h"
 
 /**
- * What the two ends check before trusting each other. Bump on any change to a
- * payload layout, a method number, or a status value. Bounded to `sys.version`.
+ * What the two ends check before trusting each other, as (backend, version).
  *
- * Only bump on a dev to main merge. Nothing in between has shipped.
+ * A version alone cannot say whether the thing on the far end is ours at all,
+ * so the backend names the implementation and the version names its contract.
+ * Both are compiled into the firmware and imported by the PC from here, which
+ * is what keeps them from drifting.
+ *
+ * The backend carries no chip model and no driver count. Neither changes this
+ * contract: the chip is settled at flash time against the manifest, and how
+ * many drivers are fitted is `sys.state`'s to report.
+ *
+ * Bump the version on any change to a payload layout, a method number, or a
+ * status value, and only on a dev to main merge. Nothing in between has
+ * shipped.
  */
-#define RPC_PROTOCOL_VERSION 1
+#define FW_API_BACKEND "esp32-tmc2209"
+#define FW_API_VERSION "0.1.0"
 
 /** @brief Namespaces, by who assembles the bytes. */
 typedef enum {
@@ -140,10 +151,11 @@ typedef enum {
 /**
  * @brief What `sys.version` answers. Takes no arguments.
  *
- * The protocol version leads and is fixed width, so a PC built against a
- * different protocol can read that field, decide it does not understand the
- * rest, and say so, which is the whole point of asking. Nothing may ever be
- * inserted before it.
+ * The version leads and is fixed width, so a PC built against a different one
+ * can read that field, decide it does not understand the rest, and say so,
+ * which is the whole point of asking. The backend follows for the same reason:
+ * an end that disagrees about the version still has to be able to say whether
+ * this is even our firmware. Nothing may ever be inserted before them.
  *
  * The strings are fixed rather than variable for the same reason. This reply
  * has to be readable by an end that disagrees about everything after it, and a
@@ -154,12 +166,11 @@ typedef enum {
  * "did the board reboot", and answering it costs one byte.
  */
 typedef struct {
-    uint16_t       protocol;
-    rpc_reset_id_t reset_reason;
-    uint8_t        _pad;
-    char           project[RPC_STR_MAX];
     char           version[RPC_STR_MAX];
+    char           backend[RPC_STR_MAX];
     char           idf[RPC_STR_MAX];
+    rpc_reset_id_t reset_reason;
+    uint8_t        _pad[3];
 } rpc_sys_version_ret;
 RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
 
