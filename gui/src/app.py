@@ -24,7 +24,7 @@ from gui.src import text
 from gui.src.i18n import gettext, ngettext
 from gui.src.runner import Busy, Record, Slot, Stream, call_off_loop, stream_run
 from gui.src.stef import STEF, StefState
-from shared import bench_api
+from shared import bench_api, logs
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
@@ -47,23 +47,24 @@ templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyr
 
 stream = Stream()
 slot = Slot(stream)
+log = logs.component("gui")
 
 
 def wake() -> None:
-    """Load every subsystem package, which is what puts its routines in the registry.
+    """Put logging up, then load every subsystem package.
 
     A declaration runs when its module is imported, so the walk is the
     registration and skipping it leaves a subsystem that silently does not
-    appear.
+    appear. Logging goes up first so an import that fails says why.
     """
+    written = logs.start()
+    logs.to(stream.sink)
+    log.info("writing to {}", written)
     for name in ROSTER:
         try:
-            loaded = bench_api.load_subsystem(name)
-        except (ImportError, KeyError):
-            continue
-        sink = getattr(loaded.module, "logs_to", None)
-        if sink is not None:
-            sink(stream.sink(name))
+            bench_api.load_subsystem(name)
+        except (ImportError, KeyError) as exc:
+            log.debug("no subsystem {}: {}", name, exc)
     stream.say("gui", "ok", "gui", gettext("Backend ready"))
 
 

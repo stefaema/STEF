@@ -13,6 +13,7 @@ BUILTIN = "builtin"
 CONFIG = "config"
 STATE = "state"
 FIRMWARE = "firmware"
+LOGS = "logs"
 
 XDG_CONFIG = ("XDG_CONFIG_HOME", ".config")
 XDG_STATE = ("XDG_STATE_HOME", ".local/state")
@@ -71,6 +72,11 @@ def data_dir() -> Path:
     if developing is not None:
         return developing
     return _xdg(*XDG_DATA) / APP
+
+
+def log_dir() -> Path:
+    """Return where the program writes what it wants read afterwards."""
+    return state_dir() / LOGS
 
 
 def firmware_bins() -> Path:

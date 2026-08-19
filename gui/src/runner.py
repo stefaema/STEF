@@ -27,6 +27,17 @@ from shared.bench_api import Level
 DEPTH = 512
 BACKLOG = 200
 
+# What a logged level is called on a screen, which has three weights and not six.
+LEVELS = {
+    "TRACE": Level.OK,
+    "DEBUG": Level.OK,
+    "INFO": Level.OK,
+    "SUCCESS": Level.OK,
+    "WARNING": Level.WARN,
+    "ERROR": Level.ERROR,
+    "CRITICAL": Level.ERROR,
+}
+
 
 class Busy(Exception):
     """Something already holds the machine, and it names what."""
@@ -89,19 +100,22 @@ class Stream:
         """
         self.emit(Record(next(self._seq), time.time(), source, level, kind, text, data))
 
-    def sink(self, source: str) -> Callable[[Any], None]:
-        """Return a sink that puts a subsystem's own log records on this stream."""
+    def sink(self, message: Any) -> None:
+        """Put one logged line on this stream, as `shared.logs` hands it to a sink.
 
-        def take(record: Any) -> None:
-            level = getattr(record, "level", Level.OK)
-            self.say(
-                source,
-                getattr(level, "value", str(level)),
-                "firmware",
-                str(getattr(record, "text", record)),
-            )
-
-        return take
+        The component is read off the record rather than off the rendered line,
+        so a format change is a format change and nothing more.
+        """
+        record = getattr(message, "record", None)
+        if record is None:
+            self.say("stef", Level.OK.value, "log", str(message).rstrip())
+            return
+        self.say(
+            str(record["extra"].get("component", "stef")),
+            LEVELS.get(record["level"].name, Level.OK).value,
+            "log",
+            str(record["message"]),
+        )
 
     def listen(self) -> tuple[queue.Queue[Record], list[Record]]:
         """Register a listener and hand back what it missed."""

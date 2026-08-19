@@ -1,5 +1,5 @@
 {
-  description = "STEF - what the bench serves, as both ends see it";
+  description = "STEF - one line, one shape, one file";
 
   inputs = {
     base.url = "path:../../dev_base";

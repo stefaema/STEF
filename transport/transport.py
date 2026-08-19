@@ -11,7 +11,6 @@ AUTO = "auto"
 
 _link: Any = None
 _failure: str | None = None
-_sink: Any = None
 
 
 # ── What is on the far end ───────────────────────────────────────────────────
@@ -59,18 +58,12 @@ def firmware() -> Any:
     return _link
 
 
-def logs_to(sink: Any) -> None:
-    """Take the sink the firmware's own log lines are handed to."""
-    global _sink
-    _sink = sink
-
-
 def open_link(port: str) -> str:
     """Open the link, atomically, so a half-open one is not representable."""
     global _link, _failure
     chosen = fw.probe.find_port(named_port(port))
     try:
-        opened = fw.link.FirmwareLink(chosen, on_log=_sink)
+        opened = fw.link.FirmwareLink(chosen, on_log=fw.logs.forward)
     except Exception as exc:
         _failure = f"{type(exc).__name__}: {exc}"
         raise

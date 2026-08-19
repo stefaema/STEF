@@ -7,6 +7,7 @@ import pkgutil
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
+from shared import logs
 from shared.bench_api.inputs import checked_inputs
 from shared.bench_api.records import (
     CALL,
@@ -16,6 +17,7 @@ from shared.bench_api.records import (
     READY,
     SETUP,
     SKIPPED,
+    Abandoned,
     Behaviour,
     Category,
     DeclarationError,
@@ -253,11 +255,24 @@ def run_routine(item: Routine, values: dict[str, Any]) -> Iterator[StepOutcome]:
 
     A routine cannot break the stream: an uncaught exception becomes one failed
     step, and abandoning settles the step that raised and skips the rest.
-    """
-    from shared.bench_api.records import Abandoned
 
+    Everything logged underneath carries which routine said it. A thread started
+    inside one does not inherit that, so the reader threads a link owns are
+    matched to a run by their timestamps and not by this.
+    """
     pending = list(item.steps)
     reached = 0
+    with logs.logger.contextualize(routine=item.id):
+        yield from _stream(item, values, pending, reached)
+
+
+def _stream(
+    item: Routine,
+    values: dict[str, Any],
+    pending: list[str],
+    reached: int,
+) -> Iterator[StepOutcome]:
+    """Run one routine, turning whatever it does into a stream that cannot break."""
     try:
         for produced in item.do.run(values):
             outcome = _titled_outcome(produced, pending, reached)

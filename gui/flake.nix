@@ -17,6 +17,7 @@
             ps.fastapi
             ps.uvicorn
             ps.jinja2
+            ps.loguru
             ps.httpx
             ps.pytest
             ps.pytest-asyncio

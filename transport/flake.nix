@@ -17,6 +17,7 @@
             (pkgs.python3.withPackages (ps: [
               (ps.toPythonModule pkgs.esptool)
               ps.libclang
+              ps.loguru
               ps.pyserial
               ps.pytest
             ]))
