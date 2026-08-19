@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+import logging
 import threading
 import time
 from collections.abc import Iterator, Mapping
@@ -27,6 +28,8 @@ PUT = "PUT"
 DELETE = "DELETE"
 
 BACKOFF_BASE = 0.5
+
+log = logging.getLogger("ccapi.link")
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +151,7 @@ class Link:
             return
         self._state = LinkState.CONNECTING
         self._failure = None
+        log.debug("connecting to %s", self.config.base_url)
         try:
             manifest = self._manifest()
             self.registry.load(manifest)
@@ -162,10 +166,27 @@ class Link:
             self._state = (
                 LinkState.DOWN if isinstance(exc, UnreachableError) else LinkState.ERROR
             )
+            log.error("could not connect to %s: %s", self.config.base_url, exc)
             raise
         self._state = LinkState.UP
+        declined = self.registry.offered_beyond_accepted
+        if declined:
+            log.warning(
+                "%s also offers %s, above the accepted %s",
+                self.config.base_url,
+                ", ".join(declined),
+                self.config.accepted_version,
+            )
+        log.info(
+            "connected to %s speaking %s, %d endpoints",
+            self.config.base_url,
+            ", ".join(self.registry.versions),
+            len(self.registry.features),
+        )
 
     def disconnect(self) -> None:
+        if self.up:
+            log.info("disconnecting from %s", self.config.base_url)
         self.registry.clear()
         self._state = LinkState.DOWN
         self._failure = None
@@ -261,9 +282,28 @@ class Link:
             if reply.ok:
                 return reply
             refusal = error_for(reply.status, error_body(reply.json()))
-            if not worth_retrying(refusal) or attempt == self.config.retries:
+            if not worth_retrying(refusal):
+                log.debug(
+                    "%s %s refused, and waiting would not help: %s",
+                    method,
+                    whole,
+                    refusal,
+                )
                 raise refusal
-            time.sleep(BACKOFF_BASE * (2**attempt))
+            if attempt == self.config.retries:
+                log.warning(
+                    "%s %s still refused after %d attempts: %s",
+                    method,
+                    whole,
+                    attempt + 1,
+                    refusal,
+                )
+                raise refusal
+            pause = BACKOFF_BASE * (2**attempt)
+            log.debug(
+                "%s %s refused (%s), waiting %.1fs", method, whole, refusal, pause
+            )
+            time.sleep(pause)
         raise NotConnectedError("the request loop ended without a reply")
 
     def _send(

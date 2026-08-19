@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
@@ -7,16 +8,21 @@ from pathlib import Path
 from types import TracebackType
 
 from portable.ccapi.config import CameraConfig
+from portable.ccapi.endpoints import Endpoint
 from portable.ccapi.events import Events
 from portable.ccapi.filesystem import Filesystem
 from portable.ccapi.functions import Functions
 from portable.ccapi.link import Link, Transport
 from portable.ccapi.live_view import LiveView
 from portable.ccapi.movie import Movie
-from portable.ccapi.settings import Settings
+from portable.ccapi.settings import Setting, Settings
 from portable.ccapi.shooting import Shooting
 from portable.ccapi.status import Status
 from portable.ccapi.vocabulary import ContentKind, LinkState, PollWait
+
+log = logging.getLogger("ccapi.camera")
+
+NAMED = {str(one) for one in Endpoint} | {str(one) for one in Setting}
 
 
 class Camera:
@@ -41,6 +47,13 @@ class Camera:
 
     def connect(self) -> None:
         self.link.connect()
+        unnamed = self.link.registry.unnamed(NAMED)
+        if unnamed:
+            log.info(
+                "%d endpoints this build has no name for: %s",
+                len(unnamed),
+                ", ".join(unnamed),
+            )
 
     def disconnect(self) -> None:
         self.link.disconnect()

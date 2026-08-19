@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import enum
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 
 from portable.ccapi.endpoints import Endpoint
 from portable.ccapi.errors import InvalidStateError
 from portable.ccapi.link import GET, POST, Link
+
+log = logging.getLogger("ccapi.movie")
 
 
 class RecAction(enum.StrEnum):
@@ -39,6 +42,7 @@ class Movie:
     @contextmanager
     def mode(self) -> Generator[None]:
         if self.in_movie_mode():
+            log.debug("already in movie mode; leaving it on at exit")
             yield
             return
         self.enter_movie_mode()

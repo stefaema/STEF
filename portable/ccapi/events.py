@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+import logging
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 
@@ -15,6 +16,8 @@ from portable.ccapi.vocabulary import (
     StateChange,
     state_change,
 )
+
+log = logging.getLogger("ccapi.events")
 
 
 class Feed:
@@ -73,8 +76,8 @@ class Events:
     def stop_watching(self) -> None:
         try:
             self.link.json(DELETE, Endpoint.MONITORING)
-        except DeviceError:
-            pass
+        except DeviceError as exc:
+            log.debug("nothing to stop watching: %s", exc)
         self._watching = False
 
     @contextmanager
@@ -84,6 +87,7 @@ class Events:
         except InvalidStateError as exc:
             if ALREADY_STARTED not in str(exc):
                 raise
+            log.warning("a monitoring stream is already open; leaving it alone")
             yield Feed(self.link, iter(()))
             return
         try:

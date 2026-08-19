@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ NAMES = {
 }
 
 CAMERA_TIME = "%a, %d %b %Y %H:%M:%S"
+
+log = logging.getLogger("ccapi.functions")
 
 
 class Functions:
@@ -37,6 +40,7 @@ class Functions:
         if found == disabled:
             yield
             return
+        log.info("auto power-off was %r; holding it at %r", found, disabled)
         self.set_auto_power_off(disabled)
         try:
             yield

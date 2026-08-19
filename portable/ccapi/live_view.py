@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import logging
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 
@@ -10,6 +11,8 @@ from portable.ccapi.link import GET, POST, Link
 from portable.ccapi.vocabulary import Packet, PacketKind
 
 OFF = "off"
+
+log = logging.getLogger("ccapi.live_view")
 
 
 class ViewSize(enum.StrEnum):
@@ -84,6 +87,8 @@ class LiveView:
         display: CameraDisplay = CameraDisplay.KEEP,
     ) -> Generator[Stream]:
         found = self.running()
+        if found:
+            log.debug("live view was already running; leaving it up on exit")
         stream = self.start(size, display)
         try:
             yield stream
