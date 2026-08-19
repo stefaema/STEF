@@ -20,11 +20,11 @@ Settling it means talking, and there are two ends to talk to.
 
 | tier | asks | costs | settles |
 | --- | --- | --- | --- |
-| descriptor | `fw_probe.candidates()` | nothing | which ports are worth trying |
+| descriptor | `fw.probe.candidates()` | nothing | which ports are worth trying |
 | app | `sys.version` over the link | one round trip | that this is *our* firmware, and which build |
 | ROM | `rom.detect()`, esptool | a reset into the bootloader | that this is an ESP32, and which chip |
 
-The app tier says more than the ROM tier, not less, so `fw_probe.identify()`
+The app tier says more than the ROM tier, not less, so `fw.probe.identify()`
 asks it first and never resets a board that is working. Only silence is
 ambiguous, and only silence is worth a reset to resolve, which is why the ROM
 tier lives under `bench/` and nothing on the connect path reaches it.
@@ -38,7 +38,7 @@ the operator to go and run something first.
 
 ## Which firmware is the right one
 
-`fw_image` reads the inventory under `paths.firmware_bins()`, one directory per
+`fw.image` reads the inventory under `paths.firmware_bins()`, one directory per
 version. A directory and not a file: an ESP-IDF board needs a bootloader, a
 partition table and an app at three offsets that only the build knows, so the
 unit is those binaries plus the `manifest.json` recording where each goes and
@@ -54,10 +54,10 @@ settle, so `auto` refuses rather than guessing.
 
 | file | what it answers |
 | --- | --- |
-| `fw_wire.py` | framing, and what a frame carries |
-| `fw_link.py` | a firmware on the other end of a port, and the calls it serves |
-| `fw_probe.py` | who is on a port, without disturbing them |
-| `fw_image.py` | what is installed here, and which of it this machine runs |
+| `fw/framing.py` | framing, and what a frame carries |
+| `fw/link.py` | a firmware on the other end of a port, and the calls it serves |
+| `fw/probe.py` | who is on a port, without disturbing them |
+| `fw/image.py` | what is installed here, and which of it this machine runs |
 | `transport.py` | the subsystem the bench sees, and the link it is reached through |
 | `device_profile.py` | which registers a driver is given, and what it is called |
 | `bench/rom.py` | what the bootloader answers, and how an image gets written |

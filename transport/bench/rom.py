@@ -19,7 +19,7 @@ import io
 from dataclasses import dataclass
 from typing import Any
 
-from transport import fw_image
+from transport import fw
 
 ROM_BAUD = 115200
 FLASH_BAUD = 460800
@@ -123,7 +123,7 @@ def erase(port: str, chip: str) -> str:
     return _run(["--port", port, "--chip", chip, "erase-flash"])
 
 
-def write(port: str, release: fw_image.Release, binary: fw_image.Binary) -> str:
+def write(port: str, release: fw.image.Release, binary: fw.image.Binary) -> str:
     """Write one of a release's binaries at the offset its build recorded."""
     return _run(
         [
@@ -146,7 +146,7 @@ def write(port: str, release: fw_image.Release, binary: fw_image.Binary) -> str:
     )
 
 
-def verify(port: str, release: fw_image.Release) -> tuple[str, ...]:
+def verify(port: str, release: fw.image.Release) -> tuple[str, ...]:
     """Return the binaries whose bytes on the board differ from the ones on disk.
 
     Reads flash back through the bootloader, so it answers on a board whose

@@ -19,9 +19,9 @@ def client():
 @pytest.fixture
 def unplugged(monkeypatch):
     """Answer as a machine with nothing attached, so a run settles the same anywhere."""
-    from transport import fw_probe
+    from transport import fw
 
-    monkeypatch.setattr(fw_probe, "candidates", lambda: ())
+    monkeypatch.setattr(fw.probe, "candidates", lambda: ())
 
 
 # ── What crosses ─────────────────────────────────────────────────────────────

@@ -24,16 +24,16 @@ from shared.bench_api import (
     StepOutcome,
     StepStatus,
 )
-from transport import fw_image, fw_link, fw_probe
+from transport import fw
 from transport.bench import rom
 from transport.bench.link import PORT
 from transport.transport import AUTO, named_port, pinned_version
 
 STATUS = {
-    fw_probe.Finding.RUNNING: PASSED,
-    fw_probe.Finding.STALE: WARNED,
-    fw_probe.Finding.PROTOCOL: FAILED,
-    fw_probe.Finding.ABSENT: FAILED,
+    fw.probe.Finding.RUNNING: PASSED,
+    fw.probe.Finding.STALE: WARNED,
+    fw.probe.Finding.PROTOCOL: FAILED,
+    fw.probe.Finding.ABSENT: FAILED,
 }
 
 LEVEL = {
@@ -48,12 +48,12 @@ OVER_RPC = "Firmware over RPC"
 BOOTLOADER = "ROM bootloader"
 
 
-def _panel(status: StepStatus, verdict: fw_probe.Verdict) -> Result:
+def _panel(status: StepStatus, verdict: fw.probe.Verdict) -> Result:
     """Return a verdict as the panel behind the one-line outcome."""
     return Result(level=LEVEL[status], summary=verdict.sentence, fields=verdict.fields)
 
 
-def _result_for(verdict: fw_probe.Verdict) -> Result:
+def _result_for(verdict: fw.probe.Verdict) -> Result:
     """Return a verdict as the panel behind the line that reports it."""
     return Result(
         level=Level.OK if verdict else Level.WARN,
@@ -62,20 +62,20 @@ def _result_for(verdict: fw_probe.Verdict) -> Result:
     )
 
 
-def _descriptor_says(seen: fw_probe.Candidate) -> tuple[StepStatus, str, str]:
+def _descriptor_says(seen: fw.probe.Candidate) -> tuple[StepStatus, str, str]:
     """Return how far the descriptor gets, which for most ports is nowhere.
 
     Never a failure. Naming a port is the operator overruling the shortlist, and
     the descriptor has no standing to refuse: the tiers below it are the ones
     that can answer.
     """
-    if seen.silicon is fw_probe.Silicon.ESPRESSIF:
+    if seen.silicon is fw.probe.Silicon.ESPRESSIF:
         return (
             PASSED,
             f"{seen.device} is Espressif silicon, {seen.description or seen.vidpid}",
             "The vendor id is Espressif's own, so this much is settled.",
         )
-    if seen.silicon is fw_probe.Silicon.BRIDGE:
+    if seen.silicon is fw.probe.Silicon.BRIDGE:
         return (
             PASSED,
             f"{seen.device} is a USB-UART bridge, {seen.description or seen.vidpid}",
@@ -92,8 +92,8 @@ def _descriptor_says(seen: fw_probe.Candidate) -> tuple[StepStatus, str, str]:
 def _port_now(chosen: str) -> str:
     """Return the port to work on, refusing before anything is opened."""
     try:
-        return fw_probe.find_port(named_port(chosen))
-    except fw_link.LinkError as exc:
+        return fw.probe.find_port(named_port(chosen))
+    except fw.link.LinkError as exc:
         raise Abandoned(str(exc), FAILED) from exc
 
 
@@ -111,7 +111,7 @@ def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """
     port = _port_now(values.get("port", AUTO))
 
-    seen = fw_probe.attached(port)
+    seen = fw.probe.attached(port)
     assert seen is not None
     status, summary, note = _descriptor_says(seen)
     fields = [("port", port), ("silicon", seen.silicon.value)]
@@ -126,8 +126,8 @@ def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
         step=DESCRIPTOR,
     )
 
-    verdict = fw_probe.identify(port, pinned_version())
-    if verdict.finding is not fw_probe.Finding.SILENT:
+    verdict = fw.probe.identify(port, pinned_version())
+    if verdict.finding is not fw.probe.Finding.SILENT:
         settled = STATUS[verdict.finding]
         raise Abandoned(verdict.sentence, settled, _panel(settled, verdict))
     yield StepOutcome(WARNED, verdict.sentence, step=OVER_RPC)
@@ -166,7 +166,7 @@ def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
         PORT,
         bench_api.choice(
             "image",
-            fw_image.versions,
+            fw.image.versions,
             hint="Which installed version to write. 'auto' is the one this machine pins.",
         ),
         bench_api.boolean(
@@ -181,10 +181,10 @@ def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
     and asks the firmware who it is. Refuses a board that already runs the chosen
     version unless forced, and refuses a release built for another chip always.
     """
-    release = fw_image.resolve(values.get("image", fw_image.AUTO))
+    release = fw.image.resolve(values.get("image", fw.image.AUTO))
     port = _port_now(values.get("port", AUTO))
 
-    altered = fw_image.altered(release)
+    altered = fw.image.altered(release)
     if altered:
         raise Abandoned(
             f"{release.version} on disk no longer matches its manifest: "
@@ -192,8 +192,8 @@ def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
             FAILED,
         )
 
-    running = fw_probe.identify(port, release.version)
-    if running.finding is fw_probe.Finding.RUNNING and not values.get("force"):
+    running = fw.probe.identify(port, release.version)
+    if running.finding is fw.probe.Finding.RUNNING and not values.get("force"):
         raise Abandoned(
             f"{port} already runs {release.version}, so there is nothing to write",
             PASSED,
@@ -243,7 +243,7 @@ def flash_board(values: dict[str, Any]) -> Iterator[StepOutcome]:
         PASSED, f"all {len(release.binaries)} images read back as written"
     )
 
-    settled = fw_probe.identify(port, release.version)
+    settled = fw.probe.identify(port, release.version)
     yield StepOutcome(
         PASSED if settled else WARNED, settled.sentence, _result_for(settled)
     )

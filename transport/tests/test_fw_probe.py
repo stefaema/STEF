@@ -3,19 +3,19 @@
 import pytest
 
 from shared import fw_api
-from transport import fw_link, fw_probe, transport
+from transport import fw, transport
 
 # ── The descriptor tier ──────────────────────────────────────────────────────
 
 
 def port(device, vid, pid=0x0001, description="a thing"):
     """Return one fake attached port, in the shape pyserial hands them over."""
-    return fw_probe.Candidate(
+    return fw.probe.Candidate(
         device=device,
         vid=vid,
         pid=pid,
         description=description,
-        silicon=fw_probe._silicon(vid),
+        silicon=fw.probe._silicon(vid),
     )
 
 
@@ -24,19 +24,19 @@ def attached(monkeypatch):
     """Return a way to say what is plugged in for the length of one test."""
 
     def plug(*ports):
-        monkeypatch.setattr(fw_probe, "candidates", lambda: tuple(ports))
+        monkeypatch.setattr(fw.probe, "candidates", lambda: tuple(ports))
         return ports
 
     return plug
 
 
 def test_espressifs_own_vendor_id_settles_the_silicon():
-    assert port("/dev/ttyACM0", 0x303A).silicon is fw_probe.Silicon.ESPRESSIF
+    assert port("/dev/ttyACM0", 0x303A).silicon is fw.probe.Silicon.ESPRESSIF
 
 
 def test_a_bridge_vendor_is_a_shortlist_and_not_an_answer():
     bridge = port("/dev/ttyUSB0", 0x10C4)
-    assert bridge.silicon is fw_probe.Silicon.BRIDGE
+    assert bridge.silicon is fw.probe.Silicon.BRIDGE
     assert bridge.plausible
 
 
@@ -46,29 +46,29 @@ def test_an_unknown_vendor_is_not_worth_talking_to():
 
 def test_the_shortlist_leaves_out_what_could_not_carry_a_board(attached):
     attached(port("/dev/ttyACM0", 0x303A), port("/dev/ttyS0", None))
-    assert fw_probe.plausible_ports() == ("/dev/ttyACM0",)
+    assert fw.probe.plausible_ports() == ("/dev/ttyACM0",)
 
 
 def test_one_shortlisted_port_is_the_answer_when_none_was_named(attached):
     attached(port("/dev/ttyACM0", 0x303A), port("/dev/ttyS0", None))
-    assert fw_probe.find_port() == "/dev/ttyACM0"
+    assert fw.probe.find_port() == "/dev/ttyACM0"
 
 
 def test_several_shortlisted_ports_is_a_question_and_not_an_answer(attached):
     attached(port("/dev/ttyACM0", 0x303A), port("/dev/ttyUSB0", 0x1A86))
-    with pytest.raises(fw_link.LinkError, match="name one"):
-        fw_probe.find_port()
+    with pytest.raises(fw.link.LinkError, match="name one"):
+        fw.probe.find_port()
 
 
 def test_a_named_port_is_taken_even_where_its_descriptor_says_nothing(attached):
     attached(port("/dev/ttyS4", None))
-    assert fw_probe.find_port("/dev/ttyS4") == "/dev/ttyS4"
+    assert fw.probe.find_port("/dev/ttyS4") == "/dev/ttyS4"
 
 
 def test_a_named_port_that_has_gone_is_refused_rather_than_opened(attached):
     attached(port("/dev/ttyACM0", 0x303A))
-    with pytest.raises(fw_link.LinkError, match="nothing is attached"):
-        fw_probe.find_port("/dev/ttyUSB9")
+    with pytest.raises(fw.link.LinkError, match="nothing is attached"):
+        fw.probe.find_port("/dev/ttyUSB9")
 
 
 # ── What an operator may choose ──────────────────────────────────────────────
@@ -125,60 +125,60 @@ def answering(monkeypatch, attached):
                 raise reply
             return reply
 
-        monkeypatch.setattr(fw_probe, "_ask", ask)
+        monkeypatch.setattr(fw.probe, "_ask", ask)
 
     return speak
 
 
 def test_the_pinned_version_answering_is_the_only_finding_that_is_ok(answering):
     answering(Reply(version=b"0.3.1"))
-    verdict = fw_probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw_probe.Finding.RUNNING
+    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    assert verdict.finding is fw.probe.Finding.RUNNING
     assert verdict
     assert verdict.version == "0.3.1"
 
 
 def test_another_version_answering_names_both_of_them(answering):
     answering(Reply(version=b"0.2.9"))
-    verdict = fw_probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw_probe.Finding.STALE
+    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    assert verdict.finding is fw.probe.Finding.STALE
     assert not verdict
     assert "0.2.9" in verdict.sentence and "0.3.1" in verdict.sentence
 
 
 def test_a_protocol_disagreement_is_told_apart_from_a_stale_build(answering):
     answering(Reply(version=b"0.3.1", protocol=fw_api.RPC_PROTOCOL_VERSION + 7))
-    verdict = fw_probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw_probe.Finding.PROTOCOL
+    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    assert verdict.finding is fw.probe.Finding.PROTOCOL
 
 
 def test_without_a_pin_the_running_version_is_reported_and_not_judged(answering):
     answering(Reply(version=b"0.2.9"))
-    verdict = fw_probe.identify("/dev/ttyACM0", None)
-    assert verdict.finding is fw_probe.Finding.RUNNING
+    verdict = fw.probe.identify("/dev/ttyACM0", None)
+    assert verdict.finding is fw.probe.Finding.RUNNING
     assert "no version is pinned" in verdict.sentence
 
 
 def test_a_fixed_width_string_is_read_up_to_its_terminator(answering):
     answering(Reply(version=b"0.3.1\x00\x00\x00\x00"))
-    assert fw_probe.identify("/dev/ttyACM0", "0.3.1").version == "0.3.1"
+    assert fw.probe.identify("/dev/ttyACM0", "0.3.1").version == "0.3.1"
 
 
 def test_silence_carries_the_silicon_so_the_advice_can_differ(answering):
-    answering(fw_link.LinkTimeout("nothing"))
-    verdict = fw_probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw_probe.Finding.SILENT
-    assert verdict.silicon is fw_probe.Silicon.ESPRESSIF
+    answering(fw.link.LinkTimeout("nothing"))
+    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    assert verdict.finding is fw.probe.Finding.SILENT
+    assert verdict.silicon is fw.probe.Silicon.ESPRESSIF
     assert "held in reset" in verdict.sentence
 
 
 def test_a_port_that_will_not_open_is_not_the_same_as_one_that_says_nothing(answering):
     answering(PermissionError("busy"))
-    verdict = fw_probe.identify("/dev/ttyACM0", "0.3.1")
-    assert verdict.finding is fw_probe.Finding.ABSENT
+    verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
+    assert verdict.finding is fw.probe.Finding.ABSENT
     assert "would not open" in verdict.sentence
 
 
 def test_a_port_that_has_gone_is_settled_before_anything_is_opened(attached):
     attached()
-    assert fw_probe.identify("/dev/ttyACM0").finding is fw_probe.Finding.ABSENT
+    assert fw.probe.identify("/dev/ttyACM0").finding is fw.probe.Finding.ABSENT

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from shared.bench_api import Option, SubsystemState
-from transport import fw_image, fw_link, fw_probe
+from transport import fw
 
 AUTO = "auto"
 
@@ -26,11 +26,11 @@ def serial_ports() -> tuple[Option, ...]:
     the way through. The likely ones sort first so the list reads as a
     recommendation rather than a filter.
     """
-    ranked = sorted(fw_probe.candidates(), key=lambda c: (not c.plausible, c.device))
+    ranked = sorted(fw.probe.candidates(), key=lambda c: (not c.plausible, c.device))
     return (Option(AUTO, AUTO), *(Option(c.device, _label(c)) for c in ranked))
 
 
-def _label(candidate: fw_probe.Candidate) -> str:
+def _label(candidate: fw.probe.Candidate) -> str:
     """Return what to call one port, which is its name plus whatever it admits to."""
     if not candidate.plausible:
         return candidate.device
@@ -45,8 +45,8 @@ def named_port(port: str) -> str | None:
 def pinned_version() -> str | None:
     """Return the version this machine says it runs, treating an unreadable pin as none."""
     try:
-        return fw_image.expected()
-    except fw_image.ImageError:
+        return fw.image.expected()
+    except fw.image.ImageError:
         return None
 
 
@@ -63,7 +63,7 @@ def state() -> SubsystemState:
 def firmware() -> Any:
     """Return the open link, or say there is nothing to call through."""
     if _link is None:
-        raise fw_link.LinkError("the transport is not connected")
+        raise fw.link.LinkError("the transport is not connected")
     return _link
 
 
@@ -76,9 +76,9 @@ def logs_to(sink: Any) -> None:
 def open_link(port: str) -> str:
     """Open the link, atomically, so a half-open one is not representable."""
     global _link, _failure
-    chosen = fw_probe.find_port(named_port(port))
+    chosen = fw.probe.find_port(named_port(port))
     try:
-        opened = fw_link.FirmwareLink(chosen, on_log=_sink)
+        opened = fw.link.FirmwareLink(chosen, on_log=_sink)
     except Exception as exc:
         _failure = f"{type(exc).__name__}: {exc}"
         raise

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from shared import fw_api
-from transport import fw_link
+from transport.fw import link
 
 ESPRESSIF_VID = 0x303A
 
@@ -105,16 +105,14 @@ def find_port(port: str | None = None) -> str:
         if attached(port) is not None:
             return port
         seen = ", ".join(shortlist) or "none"
-        raise fw_link.LinkError(
+        raise link.LinkError(
             f"nothing is attached on {port}; ports that could carry a board: {seen}"
         )
     if not shortlist:
-        raise fw_link.LinkError("no port that could carry a board is attached")
+        raise link.LinkError("no port that could carry a board is attached")
     only, *rest = shortlist
     if rest:
-        raise fw_link.LinkError(
-            f"several ports could, name one: {', '.join(shortlist)}"
-        )
+        raise link.LinkError(f"several ports could, name one: {', '.join(shortlist)}")
     return only
 
 
@@ -166,12 +164,12 @@ def _ask(port: str, grace: float) -> Any:
     development boards, so the first request often reaches a chip that is still
     coming up. Retrying is the difference between "no firmware" and "not yet".
     """
-    with fw_link.FirmwareLink(port, timeout=PROBE_TIMEOUT) as link:
+    with link.FirmwareLink(port, timeout=PROBE_TIMEOUT) as opened:
         deadline = time.monotonic() + grace
         while True:
             try:
-                return link.sys.version()
-            except fw_link.LinkTimeout:
+                return opened.sys.version()
+            except link.LinkTimeout:
                 if time.monotonic() >= deadline:
                     raise
 
@@ -198,7 +196,7 @@ def identify(
 
     try:
         reply = _ask(port, grace)
-    except fw_link.LinkTimeout:
+    except link.LinkTimeout:
         return Verdict(
             Finding.SILENT,
             port,

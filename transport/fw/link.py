@@ -7,7 +7,7 @@ from concurrent.futures import Future
 from typing import Any, Callable, NamedTuple
 
 from shared import fw_api
-from transport import fw_wire
+from transport.fw import framing
 
 # ── Names ────────────────────────────────────────────────────────────────────
 
@@ -40,11 +40,11 @@ class LinkClosed(LinkError):
 class FrameReader:
     """Owns the stream and the splitter, and hands each whole frame to a router."""
 
-    def __init__(self, stream: Any, route: Callable[[fw_wire.Frame], None]) -> None:
+    def __init__(self, stream: Any, route: Callable[[framing.Frame], None]) -> None:
         """Take the stream to read and the router that every frame goes to."""
         self._stream = stream
         self._route = route
-        self._splitter = fw_wire.FrameSplitter()
+        self._splitter = framing.FrameSplitter()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.malformed = 0
@@ -80,7 +80,7 @@ class FrameReader:
             if not data:
                 continue
             for run in self._splitter.feed(data):
-                frame = fw_wire.open_frame(run)
+                frame = framing.open_frame(run)
                 if frame is None:
                     self.malformed += 1
                     continue
@@ -96,11 +96,11 @@ class LogForwarder:
     def __init__(self, sink: Any = None, depth: int = LOG_DEPTH) -> None:
         """Take the sink each record goes to, and how many may wait for it."""
         self._sink = sink
-        self._queue: queue.Queue[fw_wire.LogRecord] = queue.Queue(maxsize=depth)
+        self._queue: queue.Queue[framing.LogRecord] = queue.Queue(maxsize=depth)
         self._thread: threading.Thread | None = None
         self.dropped = 0
 
-    def offer(self, record: fw_wire.LogRecord) -> None:
+    def offer(self, record: framing.LogRecord) -> None:
         """Hand over a record without ever blocking, dropping the oldest if full."""
         if self._sink is None:
             return
@@ -228,7 +228,7 @@ class RequestBroker:
         """Queue one request and wait for the payload of the reply that answers it."""
         return self.submit(ns, method, payload, timeout).result()
 
-    def settle(self, frame: fw_wire.Frame) -> None:
+    def settle(self, frame: framing.Frame) -> None:
         """Match a reply to the request that is waiting for it, or count it lost."""
         with self._lock:
             pending = self._pending.pop(frame.header.id, None)
@@ -268,8 +268,8 @@ class RequestBroker:
         request_id, pending = self._reserve()
         try:
             self._write(
-                fw_wire.encode(
-                    fw_wire.seal_request(request_id, job.ns, job.method, job.payload)
+                framing.encode(
+                    framing.seal_request(request_id, job.ns, job.method, job.payload)
                 )
             )
             deadline = self._timeout if job.timeout is None else job.timeout
@@ -365,10 +365,10 @@ class FirmwareLink:
         except Exception:
             pass
 
-    def _route(self, frame: fw_wire.Frame) -> None:
+    def _route(self, frame: framing.Frame) -> None:
         """Send one frame to whichever collaborator it belongs to."""
         if frame.type == fw_api.RPC_FRAME_LOG:
-            self._logs.offer(fw_wire.log_record(frame))
+            self._logs.offer(framing.log_record(frame))
         elif frame.type == fw_api.RPC_FRAME_REP:
             self._broker.settle(frame)
         else:

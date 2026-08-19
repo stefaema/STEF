@@ -8,7 +8,7 @@ from shared import fw_api
 DELIMITER = b"\x00"
 
 
-class WireError(fw_api.FwError):
+class FramingError(fw_api.FwError):
     """A frame that cannot be built, or bytes that cannot be one."""
 
 
@@ -81,13 +81,13 @@ class FrameSplitter:
 def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes:
     """Return a request frame, header and CRC put on by the firmware's own code."""
     if len(payload) > fw_api.RPC_MAX_PAYLOAD:
-        raise WireError(f"payload of {len(payload)} bytes exceeds the frame")
+        raise FramingError(f"payload of {len(payload)} bytes exceeds the frame")
     buf = fw_api.rpc_buf_t()
     if payload:
         ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
     length = fw_api.rpc_frame_seal_req(buf, request_id, ns, method, len(payload))
     if length == 0:
-        raise WireError(f"the firmware refused to seal {len(payload)} bytes")
+        raise FramingError(f"the firmware refused to seal {len(payload)} bytes")
     return bytes(buf.bytes[:length])
 
 
@@ -98,7 +98,7 @@ def encode(frame: bytes) -> bytes:
     dst = (ctypes.c_uint8 * capacity)()
     written = fw_api.cobs_encode(src, len(frame), dst, capacity)
     if written == 0:
-        raise WireError(f"cobs_encode refused {len(frame)} bytes")
+        raise FramingError(f"cobs_encode refused {len(frame)} bytes")
     return bytes(dst[:written]) + DELIMITER
 
 

@@ -4,7 +4,7 @@ import pytest
 
 from shared import bench_api
 from shared.bench_api import StepStatus
-from transport import fw_link, fw_probe
+from transport import fw
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def verify(declared):
 
 def candidate(device, vid, description=""):
     """Return one attached port, in the shape pyserial hands them over."""
-    return fw_probe.Candidate(device, vid, 1, description, fw_probe._silicon(vid))
+    return fw.probe.Candidate(device, vid, 1, description, fw.probe._silicon(vid))
 
 
 @pytest.fixture
@@ -23,12 +23,12 @@ def only(monkeypatch):
     """Return a way to say what is attached, with nothing answering on it."""
 
     def plug(one):
-        monkeypatch.setattr(fw_probe, "candidates", lambda: (one,))
+        monkeypatch.setattr(fw.probe, "candidates", lambda: (one,))
 
         def silent(*_, **__):
-            raise fw_link.LinkTimeout("nothing")
+            raise fw.link.LinkTimeout("nothing")
 
-        monkeypatch.setattr(fw_probe, "_ask", silent)
+        monkeypatch.setattr(fw.probe, "_ask", silent)
         return one
 
     return plug
@@ -73,7 +73,7 @@ def test_an_unrecognised_port_is_still_asked_rather_than_refused(verify, only):
 def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
     verify, monkeypatch
 ):
-    monkeypatch.setattr(fw_probe, "candidates", lambda: ())
+    monkeypatch.setattr(fw.probe, "candidates", lambda: ())
     settled = list(bench_api.run_routine(verify, {"port": "/dev/ttyNOPE"}))
     assert settled[0].status is StepStatus.FAILED
     assert [o.status for o in settled[1:]] == [StepStatus.SKIPPED, StepStatus.SKIPPED]

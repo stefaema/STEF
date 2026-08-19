@@ -5,7 +5,7 @@ import time
 import pytest
 
 from shared import fw_api
-from transport import fw_link, fw_wire
+from transport import fw
 
 TIMEOUT = 0.5
 
@@ -15,7 +15,7 @@ def seal_reply(request_id, status, payload=b""):
     if payload:
         ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
     length = fw_api.rpc_frame_seal_rep(buf, request_id, status, len(payload))
-    return fw_wire.encode(bytes(buf.bytes[:length]))
+    return fw.framing.encode(bytes(buf.bytes[:length]))
 
 
 def seal_log(level, uptime_ms, text):
@@ -23,7 +23,7 @@ def seal_log(level, uptime_ms, text):
     payload = text.encode()
     ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
     length = fw_api.rpc_frame_seal_log(buf, level, uptime_ms, len(payload))
-    return fw_wire.encode(bytes(buf.bytes[:length]))
+    return fw.framing.encode(bytes(buf.bytes[:length]))
 
 
 class FakeFirmware:
@@ -32,7 +32,7 @@ class FakeFirmware:
         self.requests = []
         self.closed = False
         self._out = bytearray()
-        self._splitter = fw_wire.FrameSplitter()
+        self._splitter = fw.framing.FrameSplitter()
         self._cv = threading.Condition()
 
     def push(self, data):
@@ -42,7 +42,7 @@ class FakeFirmware:
 
     def write(self, data):
         for run in self._splitter.feed(data):
-            frame = fw_wire.open_frame(run)
+            frame = fw.framing.open_frame(run)
             assert frame is not None
             self.requests.append(frame)
             if self.answer is not None:
@@ -78,7 +78,7 @@ def echo_state(_firmware, frame):
 
 def linked(answer=None, timeout=TIMEOUT, **kwargs):
     firmware = FakeFirmware(answer)
-    link = fw_link.FirmwareLink(stream=firmware, timeout=timeout, **kwargs)
+    link = fw.link.FirmwareLink(stream=firmware, timeout=timeout, **kwargs)
     return firmware, link
 
 
@@ -95,10 +95,10 @@ def wait_until(predicate, timeout=TIMEOUT):
 
 
 def test_a_link_names_a_port_or_carries_a_stream():
-    with pytest.raises(fw_link.LinkError):
-        fw_link.FirmwareLink()
-    with pytest.raises(fw_link.LinkError):
-        fw_link.FirmwareLink("/dev/null", stream=FakeFirmware())
+    with pytest.raises(fw.link.LinkError):
+        fw.link.FirmwareLink()
+    with pytest.raises(fw.link.LinkError):
+        fw.link.FirmwareLink("/dev/null", stream=FakeFirmware())
 
 
 def test_a_link_reads_from_the_moment_it_exists():
@@ -244,14 +244,14 @@ def test_a_frame_that_does_not_open_is_counted_and_discarded():
 
 def test_silence_ends_the_call_rather_than_the_process():
     _, link = linked()
-    with link, pytest.raises(fw_link.LinkTimeout):
+    with link, pytest.raises(fw.link.LinkTimeout):
         link.sys.state(timeout=0.05)
 
 
 def test_an_abandoned_request_frees_its_id():
     firmware, link = linked()
     with link:
-        with pytest.raises(fw_link.LinkTimeout):
+        with pytest.raises(fw.link.LinkTimeout):
             link.sys.state(timeout=0.05)
         firmware.push(seal_reply(firmware.requests[0].header.id, fw_api.RPC_OK))
         assert wait_until(lambda: link.unmatched == 1)
@@ -270,7 +270,7 @@ def test_every_request_carries_its_own_id():
 def test_a_closed_link_refuses_new_calls():
     _, link = linked(echo_state)
     link.close()
-    with pytest.raises(fw_link.LinkClosed):
+    with pytest.raises(fw.link.LinkClosed):
         link.sys.state()
 
 
