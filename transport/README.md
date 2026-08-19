@@ -30,7 +30,7 @@ ambiguous, and only silence is worth a reset to resolve, which is why the ROM
 tier lives under `bench/` and nothing on the connect path reaches it.
 
 `identify()` returns one of five findings, and each is a different sentence
-because each has a different remedy: the pinned firmware answering, another
+because each has a different remedy: the installed firmware answering, another
 build answering, a protocol the PC cannot read, silence, and a port that is gone
 or will not open. `can_connect` runs the same call and blocks with the same
 sentence, so a disabled Connect button names what it found rather than asking
@@ -44,11 +44,10 @@ partition table and an app at three offsets that only the build knows, so the
 unit is those binaries plus the `manifest.json` recording where each goes and
 what it hashes to.
 
-Which of them this installation runs is pinned in `config_dir()/firmware.toml`,
-never inferred. Taking the newest installed would mean that dropping a file into
-a directory silently upgrades the deployment. With no pin, one installed release
-is the only answer available and several is a question only the operator can
-settle, so `auto` refuses rather than guessing.
+A machine holds one release, because installing replaces rather than adds. So
+the version a board ought to be running is simply the one installed, and no file
+declares it. Several directories mean something was added by hand rather than
+installed, and `auto` refuses rather than guessing which was meant.
 
 ## Layout
 

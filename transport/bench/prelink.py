@@ -27,7 +27,7 @@ from shared.bench_api import (
 from transport import fw
 from transport.bench import rom
 from transport.bench.link import PORT
-from transport.transport import AUTO, named_port, pinned_version
+from transport.transport import AUTO, installed_version, named_port
 
 STATUS = {
     fw.probe.Finding.RUNNING: PASSED,
@@ -126,7 +126,7 @@ def verify_port(values: dict[str, Any]) -> Iterator[StepOutcome]:
         step=DESCRIPTOR,
     )
 
-    verdict = fw.probe.identify(port, pinned_version())
+    verdict = fw.probe.identify(port, installed_version())
     if verdict.finding is not fw.probe.Finding.SILENT:
         settled = STATUS[verdict.finding]
         raise Abandoned(verdict.sentence, settled, _panel(settled, verdict))

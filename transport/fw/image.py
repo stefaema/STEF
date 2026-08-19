@@ -5,23 +5,21 @@ and an app, each written at its own offset, and only the build knows what those
 offsets were. So the unit here is a directory holding those binaries and one
 manifest saying where each goes, and the inventory is a directory of those.
 
-Which of them this installation runs is pinned rather than guessed. Taking the
-newest would mean that dropping a file into a directory silently upgrades the
-deployment, and a machine should say what it runs.
+A machine holds one release at a time, because installing replaces rather than
+adds. So the version a board ought to be running is the one that is installed,
+and nothing has to declare it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from shared import paths
 
 MANIFEST = "manifest.json"
-PIN_FILE = "firmware.toml"
 AUTO = "auto"
 READ_CHUNK = 1 << 20
 
@@ -123,40 +121,26 @@ def installed() -> tuple[Release, ...]:
 
 
 def versions() -> tuple[str, ...]:
-    """Return the versions a form may offer, with the pinned one standing for itself."""
+    """Return the versions a form may offer, with the installed one standing for itself."""
     return (AUTO, *(release.version for release in installed()))
 
 
 # ── The one this installation runs ───────────────────────────────────────────
 
 
-def pinned() -> str | None:
-    """Return the version this machine declares it runs, or None where it declares none."""
-    pin = paths.config_dir() / PIN_FILE
-    if not pin.is_file():
-        return None
-    try:
-        return tomllib.loads(pin.read_text()).get("version") or None
-    except tomllib.TOMLDecodeError as exc:
-        raise ImageError(f"{pin} is not readable TOML: {exc}") from exc
-
-
 def expected() -> str | None:
-    """Return the version a board ought to be running, without ever guessing at it.
+    """Return the version a board ought to be running, or None where nothing settles it.
 
-    A pin says it outright. Failing that, one installed release is not a guess
-    but the only answer available, and several is a question only the operator
-    can settle.
+    The installed release is the answer, since there is meant to be one. Several
+    means something was added rather than installed, which only the operator can
+    settle.
     """
-    declared = pinned()
-    if declared is not None:
-        return declared
     have = installed()
     return have[0].version if len(have) == 1 else None
 
 
 def resolve(version: str = AUTO) -> Release:
-    """Return the release a form's choice names, `auto` meaning the pinned one."""
+    """Return the release a form's choice names, `auto` meaning the installed one."""
     have = installed()
     if not have:
         raise ImageError(
@@ -175,8 +159,9 @@ def resolve(version: str = AUTO) -> Release:
     if wanted is None:
         names = ", ".join(r.version for r in have)
         raise ImageError(
-            f"several versions are installed and none is pinned, so 'auto' names "
-            f"nothing; pin one or choose: {names}"
+            f"several versions are installed, so 'auto' names nothing; installing "
+            f"replaces rather than adds, so remove the ones that do not belong "
+            f"here or choose: {names}"
         )
     return resolve(wanted)
 

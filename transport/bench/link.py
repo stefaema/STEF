@@ -17,7 +17,7 @@ from shared.bench_api import (
     blocked,
 )
 from transport import fw, transport
-from transport.transport import AUTO, named_port, pinned_version, serial_ports
+from transport.transport import AUTO, installed_version, named_port, serial_ports
 
 PORT = bench_api.choice(
     "port",
@@ -54,7 +54,7 @@ def can_connect(port: str = AUTO) -> Readiness:
         chosen = fw.probe.find_port(named_port(port))
     except fw.link.LinkError as exc:
         return blocked(str(exc))
-    verdict = fw.probe.identify(chosen, pinned_version())
+    verdict = fw.probe.identify(chosen, installed_version())
     return READY if verdict else blocked(verdict.sentence)
 
 

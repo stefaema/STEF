@@ -130,7 +130,7 @@ def answering(monkeypatch, attached):
     return speak
 
 
-def test_the_pinned_version_answering_is_the_only_finding_that_is_ok(answering):
+def test_the_installed_version_answering_is_the_only_finding_that_is_ok(answering):
     answering(Reply(version=b"0.3.1"))
     verdict = fw.probe.identify("/dev/ttyACM0", "0.3.1")
     assert verdict.finding is fw.probe.Finding.RUNNING
@@ -152,11 +152,13 @@ def test_a_protocol_disagreement_is_told_apart_from_a_stale_build(answering):
     assert verdict.finding is fw.probe.Finding.PROTOCOL
 
 
-def test_without_a_pin_the_running_version_is_reported_and_not_judged(answering):
+def test_with_nothing_installed_the_running_version_is_reported_and_not_judged(
+    answering,
+):
     answering(Reply(version=b"0.2.9"))
     verdict = fw.probe.identify("/dev/ttyACM0", None)
     assert verdict.finding is fw.probe.Finding.RUNNING
-    assert "no version is pinned" in verdict.sentence
+    assert "no firmware is installed" in verdict.sentence
 
 
 def test_a_fixed_width_string_is_read_up_to_its_terminator(answering):

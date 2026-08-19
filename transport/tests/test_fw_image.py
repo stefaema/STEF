@@ -1,4 +1,4 @@
-"""What counts as an installed image, and which one this machine says it runs."""
+"""What counts as an installed image, and which one a board ought to be running."""
 
 import hashlib
 import json
@@ -52,23 +52,10 @@ def install(root, version, chip="esp32c3", corrupt=False, manifest=True):
 
 @pytest.fixture
 def inventory(tmp_path, monkeypatch):
-    """Point both roots at a scratch directory, so nothing reads the real machine."""
+    """Point the inventory at a scratch directory, so nothing reads the real machine."""
     bins = tmp_path / "firmware"
-    config = tmp_path / "config"
-    config.mkdir()
     monkeypatch.setattr(fw.image.paths, "firmware_bins", lambda: bins)
-    monkeypatch.setattr(fw.image.paths, "config_dir", lambda: config)
     return bins
-
-
-@pytest.fixture
-def pin(inventory, tmp_path):
-    """Return a way to write the version this machine declares it runs."""
-
-    def declare(version):
-        (tmp_path / "config" / fw.image.PIN_FILE).write_text(f'version = "{version}"\n')
-
-    return declare
 
 
 # ── What is installed ────────────────────────────────────────────────────────
@@ -103,31 +90,27 @@ def test_an_empty_inventory_is_empty_rather_than_an_error(inventory):
 # ── The one this installation runs ───────────────────────────────────────────
 
 
-def test_a_pin_says_outright_what_should_be_running(inventory, pin):
-    install(inventory, "0.2.9")
+def test_the_installed_release_is_what_a_board_ought_to_be_running(inventory):
     install(inventory, "0.3.1")
-    pin("0.3.1")
     assert fw.image.expected() == "0.3.1"
     assert fw.image.resolve().version == "0.3.1"
 
 
-def test_one_installed_release_is_the_only_answer_available_and_not_a_guess(inventory):
-    install(inventory, "0.3.1")
-    assert fw.image.expected() == "0.3.1"
+def test_nothing_installed_settles_nothing(inventory):
+    assert fw.image.expected() is None
 
 
-def test_several_installed_and_no_pin_is_a_question_rather_than_the_newest(inventory):
+def test_several_installed_is_a_question_rather_than_the_newest(inventory):
     install(inventory, "0.2.9")
     install(inventory, "0.3.1")
     assert fw.image.expected() is None
-    with pytest.raises(fw.image.ImageError, match="none is pinned"):
+    with pytest.raises(fw.image.ImageError, match="installing replaces"):
         fw.image.resolve()
 
 
-def test_a_named_version_is_taken_over_the_pin(inventory, pin):
+def test_a_named_version_is_taken_over_the_installed_one(inventory):
     install(inventory, "0.2.9")
     install(inventory, "0.3.1")
-    pin("0.3.1")
     assert fw.image.resolve("0.2.9").version == "0.2.9"
 
 

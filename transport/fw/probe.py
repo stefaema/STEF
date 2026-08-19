@@ -179,9 +179,9 @@ def identify(
 ) -> Verdict:
     """Return what is on this port, asking the app and never the bootloader.
 
-    `expected` is the version this installation is pinned to. Without one the
-    running firmware is reported and not judged, since nothing said what it
-    should have been.
+    `expected` is the version this machine has installed. Without one the running
+    firmware is reported and not judged, since nothing here says what it should
+    have been.
     """
     seen = attached(port)
     if seen is None:
@@ -239,17 +239,17 @@ def identify(
             Finding.STALE,
             port,
             f"your firmware, wrong build: {running} is running and {expected} "
-            f"is pinned. Flash it",
+            f"is installed. Flash it",
             fields,
             running,
             seen.silicon,
         )
 
-    pinned = "" if expected is not None else ", and no version is pinned"
+    unjudged = "" if expected is not None else ", and no firmware is installed here"
     return Verdict(
         Finding.RUNNING,
         port,
-        f"{_text(reply.project)} {running} is answering on {port}{pinned}",
+        f"{_text(reply.project)} {running} is answering on {port}{unjudged}",
         fields,
         running,
         seen.silicon,
