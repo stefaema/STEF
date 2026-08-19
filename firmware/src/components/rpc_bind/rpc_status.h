@@ -1,8 +1,6 @@
 /**
  * @file rpc_status.h
  * @brief Bridges the gap between TMC2209 errors and RPC errors.
- *
- *
  */
 
 #ifndef RPC_STATUS_H
