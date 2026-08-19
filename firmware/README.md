@@ -59,7 +59,7 @@ idf.py build
 
 `set-target` regenerates `sdkconfig` from `sdkconfig.defaults` and discards any
 menuconfig choices, so do not repeat it casually. Board wiring (UART pins,
-per-driver STEP/DIR/EN/DIAG, LED GPIO) lives in Kconfig, reached with
+per-driver STEP/DIR/EN/DIAG) lives in Kconfig, reached with
 `idf.py menuconfig`.
 
 ## Flashing

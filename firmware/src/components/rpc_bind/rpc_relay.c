@@ -25,13 +25,10 @@
 #include "tmc2209_frame.h"
 
 /*
- * A datagram the library did not build is one it cannot account for: it may
- * have written a register we believe we know, and the cache has no way to
- * tell. So a send voids the owned slots.
- *
- * A well-formed read request is the one exception, and it is worth making
- * because polling registers by hand is most of what this tier is for. Four
- * bytes with the write flag clear cannot change anything in the driver.
+ * Checks if the request is a read, which is the only kind of request that
+ * does not change the device's state. The library's own `tmc2209_uart_send`
+ * function does not know this, and the relay needs to know it to invalidate
+ * the device's owned state only when a write has been sent.
  */
 static bool changes_nothing(const uint8_t *tx, size_t tx_len)
 {

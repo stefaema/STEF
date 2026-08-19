@@ -1,11 +1,10 @@
 /**
  * @file rpc_link.h
- * @brief Carries frames over the native USB port, and nothing else does.
+ * @brief Carries frames over the native USB port.
  *
- * One cable does everything: flashing, JTAG, and this. So `ESP_LOGI` cannot
+ * One cable does everything: flashing, JTAG, and this. So `ESP_LOGE` cannot
  * also go to stdout, because raw text between frames is exactly what a framer
- * must not receive. Starting the link redirects the log stream into it, and
- * from that moment a log is a frame like any other.
+ * must not receive. Starting the link redirects the log stream into it.
  */
 
 #ifndef RPC_LINK_H

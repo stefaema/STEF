@@ -36,8 +36,6 @@ The three correspond to the points where work moves.
 
 ## Layout
 
-Each file answers one question. Read them in this order.
-
 | file | the question it answers | key names |
 |------|------------------------|-----------|
 | `paths.py` | where is everything | `ROOT`, `CICD_BUILD`, `CICD_RUNNER`, `HOOKS_PATH` |
@@ -48,12 +46,6 @@ Each file answers one question. Read them in this order.
 | `checks.py` | what does one check do to one thing | `check_fmt`, `apply_fmt`, `check_lint`, `check_types`, `check_build`, `cmake`, `check_test`, `check_generated`, `check_commit_msg` |
 | `actions.py` | which checks make up an action, and which branch demands which action | `lint`, `test`, `integration`, `BRANCH_ACTION`, `required_for` |
 | `run.py` | entry point: what you or a hook ask of the `ci_cd` module | `parser`, `main`, `list_modules` |
-
-The dependency direction is strictly down that list: `actions.py` imports from
-`checks.py` and never the reverse, and only `run.py` imports `actions.py`. A new
-check is one function in `checks.py` plus one line in `actions.py`. A new action
-is one function and one entry in `ORDER`. A new branch policy is one entry in
-`BRANCH_ACTION` and nothing else.
 
 ## Hooks
 

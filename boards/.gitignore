@@ -1,16 +1,14 @@
-# KiCad writes these beside the project; the sources above them are the truth.
-
-# Timestamped project snapshots and editor autosaves.
+# Snapshots and autosaves.
 *-backups/
 _autosave-*
 *.bak
 *-bak
 
-# Per-user view state: layer colours, zoom, last selection.
+# Per-user.
 *.kicad_prl
 
-# Footprint cache, rebuilt from the library tables on open.
+# Footprint cache.
 fp-info-cache
 
-# Fabrication outputs, plotted from the layout on demand.
+# Fabrication outputs, this is Deployment
 fab/

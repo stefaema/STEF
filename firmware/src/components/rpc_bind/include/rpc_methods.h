@@ -3,7 +3,7 @@
  * @brief The method tables this image serves, for the root that registers them.
  *
  * The `rpc` component names no handler, so something has to. These are what it
- * is handed, and `dev_main.c` is where the handing happens.
+ * is handed.
  *
  * Each table is where its namespace's payload sizes are taken, since `sizeof`
  * is evaluated here in `rpc_bind` where those structs are visible. The component

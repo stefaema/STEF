@@ -7,8 +7,7 @@ menu "STEF Board"
         range 1 2
         default 1
         help
-            UART carrying the TMC2209 link. Not 0: that one belongs to the
-            console on boards that still have one.
+            Not 0: that one carries the console.
 
     config STEF_TMC_UART_TX_GPIO
         int "UART TX GPIO"
@@ -16,9 +15,8 @@ menu "STEF Board"
         default 42
         help
             Goes to PDN_UART through the series resistor. TX and RX are tied
-            together at the driver, so the ESP32 hears its own bytes back.
-            That echo is expected: it is what the library checks to notice a
-            collision on the wire.
+            together at the driver, so the ESP32 hears its own bytes back and
+            the library reads that echo to notice a collision.
 
     config STEF_TMC_UART_RX_GPIO
         int "UART RX GPIO"
@@ -38,15 +36,13 @@ menu "STEF Board"
 
     config STEF_TMC_UART_TRACE
         bool "Log every byte on the driver bus"
-        default y
+        default n
         help
-            Logs what went out and what came back for every transaction, as a
-            log frame the PC receives like any other.
-
-            The question a silent bus raises is whether anything came back at
-            all, and no status code answers it: a bad echo says the bytes did
-            not match, not what did arrive. Costs a log line per datagram, so
-            turn it off once the wiring is settled.
+            Every datagram, both directions, at info level, so it lands on the
+            console and not on the link. A bad echo says the bytes did not
+            match, not what did arrive, so on a silent bus this is the only
+            thing that says whether anything came back at all. Costs a log
+            line per datagram.
 
     comment "Pulse generation"
 
@@ -72,6 +68,9 @@ menu "STEF Board"
     #
     # Every driver on the wire needs a different address, and each STEP pin
     # spends one RMT channel and one PCNT unit. This part has four of each.
+    #
+    # A pin left at -1 is not wired, and every call that needs it is refused
+    # rather than ignored.
     #
 
     menu "Driver 0"
@@ -102,21 +101,18 @@ menu "STEF Board"
             range -1 48
             default 6
             help
-                Active low: high disables the power stage. -1 if not wired,
-                which makes every call naming it a clean refusal.
+                Active low: high disables the power stage.
 
-                Wants a pull-up to VIO as well. The pin carries no internal one,
-                so the level while the ESP32 is in reset or being flashed is
-                whatever the board gives it.
+                Wants a pull-up to VIO. The pin carries no internal one, so the
+                level while the ESP32 is in reset or being flashed is whatever
+                the board gives it.
 
         config STEF_DRV0_STEP_GPIO
             int "STEP GPIO"
             range -1 48
             default 5
             help
-                One pulse per microstep. Claims an RMT channel and a PCNT unit
-                when set; -1 leaves this driver with no pulse source, and every
-                motion call on it is refused rather than ignored.
+                One pulse per microstep.
 
         config STEF_DRV0_DIR_GPIO
             int "DIR GPIO"

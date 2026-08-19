@@ -1,18 +1,8 @@
 /**
  * @file rpc_status.h
- * @brief The library's error as the wire's status.
+ * @brief Bridges the gap between TMC2209 errors and RPC errors.
  *
- * Two vocabularies that are the same vocabulary. `rpc_api.h` names its statuses
- * after `TMC2209_ERR_*` on purpose, and still cannot include that header: the
- * wire's values are fixed by the protocol, the library's by its own enum, and
- * neither is entitled to move the other.
  *
- * Both are `rpc_bind`'s to know, which is why the correspondence is written
- * down here. A renumbering, not a translation.
- *
- * Portable by discipline: this file and the other bridges include the two
- * libraries and nothing from ESP-IDF, which is what lets `test/unit` compile
- * them on the host.
  */
 
 #ifndef RPC_STATUS_H

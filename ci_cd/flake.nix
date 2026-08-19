@@ -1,5 +1,5 @@
 {
-  description = "STEF - repository verification and delivery";
+  description = "STEF - Continuous Integration & Continuous Deployment";
 
   inputs = {
     base.url = "path:../dev_base";

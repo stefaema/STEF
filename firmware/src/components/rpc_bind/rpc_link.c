@@ -31,9 +31,7 @@
  * A finished frame waiting for the wire, CRC included and COBS not yet applied.
  *
  * Copied into the queue rather than passed by pointer. It costs a memcpy per
- * frame on a link that moves a few hundred bytes at a time, and it buys the
- * absence of an ownership question: no allocation, no free, no frame still
- * referenced by a task that gave up on it.
+ * frame but buys the absence of allocation/reference issues.
  */
 typedef struct {
     uint16_t len;
@@ -46,12 +44,10 @@ static bool          s_started;
 /* ── The single TX owner ────────────────────────────────────────────────── */
 
 /*
- * Replies come from the RX task and logs come from whichever task called
- * ESP_LOGx, so there are two producers and there is exactly one consumer. Two
- * tasks writing the port directly would interleave inside a frame, and the
- * damage would show up as a CRC failure on the PC with nothing pointing back
- * here. Everything therefore goes through this queue, and only this task
- * encodes and writes.
+ * Two producers, one consumer: replies from the RX task, error logs from
+ * whichever task called ESP_LOGx. Two tasks writing the port directly would
+ * interleave inside a frame, and the damage would show up as a CRC failure on
+ * the PC with nothing pointing back here.
  */
 static void tx_task(void *arg)
 {
@@ -81,7 +77,6 @@ static void tx_task(void *arg)
     }
 }
 
-/** Hands a finished frame to the TX task. False when the queue is full. */
 static bool tx_send(const void *data, size_t len, TickType_t wait)
 {
     if (s_txq == NULL || len == 0 || len > RPC_MAX_FRAME) {
@@ -160,7 +155,6 @@ static int log_to_link(const char *fmt, va_list ap)
         return n;
     }
 
-    /* Formatted into the frame it ships in; the text is the whole payload. */
     rpc_buf_t buf;
     char     *text = rpc_payload(&buf);
 
@@ -188,8 +182,8 @@ static int log_to_link(const char *fmt, va_list ap)
 
 /* ── Serving ────────────────────────────────────────────────────────────── */
 
-/* Answers one decoded frame. Replies to requests; ignores anything else,
- * since a reply or a log arriving here is the PC echoing, not asking. */
+/* Ignores anything that is not a request: a reply or a log arriving here is
+ * the PC echoing, not asking. */
 static void serve(const rpc_buf_t *frame, size_t len)
 {
     static rpc_buf_t reply;
@@ -222,8 +216,7 @@ static void serve(const rpc_buf_t *frame, size_t len)
  * two zeros, so this accumulates until one shows up and hands the run over.
  *
  * An overlong run is discarded, and so is everything after it up to the next
- * zero. That is the property COBS was chosen for: the resynchronisation point
- * is defined, not guessed, and is at most one frame away.
+ * zero. That is the property COBS was chosen for.
  */
 static void rx_task(void *arg)
 {
@@ -297,11 +290,7 @@ esp_err_t rpc_link_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    /*
-     * Last, deliberately. Anything that failed above still had a console to
-     * report it on, and stdout stops being a place logs go only once there is
-     * a link able to carry them.
-     */
+    /* Last, deliberately: anything that failed above still had the console. */
     esp_log_set_vprintf(log_to_link);
     s_started = true;
 

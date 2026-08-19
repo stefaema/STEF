@@ -5,10 +5,6 @@
  * Not the production entry point. This is what gets flashed onto the test rig
  * so the PC can exercise the RPC layer, then the tmc2209 component, then real
  * drivers, one layer at a time and in that order.
- *
- * There is deliberately nothing here that runs on its own. A dev board that
- * moves a motor at boot is a dev board you cannot leave plugged in, and every
- * capability this image has is supposed to be reachable from the PC anyway.
  */
 
 #include "devices.h"
@@ -21,24 +17,9 @@
 
 static const char *TAG = "stef";
 
-/*
- * The link comes up before the drivers do, deliberately. Construction is the
- * part most likely to fail on a hand-wired board, and a failure that happens
- * before there is anywhere to report it is a failure nobody sees.
- *
- * A construction failure is therefore not fatal here. The link stays up,
- * `sys.state` reports FAULT, and the PC gets told what went wrong. A board
- * that goes silent when its wiring is bad is a board you debug with a
- * multimeter instead of with the tool you already have open.
- */
 void app_main(void)
 {
-    /*
-     * The composition root composes. `rpc_bind` is where the two libraries
-     * meet; this is the only file that decides which of them this image
-     * installs, and it is the only one nothing else calls. Everything else
-     * offers a capability. This chooses.
-     */
+    /* Register what the firmware can receive as remote procedures */
     rpc_register(RPC_NS_SYS, rpc_sys_methods, RPC_SYS_COUNT);
     rpc_register(RPC_NS_RELAY, rpc_relay_methods, RPC_RELAY_COUNT);
     rpc_register(RPC_NS_RAW, rpc_raw_methods, RPC_RAW_COUNT);
@@ -53,6 +34,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "rpc link up, reset reason %d", (int)esp_reset_reason());
 
+    /* Setup the drivers, code-wise */
     if (!devices_init()) {
         ESP_LOGE(TAG, "device construction failed");
         return;

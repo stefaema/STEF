@@ -33,12 +33,7 @@
 /*
  * A batch is the unit of work for both writes and bring-up: n datagrams and
  * one IFCNT check, so ten registers cost eleven transactions rather than
- * twenty. Both take the same shape on the wire, so they decode with the same
- * function.
- *
- * The copy is unavoidable: the library's element carries the register first and
- * the wire's carries the value first, because the wire's has to keep its
- * uint32_t aligned and the library's answers to nothing but itself.
+ * twenty.
  */
 static bool ops_arg(const rpc_raw_write_args *in, size_t args_len, tmc2209_regval_t *ops)
 {

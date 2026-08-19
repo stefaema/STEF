@@ -25,7 +25,6 @@ rpc_status_t rpc_status_of_err(tmc2209_err_t err)
     /* clang-format on */
     }
 
-    /* No default above, so a new library error is a compile warning here
-     * rather than a value that quietly becomes RPC_INTERNAL on the wire. */
+    /* No default above, so a new library error is a compile warning. */
     return RPC_INTERNAL;
 }

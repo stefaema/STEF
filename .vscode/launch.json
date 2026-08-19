@@ -2,8 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            // Host-native tests are a plain x86 binary, so ordinary gdb debugs
-            // them. Nothing here touches the board.
             "name": "Debug unit tests (host gdb)",
             "type": "cppdbg",
             "request": "launch",
