@@ -4,6 +4,19 @@
     // wrapper. The idf.py tasks do: only firmware's devshell has the toolchain.
     "tasks": [
         {
+            "label": "editor: reopen inside the devshell",
+            "detail": "Opens the workspace in a window launched from `nix develop`, so the language server and linters are the ones CI uses. Its own user-data-dir, because the `code` CLI otherwise hands the request to this window, which keeps the environment it started in. Extensions are shared.",
+            "type": "shell",
+            "command": "nix develop --command env -u VSCODE_IPC_HOOK_CLI code --new-window --user-data-dir ${userHome}/.vscode-stef --extensions-dir ${userHome}/.vscode/extensions ${workspaceFolder}",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated"
+            }
+        },
+        {
             "label": "ci: lint",
             "detail": "Format, lint and type verdicts over every tracked file.",
             "type": "shell",
