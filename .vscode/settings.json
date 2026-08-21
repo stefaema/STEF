@@ -79,13 +79,17 @@
     "files.insertFinalNewline": true,
     "files.trimTrailingWhitespace": true,
     "search.exclude": {
+        "**/.direnv/**": true,
         "**/build/**": true,
         "**/.cache/**": true,
         "**/__pycache__/**": true,
         "**/.venv/**": true,
         "meta/**": true
     },
+    // .direnv holds the nix store trees the flake pulls in, one of which is a
+    // read-only copy of this repository. Watching or searching those is waste.
     "files.watcherExclude": {
+        "**/.direnv/**": true,
         "**/build/**": true,
         "**/.cache/**": true,
         "**/.git/objects/**": true
