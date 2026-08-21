@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from capture import capture
-from portable.ccapi import Endpoint, Methods, Setting
+from portable.ccapi import STREAMED, Endpoint, Methods, Setting
 from shared import bench_api
 from shared.bench_api import (
     PASSED,
@@ -84,6 +84,9 @@ def everything(values: dict[str, Any]) -> Iterator[StepOutcome]:
     refused: list[tuple[str, ...]] = []
     for feature in found.link.registry.features:
         if Methods.GET not in found.link.registry.methods_for(feature):
+            continue
+        if feature in STREAMED:
+            refused.append((feature, "a stream, which a plain GET would hold open"))
             continue
         try:
             responses[feature] = found.link.json("GET", feature)

@@ -1,6 +1,7 @@
 from portable.ccapi.camera import Camera
 from portable.ccapi.config import CameraConfig, Credentials
 from portable.ccapi.endpoints import (
+    STREAMED,
     Endpoint,
     Methods,
     Registry,
@@ -56,6 +57,7 @@ from portable.ccapi.vocabulary import (
     ErrorBody,
     FileInfo,
     FileType,
+    ImageQuality,
     LensInfo,
     LinkState,
     Packet,
@@ -70,6 +72,7 @@ from portable.ccapi.vocabulary import (
 )
 
 __all__ = [
+    "STREAMED",
     "Access",
     "AuthenticationError",
     "BatteryInfo",
@@ -95,6 +98,7 @@ __all__ = [
     "FocusStep",
     "ForbiddenError",
     "Functions",
+    "ImageQuality",
     "HeldButton",
     "HttpTransport",
     "InvalidRequestError",

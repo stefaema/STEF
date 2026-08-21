@@ -117,6 +117,17 @@ class Resource:
         return method in self.methods
 
 
+# Endpoints that answer only when something happens, so a plain GET holds the
+# link until it does. Everything here is opened with `stream=True` or not at all.
+STREAMED = frozenset(
+    {
+        Endpoint.MONITORING,
+        Endpoint.LIVEVIEW_MULTIPART,
+        Endpoint.LIVEVIEW_SCROLLDETAIL,
+    }
+)
+
+
 TABLE: dict[str, Volatility] = {
     Endpoint.DEVICEINFORMATION: Volatility.CONSTANT,
     Endpoint.LENS: Volatility.CONSTANT,
