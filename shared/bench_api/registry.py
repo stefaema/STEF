@@ -4,10 +4,12 @@ import dataclasses
 import importlib
 import inspect
 import pkgutil
+import time
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from shared import logs
+from shared.bench_api import run_log
 from shared.bench_api.inputs import checked_inputs
 from shared.bench_api.records import (
     CALL,
@@ -25,6 +27,7 @@ from shared.bench_api.records import (
     Readiness,
     Routine,
     StepOutcome,
+    StepStatus,
     Subsystem,
     SubsystemState,
     blocked,
@@ -256,14 +259,26 @@ def run_routine(item: Routine, values: dict[str, Any]) -> Iterator[StepOutcome]:
     A routine cannot break the stream: an uncaught exception becomes one failed
     step, and abandoning settles the step that raised and skips the rest.
 
-    Everything logged underneath carries which routine said it. A thread started
-    inside one does not inherit that, so the reader threads a link owns are
-    matched to a run by their timestamps and not by this.
+    The run writes itself down on the way past, which is why no routine has to:
+    its start, every step it settles and how it ended all reach the log from
+    here. Everything logged underneath carries which routine said it and when
+    that run began. A thread started inside one does not inherit those, so the
+    reader threads a link owns are matched to a run by their timestamps and not
+    by this.
     """
     pending = list(item.steps)
     reached = 0
-    with logs.logger.contextualize(routine=item.id):
-        yield from _stream(item, values, pending, reached)
+    settled: list[StepStatus] = []
+    with logs.logger.contextualize(routine=item.id, started=run_log.start_time()):
+        run_log.write_start(item, values)
+        began = time.monotonic()
+        try:
+            for outcome in _stream(item, values, pending, reached):
+                run_log.write_step(outcome)
+                settled.append(outcome.status)
+                yield outcome
+        finally:
+            run_log.write_end(item, settled, time.monotonic() - began)
 
 
 def _stream(
