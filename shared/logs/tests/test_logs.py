@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -96,3 +97,51 @@ def test_a_standard_library_level_keeps_its_severity(written):
     logging.getLogger("ccapi").warning("retrying")
 
     assert "[WARNING " in written[0]
+
+
+def test_what_a_caller_attached_travels_with_the_line(written):
+    logs.intercept_stdlib()
+    logging.getLogger("ccapi.link").info("refused", extra={"status": 503})
+
+    assert written[0].record["extra"]["status"] == 503
+
+
+def test_a_record_s_own_attributes_are_not_mistaken_for_what_was_attached(written):
+    logs.intercept_stdlib()
+    logging.getLogger("ccapi.link").info("connecting")
+
+    attached = set(written[0].record["extra"])
+    assert attached == {"component", "routine"}
+
+
+def test_a_caller_may_name_the_component_without_colliding_with_the_one_derived(
+    written,
+):
+    logs.intercept_stdlib()
+    logging.getLogger("urllib3").info("GET", extra={"component": "ccapi.link"})
+
+    assert written[0].record["extra"]["component"] == "ccapi.link"
+
+
+# ── The file it all lands in ─────────────────────────────────────────────────
+
+
+def test_the_file_is_one_json_object_per_line_carrying_its_own_rendered_text(tmp_path):
+    written = logs.start(directory=tmp_path, console_level=None)
+    logs.component("capture").info("connected to {}", "192.168.1.2")
+    logs.logger.remove()
+
+    (line,) = written.read_text().splitlines()
+    loaded = json.loads(line)
+    assert loaded["record"]["extra"]["component"] == "capture"
+    assert loaded["text"].rstrip().endswith("connected to 192.168.1.2")
+
+
+def test_a_field_no_json_encoder_knows_still_reaches_the_file(tmp_path):
+    logs.intercept_stdlib()
+    written = logs.start(directory=tmp_path, console_level=None)
+    logging.getLogger("ccapi.link").info("read", extra={"at": Path("/dev/ttyACM0")})
+    logs.logger.remove()
+
+    (line,) = written.read_text().splitlines()
+    assert json.loads(line)["record"]["extra"]["at"] == "/dev/ttyACM0"

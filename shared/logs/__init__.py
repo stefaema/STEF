@@ -1,4 +1,11 @@
-"""One line, one shape, one file, whatever said it."""
+"""One line, one shape, one file, whatever said it.
+
+Two dialects reach it. A module under `portable/` may depend on nothing, so it
+speaks the standard library and is intercepted here. Everything else binds a
+component and speaks this module directly. Both arrive as one record: a routine
+in scope binds itself onto whichever is speaking, and `extra` survives from
+either, so the dialect a module speaks costs it no detail.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +49,8 @@ __all__ = [
     "component",
     "intercept_stdlib",
     "keep_under",
+    "RESERVED",
+    "attached",
     "logger",
     "start",
     "template_for",
@@ -142,11 +151,32 @@ def to(sink: Callable[[Any], None], level: str = "INFO") -> int:
 # ── Lines written to the standard library ────────────────────────────────────
 
 
+# Every attribute the standard library puts on a record itself. What is left over
+# is what a caller attached, and meant to travel with the line.
+RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {
+    "asctime",
+    "message",
+    "taskName",
+}
+
+
+def attached(record: logging.LogRecord) -> dict[str, Any]:
+    """Return the fields a caller passed as `extra`, which is everything not the record's own."""
+    return {
+        name: value for name, value in record.__dict__.items() if name not in RESERVED
+    }
+
+
 class _Intercept(logging.Handler):
     """Every stdlib record, forwarded so a library needs no logging dependency."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Forward one record, keeping the level and the frame it came from."""
+        """Forward one record, keeping the level, the frame and whatever was attached.
+
+        A module that may not depend on this one still has something to say
+        beyond a sentence, and `extra` is how the standard library says it. Kept
+        so the two dialects reach the file carrying the same weight of detail.
+        """
         try:
             level: str | int = logger.level(record.levelname).name
         except ValueError:
@@ -158,9 +188,10 @@ class _Intercept(logging.Handler):
         ):
             frame = frame.f_back
             depth += 1
-        logger.bind(component=record.name).opt(
-            depth=depth, exception=record.exc_info
-        ).log(level, record.getMessage())
+        bound = {"component": record.name, **attached(record)}
+        logger.bind(**bound).opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 def intercept_stdlib(level: int = logging.DEBUG) -> None:
