@@ -50,19 +50,11 @@ payload survives a round trip through `json`.
 
 ## One thing at a time
 
-A bench run is a blocking generator holding the serial port, and `flash_board` holds it for tens
-of seconds. There is one slot: a second attempt is refused with a sentence rather than queued,
-the work runs on a thread so the loop stays free, and each outcome reaches the browser as the
-step settles rather than at the end.
+A bench run is a blocking generator. There is one slot: a second attempt is refused with a sentence rather than queued, the work runs on a thread so the loop stays free, and each outcome reaches the browser as the step settles rather than at the end.
 
 Two streams, both server-sent events. A run's outcomes come back on the response to the POST
 that started it. Everything else, command echoes, results, log records, shares `/api/events`,
 which a late listener joins with a backlog.
-
-A run's steps reach the log through `bench_api`, which writes every run down, and not through
-this module echoing them a second time. The sink here is added at `INFO`, so a step that passed
-is in the file and not on the screen, and what shows is the command this module dispatched, the
-run starting under it, whatever warned or failed, and the verdict.
 
 ## Language
 
