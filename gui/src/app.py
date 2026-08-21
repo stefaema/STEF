@@ -249,10 +249,6 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
                 packed = (
                     item if isinstance(item, dict) else bench_api.outcome_json(item)
                 )
-                if packed.get("detail"):
-                    stream.say(
-                        name, _tone(packed["status"]), "outcome", packed["detail"]
-                    )
                 yield _sse("outcome", packed)
         except Busy as exc:
             yield _sse("refused", {"reason": str(exc)})
@@ -269,11 +265,6 @@ def _one_result(declared: Any, values: dict[str, Any]) -> Any:
     if failed is not None:
         raise RuntimeError(failed.detail)
     return next((o.value for o in settled if o.value is not None), None)
-
-
-def _tone(status: str) -> str:
-    """Return the level a step's status reads as on the log."""
-    return {"passed": "ok", "warned": "warn", "failed": "error"}.get(status, "ok")
 
 
 @app.post("/api/call/{name}/{key:path}")
