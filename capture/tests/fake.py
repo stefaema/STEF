@@ -98,8 +98,12 @@ class Camera:
         }
 
     def current(self) -> dict[str, Any]:
-        """Return the one card frames are written to, which is the only one here."""
-        return self.storage()["storagelist"][0]
+        """Name the card frames are written to, and nothing else.
+
+        Two fields, the way the reference has it. The numbers live on the plural
+        endpoint, and a client that reads them off this one reads zeroes.
+        """
+        return {"name": "sd", "path": "/ccapi/ver100/contents/sd"}
 
     def shoot(self) -> dict[str, Any]:
         """Write one file and remember it as news nobody has been told yet."""
@@ -186,7 +190,9 @@ class Transport:
             return {"path": ["/ccapi/ver100/contents/sd"]}
         if tail == "sd":
             return {"path": ["/ccapi/ver100/contents/sd/100CANON"]}
-        return {"path": list(self.camera.files)}
+        if tail == "sd/100CANON":
+            return {"path": list(self.camera.files)}
+        return None
 
     def close(self) -> None:
         """Nothing is held, so there is nothing to let go of."""
