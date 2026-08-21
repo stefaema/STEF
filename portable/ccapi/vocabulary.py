@@ -232,6 +232,37 @@ class FileInfo:
     protected: bool
 
 
+NO_FILE = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class ImageQuality:
+    """Still image quality, which is a raw axis and a jpeg axis rather than one value."""
+
+    raw: str
+    jpeg: str
+    raw_allowed: tuple[str, ...] = ()
+    jpeg_allowed: tuple[str, ...] = ()
+
+    @property
+    def writes_raw(self) -> bool:
+        return bool(self.raw) and self.raw != NO_FILE
+
+    @property
+    def writes_jpeg(self) -> bool:
+        return bool(self.jpeg) and self.jpeg != NO_FILE
+
+    @property
+    def writes_two(self) -> bool:
+        return self.writes_raw and self.writes_jpeg
+
+    @property
+    def offers_two(self) -> bool:
+        return any(one != NO_FILE for one in self.raw_allowed) and any(
+            one != NO_FILE for one in self.jpeg_allowed
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class SettingValue:
     value: Any
@@ -352,8 +383,30 @@ def storage(entry: dict[str, Any]) -> Storage:
 
 
 def setting_value(body: dict[str, Any]) -> SettingValue:
+    """Return one setting, refusing to invent a list where the ability is not one.
+
+    `stillimagequality` answers with an object on both fields. Tupling that would
+    hand back its keys as though they were the values on offer, so it comes back
+    with nothing offered and `image_quality` reads it instead.
+    """
+    ability = body.get("ability")
     return SettingValue(
-        value=body.get("value"), allowed=tuple(body.get("ability") or ())
+        value=body.get("value"),
+        allowed=tuple(ability) if isinstance(ability, (list, tuple)) else (),
+    )
+
+
+def image_quality(body: dict[str, Any]) -> ImageQuality:
+    """Return still image quality off the one reply that carries two axes."""
+    value = body.get("value")
+    ability = body.get("ability")
+    value = value if isinstance(value, dict) else {}
+    ability = ability if isinstance(ability, dict) else {}
+    return ImageQuality(
+        raw=str(value.get("raw", "")),
+        jpeg=str(value.get("jpeg", "")),
+        raw_allowed=tuple(str(one) for one in ability.get("raw") or ()),
+        jpeg_allowed=tuple(str(one) for one in ability.get("jpeg") or ()),
     )
 
 

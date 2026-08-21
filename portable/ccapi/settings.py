@@ -4,7 +4,12 @@ import enum
 from typing import Any
 
 from portable.ccapi.link import GET, PUT, Link
-from portable.ccapi.vocabulary import SettingValue, setting_value
+from portable.ccapi.vocabulary import (
+    ImageQuality,
+    SettingValue,
+    image_quality,
+    setting_value,
+)
 
 
 class Setting(enum.StrEnum):
@@ -138,6 +143,18 @@ class Settings:
 
     def allowed(self, setting: Setting) -> tuple[Any, ...]:
         return self.get(setting).allowed
+
+    def image_quality(self) -> ImageQuality:
+        """Return still image quality, the one setting the generic pair cannot hold."""
+        return image_quality(self.link.json(GET, Setting.STILLIMAGEQUALITY))
+
+    def set_image_quality(self, raw: str, jpeg: str) -> None:
+        """Write both axes of still image quality, which only move together."""
+        self.link.json(
+            PUT,
+            Setting.STILLIMAGEQUALITY,
+            payload={"value": {"raw": raw, "jpeg": jpeg}},
+        )
 
     def apply(self, recipe: dict[Setting, Any]) -> dict[Setting, Any]:
         for setting, value in recipe.items():

@@ -7,7 +7,8 @@ from collections.abc import Iterator
 from typing import Any
 
 from capture import capture
-from portable.ccapi import PollWait, Setting, ShutterAction
+from portable.ccapi import PollWait, ShutterAction
+from portable.ccapi.vocabulary import NO_FILE
 from shared import bench_api
 from shared.bench_api import (
     FAILED,
@@ -22,7 +23,6 @@ from shared.bench_api import (
 )
 
 SETTLE = 8.0
-RAW_AND_JPEG = ("raw+jpeg", "raw_and_jpeg", "rawjpeg")
 
 
 def landed(found: Any, timeout: float = SETTLE) -> tuple[str, ...]:
@@ -160,24 +160,19 @@ def raw_and_jpeg_writes_two(values: dict[str, Any]) -> Iterator[StepOutcome]:
     frame, and the quality setting is not something a scan should discover.
     """
     found = capture.camera()
-    quality = Setting.STILLIMAGEQUALITY
-    was = found.settings.get(quality)
-    yield StepOutcome(PASSED, f"quality is {was.value!r}")
+    was = found.settings.image_quality()
+    yield StepOutcome(PASSED, f"quality is raw {was.raw!r}, jpeg {was.jpeg!r}")
 
-    both = next(
-        (
-            one
-            for one in was.allowed
-            if str(one).lower().replace(" ", "") in RAW_AND_JPEG
-        ),
-        None,
-    )
-    if both is None:
+    if not was.offers_two:
         raise Abandoned(
-            f"this body offers no raw+jpeg quality: {', '.join(map(str, was.allowed))}"
+            "this body writes only one file per release: "
+            f"raw {', '.join(was.raw_allowed) or '-'}; "
+            f"jpeg {', '.join(was.jpeg_allowed) or '-'}"
         )
-    found.settings.set(quality, both)
-    yield StepOutcome(PASSED, f"set to {both!r}")
+    raw = next(one for one in was.raw_allowed if one != NO_FILE)
+    jpeg = next(one for one in was.jpeg_allowed if one != NO_FILE)
+    found.settings.set_image_quality(raw, jpeg)
+    yield StepOutcome(PASSED, f"set to raw {raw!r} and jpeg {jpeg!r}")
 
     try:
         found.events.poll(PollWait.IMMEDIATELY)
@@ -203,8 +198,8 @@ def raw_and_jpeg_writes_two(values: dict[str, Any]) -> Iterator[StepOutcome]:
         )
         swept(found, paths)
     finally:
-        found.settings.set(quality, was.value)
-    yield StepOutcome(PASSED, f"quality back to {was.value!r}")
+        found.settings.set_image_quality(was.raw, was.jpeg)
+    yield StepOutcome(PASSED, f"quality back to raw {was.raw!r}, jpeg {was.jpeg!r}")
 
 
 # ── How fast it will actually go ─────────────────────────────────────────────
