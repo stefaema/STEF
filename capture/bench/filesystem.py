@@ -81,7 +81,7 @@ def browse(values: dict[str, Any]) -> Iterator[StepOutcome]:
     if not volumes:
         raise Abandoned("no volumes to walk", FAILED)
 
-    directories = files.directories(volumes[0].rsplit("/", 1)[-1])
+    directories = files.directories(volumes[0])
     yield StepOutcome(PASSED, f"{len(directories)} directory/ies")
     if not directories:
         raise Abandoned("no directories on this card")
