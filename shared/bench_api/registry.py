@@ -259,12 +259,8 @@ def run_routine(item: Routine, values: dict[str, Any]) -> Iterator[StepOutcome]:
     A routine cannot break the stream: an uncaught exception becomes one failed
     step, and abandoning settles the step that raised and skips the rest.
 
-    The run writes itself down on the way past, which is why no routine has to:
-    its start, every step it settles and how it ended all reach the log from
-    here. Everything logged underneath carries which routine said it and when
-    that run began. A thread started inside one does not inherit those, so the
-    reader threads a link owns are matched to a run by their timestamps and not
-    by this.
+    The run writes itself down here, so no routine has to. A thread started
+    inside one does not carry the routine, and is matched by timestamp instead.
     """
     pending = list(item.steps)
     reached = 0

@@ -112,13 +112,10 @@ so the preview an operator saw is the list that fills in.
 
 ## What a run writes down
 
-The stream reaches whoever is consuming it, and a consumer that closes the tab
-takes the only account of the run with it. So the run also writes itself down,
-from `run_routine` and nowhere else: its start and what it was asked for, every
-step as it settles, and how it ended. A routine that declares nothing about
-logging gets all of it.
+A run writes itself down from `run_routine`: its start and values, every step as
+it settles, and how it ended. A routine declares nothing to get it.
 
-Which sink sees what is decided by weight alone, never by a filter:
+Level decides which sink sees what:
 
 | what | level | file (`DEBUG`) | screen (`INFO`) |
 | --- | --- | --- | --- |
@@ -128,14 +125,9 @@ Which sink sees what is decided by weight alone, never by a filter:
 | a step failed, with the reason | `ERROR` | yes | yes |
 | the run ended, its verdict and cost | `INFO` and up | yes | yes |
 
-Every line a run causes carries `routine` and `started`, the moment it began.
-That pair names the run, so a stretch of wire traffic is attributable to what
-caused it and anything filed under `paths.bench_runs_dir()` joins to the log
-without a minted identifier. The pair is enough because one slot means no two
-runs overlap.
-
-A thread started inside a routine does not inherit the pair, so the reader
-threads a link owns are matched to a run by their timestamps and not by this.
+Every line carries `routine` and `started`, which name the run. One slot means no
+two runs overlap, so the pair is enough to join a log to anything under
+`paths.bench_runs_dir()`. A thread started inside a routine does not carry it.
 
 ## Layout
 

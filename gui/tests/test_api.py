@@ -12,12 +12,7 @@ from shared import paths
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    """Return a client against the real app, declarations and all.
-
-    Under a state directory of its own, because starting the app starts logging:
-    a suite that ran against the real one would file its own synthetic runs
-    beside an operator's, in the same shape, indistinguishable afterwards.
-    """
+    """Return a client against the real app, logging to a state directory of its own."""
     with pytest.MonkeyPatch.context() as elsewhere:
         elsewhere.setenv(paths.ENV_HOME, str(tmp_path_factory.mktemp("home")))
         with TestClient(app) as started:

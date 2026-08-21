@@ -1,8 +1,5 @@
-"""Every run's account of itself, written here rather than by each routine.
-
-Outcomes only ever reached the consumer, so the account died with the screen.
-Level is the whole policy: the file takes DEBUG, a screen INFO. A passing step
-is kept without being shown.
+"""
+Every run's log print.
 """
 
 from __future__ import annotations
@@ -50,10 +47,7 @@ log = logs.component(COMPONENT)
 
 
 def start_time() -> str:
-    """Return when a run begins. With its routine's id, this names the run.
-
-    Microseconds: two runs of one routine can share a millisecond.
-    """
+    """Return when a run begins. With its routine's id, this names the run."""
     return datetime.datetime.now().astimezone().isoformat(timespec="microseconds")
 
 

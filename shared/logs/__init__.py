@@ -1,11 +1,4 @@
-"""One line, one shape, one file, whatever said it.
-
-Two dialects reach it. A module under `portable/` may depend on nothing, so it
-speaks the standard library and is intercepted here. Everything else binds a
-component and speaks this module directly. Both arrive as one record: a routine
-in scope binds itself onto whichever is speaking, and `extra` survives from
-either, so the dialect a module speaks costs it no detail.
-"""
+"""One line, one shape, one file, whatever said it."""
 
 from __future__ import annotations
 
@@ -84,11 +77,10 @@ def component(name: str) -> Any:
 
 
 def template_for(record: Any) -> str:
-    """Return the template one record renders through, naming a routine only where it ran under one.
+    """Return one record's template, naming a routine only where it ran under one.
 
-    A fixed column would print empty brackets on every line the bench did not
-    cause, which is most of them. The ending and the traceback are ours to add
-    here, since loguru only appends those for a template it was handed whole.
+    A fixed column would print empty brackets on most lines. The ending and the
+    traceback are ours to add: loguru appends those only to a plain template.
     """
     named = ROUTINE if record["extra"].get("routine") else ""
     return f"{HEAD}{named}{MESSAGE}\n{{exception}}"
@@ -104,15 +96,7 @@ def start(
     rotation: str = ROTATION,
     budget: int = BUDGET,
 ) -> Path:
-    """Take every sink down and put the file and console back up.
-
-    The file is JSON, one object per line, and each object carries the rendered
-    line under `text` as well as every bound field under `record.extra`. So it
-    reads back as the plain log through `jq -r .text` and joins on a routine or
-    a run without anything having to be parsed out of a sentence.
-
-    Returns the file being written, which is what an operator is told to send.
-    """
+    """Take every sink down, put the file and console back up, and return the file."""
     logger.remove()
     logger.configure(extra=dict(DEFAULTS))
 
@@ -139,20 +123,14 @@ def start(
 
 
 def to(sink: Callable[[Any], None], level: str = "INFO") -> int:
-    """Add one more sink, which is how a screen receives what a file records.
-
-    INFO by default, and that default is the whole of the difference between
-    what is kept and what is shown: a step that passed is written at DEBUG and
-    reaches the file alone.
-    """
+    """Add one more sink, which is how a screen receives what a file records."""
     return logger.add(sink, level=level, format=template_for)
 
 
 # ── Lines written to the standard library ────────────────────────────────────
 
 
-# Every attribute the standard library puts on a record itself. What is left over
-# is what a caller attached, and meant to travel with the line.
+# Every attribute the standard library puts on a record itself.
 RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {
     "asctime",
     "message",
@@ -161,7 +139,7 @@ RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) |
 
 
 def attached(record: logging.LogRecord) -> dict[str, Any]:
-    """Return the fields a caller passed as `extra`, which is everything not the record's own."""
+    """Return what a caller passed as `extra`."""
     return {
         name: value for name, value in record.__dict__.items() if name not in RESERVED
     }
@@ -171,12 +149,7 @@ class _Intercept(logging.Handler):
     """Every stdlib record, forwarded so a library needs no logging dependency."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Forward one record, keeping the level, the frame and whatever was attached.
-
-        A module that may not depend on this one still has something to say
-        beyond a sentence, and `extra` is how the standard library says it. Kept
-        so the two dialects reach the file carrying the same weight of detail.
-        """
+        """Forward one record with its level, frame and `extra`, which is lost otherwise."""
         try:
             level: str | int = logger.level(record.levelname).name
         except ValueError:

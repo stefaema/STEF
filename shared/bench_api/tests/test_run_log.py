@@ -32,7 +32,7 @@ def messages(kept) -> list[str]:
 
 
 def run(oven, key, **values):
-    """Run one routine to the end, which is what makes it write itself down."""
+    """Run one routine to the end."""
     for _ in bench_api.run_routine(oven.routines[key], values):
         pass
 

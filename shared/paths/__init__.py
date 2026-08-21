@@ -81,7 +81,7 @@ def log_dir() -> Path:
 
 
 def bench_runs_dir() -> Path:
-    """Return where one bench run's own files are kept, apart from the log it shares."""
+    """Return where one bench run's own files are kept."""
     return state_dir() / BENCH_RUNS
 
 
