@@ -212,7 +212,7 @@
         {
             "label": "firmware: build (idf.py)",
             "type": "shell",
-            "command": "nix develop ./firmware --command idf.py -C firmware/src build",
+            "command": "nix develop .#firmware --command idf.py -C firmware/src build",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -240,7 +240,7 @@
             "label": "firmware: reconfigure (refresh compile_commands.json)",
             "detail": "Run after adding a component, a source file or an include dir, otherwise clangd keeps resolving against the old build.",
             "type": "shell",
-            "command": "nix develop ./firmware --command idf.py -C firmware/src reconfigure",
+            "command": "nix develop .#firmware --command idf.py -C firmware/src reconfigure",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -249,7 +249,7 @@
         {
             "label": "firmware: flash + monitor",
             "type": "shell",
-            "command": "nix develop ./firmware --command idf.py -C firmware/src -p ${input:serialPort} flash monitor",
+            "command": "nix develop .#firmware --command idf.py -C firmware/src -p ${input:serialPort} flash monitor",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -262,7 +262,7 @@
         {
             "label": "firmware: monitor",
             "type": "shell",
-            "command": "nix develop ./firmware --command idf.py -C firmware/src -p ${input:serialPort} monitor",
+            "command": "nix develop .#firmware --command idf.py -C firmware/src -p ${input:serialPort} monitor",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -275,7 +275,7 @@
         {
             "label": "firmware: fullclean",
             "type": "shell",
-            "command": "nix develop ./firmware --command idf.py -C firmware/src fullclean",
+            "command": "nix develop .#firmware --command idf.py -C firmware/src fullclean",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -285,7 +285,7 @@
             "label": "unit tests: configure (refresh compile_commands.json)",
             "detail": "Generates firmware/test/unit/build/compile_commands.json, which is what clangd reads inside the test tree.",
             "type": "shell",
-            "command": "nix develop ./firmware --command cmake -S firmware/test/unit -B firmware/test/unit/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "command": "nix develop .#firmware --command cmake -S firmware/test/unit -B firmware/test/unit/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -299,12 +299,17 @@
             "description": "Module (`ci: list modules` shows what discovery found)",
             "options": [
                 "bench_api",
+                "boards",
+                "capture",
+                "ccapi",
                 "ci_cd",
-                "dev_base",
+                "config",
                 "firmware",
                 "fw_api",
                 "gui",
+                "logs",
                 "paths",
+                "rig",
                 "rpc",
                 "scan_api",
                 "tmc2209",

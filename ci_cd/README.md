@@ -79,7 +79,7 @@ the translation from git's calling convention to a command:
 
 ## Modules are discovered, not listed
 
-A directory with a `flake.nix` is a module, and one without it only groups the
+A directory with a `module.nix` is a module, and one without it only groups the
 modules a level below. What a module contains decides how it is checked:
 
 - `CMakeLists.txt` naming `project.cmake` → an ESP-IDF app, built with `idf.py`
@@ -91,7 +91,7 @@ modules a level below. What a module contains decides how it is checked:
 - `[tool.stef] generated` in `pyproject.toml` → a command that regenerates a
   committed file and fails if it moved, run by `integration`
 
-- A module with none of these, `ci_cd`, `dev_base` and `gui` today, is listed as
+- A module with none of these, `boards`, `ci_cd` and `gui` today, is listed as
   empty and skipped. Its name is still a valid commit scope.
 
 - Nothing declares which module depends on which. Every module is built before
@@ -102,11 +102,12 @@ modules a level below. What a module contains decides how it is checked:
 
 ## Tools
 
-- Each check runs inside its own module's `nix develop`, so a module declares
-  what it needs and this runner only chains them. Every flake resolves nixpkgs
-  through `dev_base`, so one revision builds the whole repository.
+- Each check runs inside its own module's shell, `nix develop .#<module>`, so a
+  module declares what it needs and this runner only chains them. The root
+  `flake.nix` builds those shells from what each `module.nix` declares, and it
+  is the only flake in the repository, so one nixpkgs revision builds all of it.
 
-- `ci_cd` is one of those modules: `ci_cd/flake.nix` declares `ruff`,
+- `ci_cd` is one of those modules: `ci_cd/module.nix` declares `ruff`,
   `basedpyright`, `clang-tools` and the rest, and `run.py` re-execs itself into
   that shell when they are not already on `PATH`.
 

@@ -24,7 +24,7 @@ emitted surface.
 here runs, tests included.
 
 ```
-nix develop
+nix develop .#fw_api
 cmake -S host -B build/host && cmake --build build/host   # libfw_api.so
 python tools/abi_gen.py           # rewrite abi.py
 python tools/abi_gen.py --check   # fail if it moved

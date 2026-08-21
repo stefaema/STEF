@@ -83,9 +83,12 @@ the identity function, so the screen reads correctly with none installed.
 ## Running it
 
 ```bash
-nix develop ./gui
+nix develop .#gui
 uvicorn gui.src.app:app --reload
 ```
+
+The shell exports `STEF_HOME`, so config, state and the log file land under
+`local/` rather than under this machine's XDG roots.
 
 Restyling means rebuilding the stylesheet, which reads the template and the app script:
 

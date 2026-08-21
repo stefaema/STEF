@@ -14,11 +14,11 @@ housekeeping, and otherwise serves the requests the PC host makes.
 ## The toolchain
 
 Building needs an Xtensa cross compiler and a matching ESP-IDF, at versions that
-agree. `flake.nix` pins both, so every command below runs inside:
+agree. `firmware/module.nix` names the shell that pins both, so every command
+below runs inside:
 
 ```bash
-cd firmware
-nix develop
+nix develop .#firmware
 ```
 
 That shell exports `IDF_PATH` (ESP-IDF v5.5.2) and puts `idf.py`, `esptool.py`

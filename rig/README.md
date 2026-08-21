@@ -21,12 +21,14 @@ same source.
 ## The shell
 
 ```bash
-nix develop
+nix develop .#rig
 python src/<part>.py
 ```
 
 Entirely Nix, so there is no venv and no `pip install`. A new package goes in
-`python.withPackages`, or in `nix/overlay.nix` if nixpkgs does not carry it.
+`module.nix`'s `python` list, or in `nix/overlay.nix` if nixpkgs does not carry
+it. That overlay extends the whole repository's interpreter, which is why the
+editor shell resolves `build123d` too.
 
 ## Previewing a part
 

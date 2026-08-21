@@ -5,6 +5,7 @@ from pathlib import Path
 from ci_cd.paths import ROOT
 
 DERIVED_DIRS = {"build", ".ci-build", "__pycache__", ".git"}
+MODULE_MARKER = "module.nix"
 TEST_DIR_NAMES = ("test", "tests")
 IDF_MARKER = "project.cmake"
 
@@ -41,16 +42,16 @@ def authored(path: Path, pattern: str) -> list[Path]:
 
 
 def module_roots() -> list[Path]:
-    """Return every module directory, which this nix-based repo marks with a flake.nix.
+    """Return every module directory, which this nix-based repo marks with a module.nix.
 
-    A directory that carries no flake.nix of its own only groups modules, so the
+    A directory that carries no module.nix of its own only groups modules, so the
     search descends one level into it.
     """
-    top = [flake.parent for flake in ROOT.glob("*/flake.nix")]
+    top = [marker.parent for marker in ROOT.glob(f"*/{MODULE_MARKER}")]
     grouped = [
-        flake.parent
-        for flake in ROOT.glob("*/*/flake.nix")
-        if flake.parent.parent not in top
+        marker.parent
+        for marker in ROOT.glob(f"*/*/{MODULE_MARKER}")
+        if marker.parent.parent not in top
     ]
     return sorted(top + grouped)
 

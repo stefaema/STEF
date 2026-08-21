@@ -18,7 +18,7 @@ def ensure_ci_shell() -> None:
         [
             "nix",
             "develop",
-            str(ROOT / "ci_cd"),
+            f"{ROOT}#ci_cd",
             "--command",
             sys.executable,
             "-m",
@@ -64,22 +64,25 @@ def run_command(
     return p.returncode
 
 
+def module_shell(module: Module) -> str:
+    """Return the flake reference for the module's shell, which the root flake names."""
+    return f"{ROOT}#{module.name}"
+
+
 def run_in_module_shell(
     module: Module, script: str, quiet_on: tuple[int, ...] = ()
 ) -> int:
     """Run the script in the module's own nix shell and return its exit code."""
-    shell = f"./{module.path.relative_to(ROOT)}"
     return run_command(
-        ["nix", "develop", shell, "--command", "bash", "-c", script],
+        ["nix", "develop", module_shell(module), "--command", "bash", "-c", script],
         quiet_on=quiet_on,
     )
 
 
 def get_module_shell_output(module: Module, script: str) -> str | None:
     """Return what the script printed in the module's nix shell, None unless it succeeded."""
-    shell = f"./{module.path.relative_to(ROOT)}"
     p = subprocess.run(
-        ["nix", "develop", shell, "--command", "bash", "-c", script],
+        ["nix", "develop", module_shell(module), "--command", "bash", "-c", script],
         cwd=ROOT,
         capture_output=True,
         text=True,

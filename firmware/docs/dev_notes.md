@@ -21,7 +21,7 @@ Hardware tested:
 
 
 If the model changes, what needs updating:
-- `flake.nix`: toolchain shell, different chip family = different compiler
+- `module.nix`: toolchain shell, different chip family = different compiler
   target (e.g. `esp32s3-idf` vs `esp32-idf`).
 - `idf.py set-target <chip>`: re-run when switching chip family. Already
   happening every rebuild so far (`idf.py set-target esp32s3 && idf.py
