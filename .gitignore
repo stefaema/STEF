@@ -18,3 +18,5 @@ meta/
 
 # Bench notes, kept on disk and out of the tree.
 temp_todo.md
+.direnv/
+.venv/

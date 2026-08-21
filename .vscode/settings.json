@@ -40,9 +40,9 @@
     "ruff.configurationPreference": "filesystemFirst",
 
     // basedpyright resolves third-party imports through an interpreter, not
-    // through PATH, so direnv alone does not reach it. `.direnv/python` is a
-    // stable name the .envrc repoints at whichever devshell python is current.
-    "python.defaultInterpreterPath": "${workspaceFolder}/.direnv/python",
+    // through PATH, so direnv alone does not reach it. The .envrc builds this
+    // venv over the devshell python and rebuilds it when that python moves.
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
 
     "python.terminal.activateEnvironment": false,
     "python.testing.pytestEnabled": true,
