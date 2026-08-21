@@ -47,8 +47,11 @@ RUN_LEVEL = {
     FAILED: "ERROR",
 }
 
-# Worst first, so the verdict is the first of these the run produced.
-SEVERITY = (FAILED, WARNED, SKIPPED, PASSED)
+# Worst first, so the verdict is the first of these the run produced. Skipped
+# ranks below passed rather than above it: a ladder that settles on its first
+# rung leaves the rest unreached, and unreached is not a worse answer than
+# reached. It wins only where a run did nothing else at all.
+SEVERITY = (FAILED, WARNED, PASSED, SKIPPED)
 
 log = logs.component(COMPONENT)
 
@@ -86,10 +89,17 @@ def write_start(item: Routine, values: Mapping[str, Any]) -> None:
 
 def write_step(outcome: StepOutcome) -> None:
     """Record how one step settled, at the weight its status carries."""
-    said = f"{outcome.step or 'step'} {outcome.status.value}"
+    said = outcome.status.value
+    if named(outcome.step):
+        said = f"{outcome.step} {said}"
     if outcome.detail:
         said = f"{said}: {outcome.detail}"
     log.log(STEP_LEVEL[outcome.status], "{}", said)
+
+
+def named(step: str) -> bool:
+    """Whether a step's title says anything, which the number a preview-less run falls back to does not."""
+    return bool(step) and not step.startswith("#")
 
 
 def write_end(item: Routine, statuses: Sequence[StepStatus], seconds: float) -> None:

@@ -3,7 +3,7 @@
 import pytest
 
 from shared import bench_api, logs
-from shared.bench_api import FAILED, PASSED, WARNED, run_log
+from shared.bench_api import FAILED, PASSED, SKIPPED, WARNED, run_log
 
 
 @pytest.fixture
@@ -96,6 +96,24 @@ def test_the_verdict_is_the_worst_status_a_run_produced():
     assert run_log.verdict([PASSED, WARNED]) is WARNED
     assert run_log.verdict([PASSED]) is PASSED
     assert run_log.verdict([]) is PASSED
+
+
+def test_a_ladder_that_settles_early_passed_rather_than_skipped(oven, recorded):
+    run(oven, "routines.ramp_that_gives_up")
+
+    assert messages(recorded)[-1].startswith(
+        "fixture.routines.ramp_that_gives_up passed"
+    )
+
+
+def test_a_run_that_reached_nothing_at_all_is_the_only_skipped_one():
+    assert run_log.verdict([SKIPPED, SKIPPED]) is SKIPPED
+
+
+def test_a_step_the_preview_never_named_is_recorded_without_its_number(oven, recorded):
+    run(oven, "routines.read_each_step")
+
+    assert messages(recorded)[1] == "passed: 21 C"
 
 
 # ── What names one run ───────────────────────────────────────────────────────
