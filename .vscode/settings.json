@@ -42,7 +42,7 @@
     // basedpyright resolves third-party imports through an interpreter, not
     // through PATH, so direnv alone does not reach it. The .envrc builds this
     // venv over the devshell python and rebuilds it when that python moves.
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.defaultInterpreterPath": ".venv/bin/python",
 
     "python.terminal.activateEnvironment": false,
     "python.testing.pytestEnabled": true,
