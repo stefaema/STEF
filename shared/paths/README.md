@@ -25,6 +25,7 @@ treats one.
 | `config_dir()` | where a machine's own settings live |
 | `state_dir()` | where the program writes what it must remember |
 | `log_dir()` | where the program writes what it wants read afterwards |
+| `bench_runs_dir()` | where one bench run's own files are kept, apart from the log it shares |
 | `data_dir()` | where the program keeps what it was given |
 | `firmware_bins()` | where flashable images are kept, one directory per version |
 | `builtin(pkg, *parts)` | one file the package ships, found through its import |

@@ -14,6 +14,7 @@ CONFIG = "config"
 STATE = "state"
 FIRMWARE = "firmware"
 LOGS = "logs"
+BENCH_RUNS = "bench_runs"
 
 XDG_CONFIG = ("XDG_CONFIG_HOME", ".config")
 XDG_STATE = ("XDG_STATE_HOME", ".local/state")
@@ -77,6 +78,11 @@ def data_dir() -> Path:
 def log_dir() -> Path:
     """Return where the program writes what it wants read afterwards."""
     return state_dir() / LOGS
+
+
+def bench_runs_dir() -> Path:
+    """Return where one bench run's own files are kept, apart from the log it shares."""
+    return state_dir() / BENCH_RUNS
 
 
 def firmware_bins() -> Path:
