@@ -1,14 +1,8 @@
-"""What a run says about itself, written here so no routine writes it again.
+"""Every run's account of itself, written here rather than by each routine.
 
-A routine yields outcomes to whoever is consuming it, and a screen is the only
-consumer there has ever been. So the narrative lived in the browser and died
-with the tab: nothing on disk said which routine caused a stretch of traffic,
-what it was asked for, or how far it got before it stopped.
-
-Every routine reaches the outside through one generator, which is what makes
-that fixable in one place. The weights below are the whole policy: a file takes
-DEBUG and a screen takes INFO, so a step that passed is recorded without being
-shown, and the two sinks disagree by configuration rather than by a filter.
+Outcomes only ever reached the consumer, so the account died with the screen.
+Level is the whole policy: the file takes DEBUG, a screen INFO. A passing step
+is kept without being shown.
 """
 
 from __future__ import annotations
@@ -38,8 +32,7 @@ STEP_LEVEL = {
     FAILED: "ERROR",
 }
 
-# What the whole run's verdict is worth saying at, which is never less than INFO:
-# a run that passed still ends on the screen, even though its steps did not reach it.
+# What the whole run's verdict is worth saying at.
 RUN_LEVEL = {
     PASSED: "INFO",
     SKIPPED: "INFO",
@@ -47,10 +40,7 @@ RUN_LEVEL = {
     FAILED: "ERROR",
 }
 
-# Worst first, so the verdict is the first of these the run produced. Skipped
-# ranks below passed rather than above it: a ladder that settles on its first
-# rung leaves the rest unreached, and unreached is not a worse answer than
-# reached. It wins only where a run did nothing else at all.
+# Worst first, so the verdict is the first of these the run produced.
 SEVERITY = (FAILED, WARNED, PASSED, SKIPPED)
 
 log = logs.component(COMPONENT)
@@ -60,22 +50,15 @@ log = logs.component(COMPONENT)
 
 
 def start_time() -> str:
-    """Return the moment a run begins, which with its routine's id names the run.
+    """Return when a run begins. With its routine's id, this names the run.
 
-    Bound once and carried by every line the run causes, so the pair joins a
-    stretch of log to anything else filed under the same two. One slot means no
-    two runs overlap, which is what makes the pair enough and an identifier
-    minted for the purpose unnecessary.
-
-    Microseconds because milliseconds are not enough: two runs of one routine
-    can begin inside the same millisecond, and two runs that share a name are
-    two runs nothing can tell apart afterwards.
+    Microseconds: two runs of one routine can share a millisecond.
     """
     return datetime.datetime.now().astimezone().isoformat(timespec="microseconds")
 
 
 def verdict(statuses: Sequence[StepStatus]) -> StepStatus:
-    """Return the worst status a run produced, which is how the run itself settled."""
+    """Return the worst status a run produced."""
     return next((one for one in SEVERITY if one in statuses), PASSED)
 
 
@@ -83,7 +66,7 @@ def verdict(statuses: Sequence[StepStatus]) -> StepStatus:
 
 
 def write_start(item: Routine, values: Mapping[str, Any]) -> None:
-    """Record that a routine began, and what it was asked to run with."""
+    """Record that a routine began, and with what."""
     log.info("{}{} started", item.id, arguments(values))
 
 
@@ -98,12 +81,12 @@ def write_step(outcome: StepOutcome) -> None:
 
 
 def named(step: str) -> bool:
-    """Whether a step's title says anything, which the number a preview-less run falls back to does not."""
+    """Whether a step's title says anything. The `#n` fallback does not."""
     return bool(step) and not step.startswith("#")
 
 
 def write_end(item: Routine, statuses: Sequence[StepStatus], seconds: float) -> None:
-    """Record how the whole run settled and what it cost."""
+    """Record the run's verdict and what it cost."""
     settled = verdict(statuses)
     log.log(
         RUN_LEVEL[settled],
@@ -116,7 +99,7 @@ def write_end(item: Routine, statuses: Sequence[StepStatus], seconds: float) -> 
 
 
 def arguments(values: Mapping[str, Any]) -> str:
-    """Return what a form submitted as it reads on one line, empty where it held nothing."""
+    """Return submitted values on one line, empty where there were none."""
     if not values:
         return ""
     return "(" + ", ".join(f"{name}={value!r}" for name, value in values.items()) + ")"
