@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import enum
 import logging
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 
 from portable.ccapi.endpoints import Endpoint
 from portable.ccapi.errors import InvalidStateError
 from portable.ccapi.link import GET, POST, Link
+
+SETTLE = 3.0
+POLL = 0.1
 
 log = logging.getLogger("ccapi.movie")
 
@@ -34,10 +38,10 @@ class Movie:
         return str(body.get("status", "")) == MovieModeAction.ON.value
 
     def enter_movie_mode(self) -> None:
-        self._set_mode(MovieModeAction.ON)
+        self._change_mode(MovieModeAction.ON)
 
     def leave_movie_mode(self) -> None:
-        self._set_mode(MovieModeAction.OFF)
+        self._change_mode(MovieModeAction.OFF)
 
     @contextmanager
     def mode(self) -> Generator[None]:
@@ -51,8 +55,30 @@ class Movie:
         finally:
             self.leave_movie_mode()
 
-    def _set_mode(self, action: MovieModeAction) -> None:
+    def _change_mode(self, action: MovieModeAction) -> None:
+        """Ask for a mode and return once the camera is in it.
+
+        The 200 acknowledges the request; the mirror and the sensor take longer
+        than the next call does to arrive. A single read afterwards is a race,
+        and losing it looks exactly like the camera refusing.
+        """
         self.link.json(POST, Endpoint.MOVIEMODE, payload={"action": action.value})
+        wanted = action is MovieModeAction.ON
+        if not self._mode_becomes(wanted, SETTLE):
+            raise InvalidStateError(
+                f"the camera took movie mode {action.value} but is not there "
+                f"after {SETTLE:.0f} s"
+            )
+
+    def _mode_becomes(self, wanted: bool, timeout: float) -> bool:
+        """Whether the mode reads as wanted before the time runs out."""
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.in_movie_mode() is wanted:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(POLL)
 
     # ── The recording inside it ──────────────────────────────────────────────
 
