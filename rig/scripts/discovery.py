@@ -13,6 +13,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 BUILDS = Path(__file__).resolve().parent.parent / "builds"
 
 CONVENTIONS = ("build", "sample")
+PREFIXES = {"build": "", "sample": "samples/"}
 
 
 @contextlib.contextmanager
@@ -42,6 +43,14 @@ def collect() -> dict[str, "Part"]:
             maker = getattr(module, convention, None)
             if maker is None:
                 continue
-            here = module_info.name.replace(".", "/")
-            found[f"{here}/{convention}"] = maker()
+            for stem, part in _named(maker(), module_info.name).items():
+                found[f"{PREFIXES[convention]}{stem}"] = part
     return found
+
+
+def _named(produced: "Part | dict[str, Part]", module_name: str) -> dict[str, "Part"]:
+    package, _, stem = module_name.rpartition(".")
+    here = f"{package.replace('.', '/')}/{stem}" if package else stem
+    if not isinstance(produced, dict):
+        return {here: produced}
+    return {f"{here}_{variant}": part for variant, part in produced.items()}

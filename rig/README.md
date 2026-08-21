@@ -8,15 +8,27 @@ up 3D printed, cut on a CNC, or anything else. A part is modelled once as exact
 geometry, and the format is chosen at export: STEP and BREP keep real surfaces for CAM,
 STL and 3MF are meshes for a slicer, DXF and SVG are 2D.
 
-Parts are Python, not saved model files, so a dimension that follows from another one is
-written that way. That is proposal Module F: the part and its geometry derive from the
-same source.
+Parts are Python, not saved model files: the part and its geometry derive from the same source.
 
 | path | what it holds |
 | --- | --- |
 | `src/` | one module per part |
-| `builds/` | exports, derived from `src/`, never edited by hand |
+| `builds/` | parts, derived from `src/`, never edited by hand |
+| `builds/samples/` | coupons that prove a fit, not parts of the machine |
 | `nix/overlay.nix` | the build123d packages nixpkgs does not carry |
+
+## What gets exported
+
+Nothing lists the parts. `scripts/discovery.py` walks `src/` and takes two names:
+`build()` for a part that goes into the machine, `sample()` for a coupon used to test that everything fits.
+
+Either may return a single part, exported as the module's own name, or a dict, whose
+keys extend that name into one file per variant:
+
+```
+builds/rollers/idler_round_groove.stl
+builds/samples/mounts/dc_barrel_jack.stl
+```
 
 ## The shell
 
@@ -34,10 +46,9 @@ editor shell resolves `build123d` too.
 
 `yacv` draws in a browser, so it needs no GPU driver from Nix:
 
-```python
-from yacv_server import show
-show(part, names=["capstan_roller"])   # then open http://127.0.0.1:32323
+```bash
+python scripts/open_viewer.py              # everything
+python scripts/open_viewer.py square_band  # only names containing that
 ```
 
-Importing `yacv_server` starts that server as a side effect, and the process then waits
-at exit for a browser to connect.
+Then open <http://localhost:32323>, or wherever `YACV_HOST` and `YACV_PORT` point.
