@@ -17,8 +17,8 @@ def written(tmp_path: Path):
     """Return a sink that collects rendered lines, and take it down afterwards."""
     lines: list[str] = []
     logs.logger.remove()
-    logs.logger.configure(extra={"component": logs.DEFAULT_COMPONENT})
-    logs.logger.add(lines.append, format=logs.FILE_FORMAT, level="DEBUG")
+    logs.logger.configure(extra=dict(logs.DEFAULTS))
+    logs.logger.add(lines.append, format=logs.template_for, level="DEBUG")
     yield lines
     logs.logger.remove()
 

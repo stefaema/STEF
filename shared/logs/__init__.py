@@ -14,23 +14,29 @@ from loguru import logger
 
 from shared import paths
 
-FILENAME = "stef.log"
+FILENAME = "stef.jsonl"
 ROTATION = "10 MB"
 BUDGET = 1_000_000_000
 DEFAULT_COMPONENT = "stef"
 WIDTH = 20
 
-FILE_FORMAT = (
-    "[{level: <8}] {time:YYYY-MM-DD HH:mm:ss.SSS} [{extra[component]: <20}] {message}"
-)
+# Every field a format below names, so a record nobody bound still renders.
+DEFAULTS = {"component": DEFAULT_COMPONENT, "routine": ""}
+
+HEAD = "[{level: <8}] {time:YYYY-MM-DD HH:mm:ss.SSS} [{extra[component]: <20}] "
+ROUTINE = "[{extra[routine]}] "
+MESSAGE = "{message}"
+
+FILE_FORMAT = HEAD + MESSAGE
 CONSOLE_FORMAT = (
     "<level>[{level: <8}]</level> <dim>{time:HH:mm:ss.SSS}</dim> "
-    "[<cyan>{extra[component]: <20}</cyan>] {message}"
+    "[<cyan>{extra[component]: <20}</cyan>] " + ROUTINE + MESSAGE
 )
 
 __all__ = [
     "BUDGET",
     "CONSOLE_FORMAT",
+    "DEFAULTS",
     "FILE_FORMAT",
     "ROTATION",
     "component",
@@ -38,6 +44,7 @@ __all__ = [
     "keep_under",
     "logger",
     "start",
+    "template_for",
     "to",
 ]
 
@@ -67,6 +74,17 @@ def component(name: str) -> Any:
     return logger.bind(component=name)
 
 
+def template_for(record: Any) -> str:
+    """Return the template one record renders through, naming a routine only where it ran under one.
+
+    A fixed column would print empty brackets on every line the bench did not
+    cause, which is most of them. The ending and the traceback are ours to add
+    here, since loguru only appends those for a template it was handed whole.
+    """
+    named = ROUTINE if record["extra"].get("routine") else ""
+    return f"{HEAD}{named}{MESSAGE}\n{{exception}}"
+
+
 # ── Where lines go ───────────────────────────────────────────────────────────
 
 
@@ -79,10 +97,15 @@ def start(
 ) -> Path:
     """Take every sink down and put the file and console back up.
 
+    The file is JSON, one object per line, and each object carries the rendered
+    line under `text` as well as every bound field under `record.extra`. So it
+    reads back as the plain log through `jq -r .text` and joins on a routine or
+    a run without anything having to be parsed out of a sentence.
+
     Returns the file being written, which is what an operator is told to send.
     """
     logger.remove()
-    logger.configure(extra={"component": DEFAULT_COMPONENT})
+    logger.configure(extra=dict(DEFAULTS))
 
     if console_level is not None:
         logger.add(sys.stderr, format=CONSOLE_FORMAT, level=console_level)
@@ -92,7 +115,8 @@ def start(
     written = target / FILENAME
     logger.add(
         written,
-        format=FILE_FORMAT,
+        format=template_for,
+        serialize=True,
         level=file_level,
         rotation=rotation,
         retention=keep_under(budget),
@@ -106,8 +130,13 @@ def start(
 
 
 def to(sink: Callable[[Any], None], level: str = "INFO") -> int:
-    """Add one more sink, which is how a screen receives what a file records."""
-    return logger.add(sink, level=level, format=FILE_FORMAT)
+    """Add one more sink, which is how a screen receives what a file records.
+
+    INFO by default, and that default is the whole of the difference between
+    what is kept and what is shown: a step that passed is written at DEBUG and
+    reaches the file alone.
+    """
+    return logger.add(sink, level=level, format=template_for)
 
 
 # ── Lines written to the standard library ────────────────────────────────────
