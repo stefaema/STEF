@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from portable.ccapi.endpoints import Endpoint
+from portable.ccapi.errors import StorageError
 from portable.ccapi.link import DELETE, GET, Link
 from portable.ccapi.vocabulary import (
     ContentKind,
@@ -10,7 +11,6 @@ from portable.ccapi.vocabulary import (
     FileType,
     Storage,
     file_info,
-    storage,
     storage_list,
 )
 
@@ -28,7 +28,14 @@ class Filesystem:
         return storage_list(self.link.json(GET, Endpoint.STORAGE))
 
     def current(self) -> Storage:
-        return storage(self.link.json(GET, Endpoint.CURRENTSTORAGE))
+        body = self.link.json(GET, Endpoint.CURRENTSTORAGE)
+        named = str(body.get("name", ""))
+        found = next((one for one in self.storages() if one.name == named), None)
+        if found is None:
+            raise StorageError(
+                f"the camera writes to {named!r}, which it does not list as storage"
+            )
+        return found
 
     def current_directory(self) -> str:
         body = self.link.json(GET, Endpoint.CURRENTDIRECTORY)
@@ -56,7 +63,7 @@ class Filesystem:
         return tuple(str(entry) for entry in body.get("path", ()))
 
     def directories(self, volume: str) -> tuple[str, ...]:
-        body = self.link.json(GET, Endpoint.CONTENTS, volume)
+        body = self.link.json(GET, Endpoint.CONTENTS, _relative(volume))
         return tuple(str(entry) for entry in body.get("path", ()))
 
     def under(
@@ -68,14 +75,14 @@ class Filesystem:
         query = {"kind": LIST, "type": kind.value}
         if page is not None:
             query["page"] = str(page)
-        body = self.link.json(GET, Endpoint.CONTENTS, directory, query=query)
+        body = self.link.json(GET, Endpoint.CONTENTS, _relative(directory), query=query)
         return tuple(str(entry) for entry in body.get("path", ()))
 
     def count(self, directory: str, kind: FileType = FileType.ALL) -> int:
         body = self.link.json(
             GET,
             Endpoint.CONTENTS,
-            directory,
+            _relative(directory),
             query={"kind": NUMBER, "type": kind.value},
         )
         return int(body.get("contentsnumber") or 0)
@@ -118,6 +125,12 @@ class Filesystem:
 
 
 def _relative(path: str) -> str:
-    marker = "/contents/"
+    """Return a path as the tail `contents` is joined with, whatever the camera gave back.
+
+    Every listing answers in absolute paths, and those are what a caller has to
+    hand to ask the next question. Joining one onto `contents` again doubles the
+    prefix and 404s, so anything the camera said is stripped back here first.
+    """
+    marker = "/contents"
     at = path.find(marker)
-    return path[at + len(marker) :] if at >= 0 else path.lstrip("/")
+    return path[at + len(marker) :].strip("/") if at >= 0 else path.strip("/")
