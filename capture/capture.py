@@ -7,7 +7,7 @@ from typing import Any
 from capture import probe
 from portable.ccapi import Camera, CameraConfig, Credentials, LinkState
 from shared import config, logs
-from shared.bench_api import Option, SubsystemState
+from shared.subsystem import SubsystemState
 
 PACKAGE = "capture"
 SETTINGS = f"camera{config.SUFFIX}"
@@ -53,22 +53,6 @@ def configured(host: str) -> CameraConfig:
 
 
 # ── Which camera ─────────────────────────────────────────────────────────────
-
-
-def cameras() -> tuple[Option, ...]:
-    """Return every address worth trying, discovered first and pinned after.
-
-    Discovery is multicast, so it does not cross a subnet and a switch may eat
-    it. What it finds is a recommendation; the pinned address is the answer for
-    a camera it cannot see.
-    """
-    found = probe.search()
-    options = [Option(AUTO, AUTO)]
-    options.extend(Option(one.host, one.label) for one in found)
-    pinned = pinned_host()
-    if pinned and all(one.host != pinned for one in found):
-        options.append(Option(pinned, f"{pinned} (configured)"))
-    return tuple(options)
 
 
 def named_host(host: str) -> str | None:

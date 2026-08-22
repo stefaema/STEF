@@ -12,15 +12,33 @@ from shared.bench_api import (
     PASSED,
     READY,
     Level,
+    Option,
     Readiness,
     Result,
     StepOutcome,
     blocked,
 )
 
+
+def cameras() -> tuple[Option, ...]:
+    """Return every address worth trying, discovered first and pinned after.
+
+    Discovery is multicast, so it does not cross a subnet and a switch may eat
+    it. What it finds is a recommendation; the pinned address is the answer for
+    a camera it cannot see.
+    """
+    found = probe.search()
+    options = [Option(capture.AUTO, capture.AUTO)]
+    options.extend(Option(one.host, one.label) for one in found)
+    pinned = capture.pinned_host()
+    if pinned and all(one.host != pinned for one in found):
+        options.append(Option(pinned, f"{pinned} (configured)"))
+    return tuple(options)
+
+
 HOST = bench_api.choice(
     "host",
-    capture.cameras,
+    cameras,
     hint="Which camera. 'auto' when discovery finds exactly one.",
 )
 
@@ -49,7 +67,8 @@ def can_connect(host: str = capture.AUTO) -> Readiness:
         chosen = capture.settle(host)
     except probe.NoCameraError as exc:
         return blocked(str(exc))
-    return probe.identify(capture.configured(chosen))
+    verdict = probe.identify(capture.configured(chosen))
+    return READY if verdict else blocked(verdict.sentence)
 
 
 @bench_api.routine(

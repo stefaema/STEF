@@ -4,7 +4,8 @@ import pytest
 
 from shared import bench_api
 from shared.bench_api import StepStatus
-from transport import fw
+from transport import fw, transport
+from transport.bench import link
 
 
 @pytest.fixture
@@ -16,6 +17,17 @@ def verify(declared):
 def candidate(device, vid, description=""):
     """Return one attached port, in the shape pyserial hands them over."""
     return fw.probe.Candidate(device, vid, 1, description, fw.probe._silicon(vid))
+
+
+@pytest.fixture
+def attached(monkeypatch):
+    """Return a way to say what is plugged in for the length of one test."""
+
+    def plug(*ports):
+        monkeypatch.setattr(fw.probe, "candidates", lambda: tuple(ports))
+        return ports
+
+    return plug
 
 
 @pytest.fixture
@@ -77,3 +89,33 @@ def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
     settled = list(bench_api.run_routine(verify, {"port": "/dev/ttyNOPE"}))
     assert settled[0].status is StepStatus.FAILED
     assert [o.status for o in settled[1:]] == [StepStatus.SKIPPED, StepStatus.SKIPPED]
+
+
+# ── What an operator may choose ──────────────────────────────────────────────
+
+
+def test_every_attached_port_is_offered_and_not_only_the_shortlist(attached):
+    attached(candidate("/dev/ttyS0", None), candidate("/dev/ttyACM0", 0x303A))
+    offered = [value for value, _ in link.serial_ports()]
+    assert offered == [transport.AUTO, "/dev/ttyACM0", "/dev/ttyS0"]
+
+
+def test_the_likely_ports_sort_first_so_the_list_reads_as_a_recommendation(attached):
+    attached(
+        candidate("/dev/ttyS0", None),
+        candidate("/dev/ttyS1", None),
+        candidate("/dev/ttyUSB0", 0x1A86),
+    )
+    offered = [value for value, _ in link.serial_ports()]
+    assert offered[1] == "/dev/ttyUSB0"
+
+
+def test_a_port_worth_trying_says_what_it_looks_like(attached):
+    attached(candidate("/dev/ttyACM0", 0x303A, "USB JTAG/serial debug unit"))
+    labels = dict(link.serial_ports())
+    assert labels["/dev/ttyACM0"] == "/dev/ttyACM0 (USB JTAG/serial debug unit)"
+
+
+def test_a_port_that_is_probably_something_else_is_offered_without_a_claim(attached):
+    attached(candidate("/dev/ttyS0", None, "16550A"))
+    assert dict(link.serial_ports())["/dev/ttyS0"] == "/dev/ttyS0"

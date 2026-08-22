@@ -5,8 +5,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
-# What a subsystem package is asked for its state by.
-STATE_ATTRIBUTE = "state"
+from shared.subsystem import SubsystemState, state_of
 
 # ── How a declaration refuses ────────────────────────────────────────────────
 
@@ -108,15 +107,6 @@ def blocked(reason: str) -> Readiness:
     return Readiness(reason)
 
 
-class SubsystemState(enum.Enum):
-    """Whether one subsystem is reachable. Read off the package, never tracked beside it."""
-
-    DOWN = "down"
-    LINKING = "linking"
-    UP = "up"
-    ERROR = "error"
-
-
 # ── What a routine takes ─────────────────────────────────────────────────────
 
 
@@ -212,13 +202,8 @@ class Subsystem:
         return self.module.__name__
 
     def now(self) -> SubsystemState:
-        """Return the state the package reports when asked, never one remembered here.
-
-        Asked through the module rather than through a function captured at load,
-        so a package that reports differently later is believed.
-        """
-        reported = getattr(self.module, STATE_ATTRIBUTE, None)
-        return reported() if reported is not None else SubsystemState.DOWN
+        """Return the state the package reports when asked, never one remembered here."""
+        return state_of(self.module)
 
     def by_category(self, category: Category) -> tuple[Routine, ...]:
         """Return every routine of one category, in declaration order."""

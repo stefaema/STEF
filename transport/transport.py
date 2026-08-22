@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.bench_api import Option, SubsystemState
+from shared.subsystem import SubsystemState
 from transport import fw
 
 AUTO = "auto"
@@ -14,26 +14,6 @@ _failure: str | None = None
 
 
 # ── What is on the far end ───────────────────────────────────────────────────
-
-
-def serial_ports() -> tuple[Option, ...]:
-    """Return every attached port, each with a label saying what it looks like.
-
-    Every port, not only the shortlist. What the descriptor settles is what
-    `auto` may pick, never what an operator may choose, and a board behind a
-    bridge nobody recognises is exactly the case where naming the port by hand is
-    the way through. The likely ones sort first so the list reads as a
-    recommendation rather than a filter.
-    """
-    ranked = sorted(fw.probe.candidates(), key=lambda c: (not c.plausible, c.device))
-    return (Option(AUTO, AUTO), *(Option(c.device, _label(c)) for c in ranked))
-
-
-def _label(candidate: fw.probe.Candidate) -> str:
-    """Return what to call one port, which is its name plus whatever it admits to."""
-    if not candidate.plausible:
-        return candidate.device
-    return f"{candidate.device} ({candidate.description or candidate.vidpid})"
 
 
 def named_port(port: str) -> str | None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import socket
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
@@ -16,7 +17,6 @@ from portable.ccapi import (
     UnreachableError,
 )
 from shared import logs
-from shared.bench_api import READY, Readiness, blocked
 
 GROUP = "239.255.255.250"
 PORT = 1900
@@ -162,8 +162,36 @@ def _text(device: ElementTree.Element, tag: str) -> str:
 # ── Whether it is worth connecting to ────────────────────────────────────────
 
 
-def identify(config: CameraConfig) -> Readiness:
-    """Say whether this address will serve us, and what is there when it will not.
+class Finding(enum.Enum):
+    """What asking settled, ordered by how much of the camera answered."""
+
+    SERVING = "serving"
+    INCOMPATIBLE = "incompatible"
+    NOT_ACTIVATED = "not_activated"
+    REFUSED = "refused"
+    UNREACHABLE = "unreachable"
+
+    @property
+    def ok(self) -> bool:
+        """Whether this is a camera the bench can go on to use."""
+        return self is Finding.SERVING
+
+
+@dataclass(frozen=True, slots=True)
+class Verdict:
+    """What one address turned out to be, in the words an operator reads."""
+
+    finding: Finding
+    host: str
+    sentence: str
+
+    def __bool__(self) -> bool:
+        """Return whether the camera is usable, so a verdict reads like a check."""
+        return self.finding.ok
+
+
+def identify(config: CameraConfig) -> Verdict:
+    """Return whether this address will serve us, and what is there when it will not.
 
     Asked rather than remembered. A remembered answer goes stale the moment
     someone picks up the camera, and the refusal an operator can act on is the
@@ -173,19 +201,23 @@ def identify(config: CameraConfig) -> Readiness:
     try:
         probing.connect()
     except NotActivatedError:
-        return blocked(
+        return Verdict(
+            Finding.NOT_ACTIVATED,
+            config.host,
             f"{config.host} answered, but serves no CCAPI. It needs Canon's "
-            "one-time activation, and CCAPI switched on in its menu."
+            "one-time activation, and CCAPI switched on in its menu.",
         )
     except UnacceptableVersionError as exc:
-        return blocked(str(exc))
+        return Verdict(Finding.INCOMPATIBLE, config.host, str(exc))
     except UnreachableError:
-        return blocked(
+        return Verdict(
+            Finding.UNREACHABLE,
+            config.host,
             f"nothing answered at {config.base_url}. Check the camera is awake, "
-            "on this network, and not already connected to something else."
+            "on this network, and not already connected to something else.",
         )
     except CcapiError as exc:
-        return blocked(f"{config.host} refused: {exc}")
+        return Verdict(Finding.REFUSED, config.host, f"{config.host} refused: {exc}")
     finally:
         probing.disconnect()
-    return READY
+    return Verdict(Finding.SERVING, config.host, f"{config.host} will serve")

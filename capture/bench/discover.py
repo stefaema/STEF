@@ -69,10 +69,12 @@ def whether_it_serves(values: dict[str, Any]) -> Iterator[StepOutcome]:
     if verdict:
         yield StepOutcome(
             PASSED,
-            f"{host} will serve",
-            Result(level=Level.OK, summary=f"{host} will serve"),
+            verdict.sentence,
+            Result(level=Level.OK, summary=verdict.sentence),
         )
         return
     yield StepOutcome(
-        FAILED, str(verdict), Result(level=Level.ERROR, summary=str(verdict))
+        FAILED,
+        verdict.sentence,
+        Result(level=Level.ERROR, summary=verdict.sentence),
     )

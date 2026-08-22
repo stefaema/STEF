@@ -3,7 +3,7 @@
 import pytest
 
 from shared import fw_api
-from transport import fw, transport
+from transport import fw
 
 # ── The descriptor tier ──────────────────────────────────────────────────────
 
@@ -69,34 +69,6 @@ def test_a_named_port_that_has_gone_is_refused_rather_than_opened(attached):
     attached(port("/dev/ttyACM0", 0x303A))
     with pytest.raises(fw.link.LinkError, match="nothing is attached"):
         fw.probe.find_port("/dev/ttyUSB9")
-
-
-# ── What an operator may choose ──────────────────────────────────────────────
-
-
-def test_every_attached_port_is_offered_and_not_only_the_shortlist(attached):
-    attached(port("/dev/ttyS0", None), port("/dev/ttyACM0", 0x303A))
-    offered = [value for value, _ in transport.serial_ports()]
-    assert offered == [transport.AUTO, "/dev/ttyACM0", "/dev/ttyS0"]
-
-
-def test_the_likely_ports_sort_first_so_the_list_reads_as_a_recommendation(attached):
-    attached(
-        port("/dev/ttyS0", None), port("/dev/ttyS1", None), port("/dev/ttyUSB0", 0x1A86)
-    )
-    offered = [value for value, _ in transport.serial_ports()]
-    assert offered[1] == "/dev/ttyUSB0"
-
-
-def test_a_port_worth_trying_says_what_it_looks_like(attached):
-    attached(port("/dev/ttyACM0", 0x303A, description="USB JTAG/serial debug unit"))
-    labels = dict(transport.serial_ports())
-    assert labels["/dev/ttyACM0"] == "/dev/ttyACM0 (USB JTAG/serial debug unit)"
-
-
-def test_a_port_that_is_probably_something_else_is_offered_without_a_claim(attached):
-    attached(port("/dev/ttyS0", None, description="16550A"))
-    assert dict(transport.serial_ports())["/dev/ttyS0"] == "/dev/ttyS0"
 
 
 # ── The app tier ─────────────────────────────────────────────────────────────

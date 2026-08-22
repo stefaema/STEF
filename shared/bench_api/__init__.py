@@ -53,7 +53,6 @@ from shared.bench_api.records import (
     StepOutcome,
     StepStatus,
     Subsystem,
-    SubsystemState,
     Table,
     blocked,
 )
@@ -70,6 +69,7 @@ from shared.bench_api.registry import (
     summary_and_body,
     titled,
 )
+from shared.subsystem import SubsystemState
 
 __all__ = [
     "CALL",
