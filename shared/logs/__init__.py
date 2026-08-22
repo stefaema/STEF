@@ -24,22 +24,26 @@ WIDTH = 20
 DEFAULTS = {"component": DEFAULT_COMPONENT, "routine": ""}
 
 HEAD = "[{level: <8}] {time:YYYY-MM-DD HH:mm:ss.SSS} [{extra[component]: <20}] "
+CONSOLE_HEAD = (
+    "<level>[{level: <8}]</level> <dim>{time:HH:mm:ss.SSS}</dim> "
+    "[<cyan>{extra[component]: <20}</cyan>] "
+)
 ROUTINE = "[{extra[routine]}] "
+CONSOLE_ROUTINE = "<magenta>[{extra[routine]}]</magenta> "
 MESSAGE = "{message}"
 
 FILE_FORMAT = HEAD + MESSAGE
-CONSOLE_FORMAT = (
-    "<level>[{level: <8}]</level> <dim>{time:HH:mm:ss.SSS}</dim> "
-    "[<cyan>{extra[component]: <20}</cyan>] " + ROUTINE + MESSAGE
-)
+CONSOLE_FORMAT = CONSOLE_HEAD + MESSAGE
 
 __all__ = [
     "BUDGET",
     "CONSOLE_FORMAT",
+    "CONSOLE_HEAD",
     "DEFAULTS",
     "FILE_FORMAT",
     "ROTATION",
     "component",
+    "console_template_for",
     "intercept_stdlib",
     "keep_under",
     "RESERVED",
@@ -77,13 +81,23 @@ def component(name: str) -> Any:
 
 
 def template_for(record: Any) -> str:
-    """Return one record's template, naming a routine only where it ran under one.
+    """Return one record's template for the file."""
+    return _template(record, HEAD, ROUTINE)
+
+
+def console_template_for(record: Any) -> str:
+    """Return one record's template for a screen, which is the same but coloured."""
+    return _template(record, CONSOLE_HEAD, CONSOLE_ROUTINE)
+
+
+def _template(record: Any, head: str, routine: str) -> str:
+    """Return a template naming a routine only where the record ran under one.
 
     A fixed column would print empty brackets on most lines. The ending and the
     traceback are ours to add: loguru appends those only to a plain template.
     """
-    named = ROUTINE if record["extra"].get("routine") else ""
-    return f"{HEAD}{named}{MESSAGE}\n{{exception}}"
+    named = routine if record["extra"].get("routine") else ""
+    return f"{head}{named}{MESSAGE}\n{{exception}}"
 
 
 # ── Where lines go ───────────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ def start(
     logger.configure(extra=dict(DEFAULTS))
 
     if console_level is not None:
-        logger.add(sys.stderr, format=CONSOLE_FORMAT, level=console_level)
+        logger.add(sys.stderr, format=console_template_for, level=console_level)
 
     target = directory or paths.log_dir()
     target.mkdir(parents=True, exist_ok=True)

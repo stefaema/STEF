@@ -1,7 +1,12 @@
 """Client for Canon's Camera Control API (CCAPI)."""
 
 from portable.ccapi.camera import Camera
-from portable.ccapi.config import CameraConfig, Credentials
+from portable.ccapi.config import (
+    DEFAULT_PORT,
+    DEFAULT_SSL_PORT,
+    CameraConfig,
+    Credentials,
+)
 from portable.ccapi.endpoints import (
     STREAMED,
     Endpoint,
@@ -74,6 +79,8 @@ from portable.ccapi.vocabulary import (
 )
 
 __all__ = [
+    "DEFAULT_PORT",
+    "DEFAULT_SSL_PORT",
     "STREAMED",
     "Access",
     "AuthenticationError",

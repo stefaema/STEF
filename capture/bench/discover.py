@@ -18,40 +18,42 @@ from shared.bench_api import (
     Table,
 )
 
-HEAD = ("Address", "Model", "Serial", "CCAPI")
+HEAD = ("Address", "Model", "Serial", "In use")
 
 
 @bench_api.routine(category=PRELINK, steps=["Search"])
 def search(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Search the network.
 
-    Asks every camera on this subnet to describe itself. Multicast does not
-    cross a router and a switch may drop it, so silence here means nothing was
-    heard rather than nothing is there.
+    Asks every camera on this subnet to describe itself, out of every interface
+    this host has. Multicast does not cross a router and an access point may
+    drop it, so silence here means nothing was heard rather than nothing is
+    there, and the result says which of those it was.
     """
-    found = probe.search()
-    if not found:
+    swept = probe.sweep()
+    if not swept:
         pinned = capture.pinned_host()
-        detail = "nothing answered"
         note = (
             f"the configured address {pinned} is still worth trying"
             if pinned
             else "no address is configured either, so there is nothing to connect to"
         )
         yield StepOutcome(
-            WARNED, detail, Result(level=Level.WARN, summary=detail, note=note)
+            WARNED,
+            swept.sentence,
+            Result(level=Level.WARN, summary=swept.sentence, note=note),
         )
         return
     rows = tuple(
-        (one.host, one.model or "?", one.serial or "?", "on" if one.serving else "off")
-        for one in found
+        (one.address, one.model or "?", one.serial or "?", "yes" if one.held else "no")
+        for one in swept.found
     )
     yield StepOutcome(
         PASSED,
-        f"{len(found)} answered",
+        f"{len(swept.found)} answered",
         Result(
             level=Level.OK,
-            summary=f"{len(found)} camera(s) answered",
+            summary=swept.sentence,
             table=Table(head=HEAD, rows=rows),
         ),
     )
