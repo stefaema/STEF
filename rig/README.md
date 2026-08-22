@@ -26,7 +26,7 @@ Either may return a single part, exported as the module's own name, or a dict, w
 keys extend that name into one file per variant:
 
 ```
-builds/rollers/idler_round_groove.stl
+builds/rollers/idler_groove.stl
 builds/samples/mounts/dc_barrel_jack.stl
 ```
 
