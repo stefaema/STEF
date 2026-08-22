@@ -1,7 +1,7 @@
 [project]
 name = "stef-machine"
 version = "0.1.0"
-description = "The three subsystems, assembled and addressable"
+description = "The three subsystems of the STEF project as a single concept."
 requires-python = ">=3.11"
 dependencies = ["loguru>=0.7,<1"]
 

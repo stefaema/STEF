@@ -53,14 +53,14 @@ PORT = bench_api.choice(
 
 def link_is_down() -> Readiness:
     """Say whether there is no link yet, which is what connecting needs."""
-    if transport.state() is bench_api.SubsystemState.UP:
+    if transport.link_state() is bench_api.SubsystemLinkState.UP:
         return blocked("already connected")
     return READY
 
 
 def link_is_up() -> Readiness:
     """Say whether there is a link to close."""
-    if transport.state() is bench_api.SubsystemState.UP:
+    if transport.link_state() is bench_api.SubsystemLinkState.UP:
         return READY
     return blocked("not connected")
 

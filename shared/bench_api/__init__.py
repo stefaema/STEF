@@ -66,7 +66,7 @@ from shared.bench_api.registry import (
     routine,
     run_routine,
 )
-from shared.subsystem import SubsystemSpec, SubsystemState, summary_and_body, titled
+from shared.subsystem import SubsystemLinkState, SubsystemSpec, summary_and_body, titled
 
 __all__ = [
     "CALL",
@@ -95,7 +95,7 @@ __all__ = [
     "StepStatus",
     "SubsystemBench",
     "SubsystemSpec",
-    "SubsystemState",
+    "SubsystemLinkState",
     "Table",
     "as_bytes",
     "bitmask",

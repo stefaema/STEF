@@ -5,12 +5,15 @@ from contextlib import contextmanager
 
 
 class Activity(enum.Enum):
+    """An activity that the STEF machine can be doing."""
+
     IDLE = "idle"
     BENCHING = "benching"
     SCANNING = "scanning"
     CONFIGURING = "configuring"
 
 
+# The areas of the STEF machine and the activities that they correspond to.
 AREAS: dict[str, Activity] = {
     "bench": Activity.BENCHING,
     "scan": Activity.SCANNING,
@@ -19,6 +22,8 @@ AREAS: dict[str, Activity] = {
 
 
 class Busy(Exception):
+    """Raised when the STEF machine is busy and cannot perform an activity."""
+
     pass
 
 
@@ -42,6 +47,7 @@ class Focus:
         return self._refusal
 
     def take(self, activity: Activity, by: str, refusal: str) -> None:
+        """Try to take the focus of the STEF machine for a given activity."""
         with self._lock:
             if self._by is not None:
                 raise Busy(self._refusal)
@@ -57,6 +63,7 @@ class Focus:
 
     @contextmanager
     def doing(self, activity: Activity, by: str, refusal: str) -> Generator[None]:
+        """Context manager for taking and freeing the focus of the STEF machine."""
         self.take(activity, by, refusal)
         try:
             yield
@@ -64,6 +71,8 @@ class Focus:
             self.free()
 
     def blocked_reason(self, area: str) -> str | None:
+        """Return the reason why the STEF machine is blocked from
+        performing an activity in a given area, as long as there is one."""
         if self._activity is Activity.IDLE or AREAS[area] is self._activity:
             return None
         return self._refusal

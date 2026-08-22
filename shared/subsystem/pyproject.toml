@@ -1,7 +1,7 @@
 [project]
 name = "stef-subsystem"
 version = "0.1.0"
-description = "What Transport, Capture and Detection have in common"
+description = "Vocabulary to describe a STEF subsystem and its link state."
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

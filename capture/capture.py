@@ -7,7 +7,7 @@ from typing import Any
 from capture import probe
 from portable.ccapi import Camera, CameraConfig, Credentials, LinkState
 from shared import config, logs
-from shared.subsystem import SubsystemState
+from shared.subsystem import SubsystemLinkState
 
 PACKAGE = "capture"
 SETTINGS = f"camera{config.SUFFIX}"
@@ -84,11 +84,11 @@ def settle(host: str) -> str:
 # ── The camera ───────────────────────────────────────────────────────────────
 
 
-def state() -> SubsystemState:
+def link_state() -> SubsystemLinkState:
     """Return whether the camera is reachable, which is what having a link says."""
     if _camera is not None and _camera.link.state is LinkState.UP:
-        return SubsystemState.UP
-    return SubsystemState.ERROR if _failure else SubsystemState.DOWN
+        return SubsystemLinkState.UP
+    return SubsystemLinkState.ERROR if _failure else SubsystemLinkState.DOWN
 
 
 def camera() -> Camera:

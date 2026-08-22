@@ -3,18 +3,18 @@
 One element, one dial, and nothing to plug in.
 """
 
-from shared.subsystem import SubsystemState
+from shared.subsystem import SubsystemLinkState
 
-_state = SubsystemState.DOWN
-
-
-def state() -> SubsystemState:
-    return _state
+_link_state = SubsystemLinkState.DOWN
 
 
-def set_state(reported: SubsystemState) -> None:
-    global _state
-    _state = reported
+def link_state() -> SubsystemLinkState:
+    return _link_state
 
 
-__all__ = ["set_state", "state"]
+def set_link_state(reported: SubsystemLinkState) -> None:
+    global _link_state
+    _link_state = reported
+
+
+__all__ = ["link_state", "set_link_state"]

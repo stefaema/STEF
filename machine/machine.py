@@ -4,9 +4,9 @@ from contextlib import contextmanager
 from typing import Any
 
 from machine.activity import AREAS, Activity, Focus
-from machine.subsystem import Subsystem
+from machine.subsystem_assembly import Subsystem
 from shared import bench_api, config, logs
-from shared.subsystem import SubsystemSpec, SubsystemState
+from shared.subsystem import SubsystemLinkState, SubsystemSpec
 
 ROSTER = ("transport", "capture", "detect")
 
@@ -43,9 +43,9 @@ class Machine:
     def subsystem(self, name: str) -> Subsystem[Any]:
         return self.subsystems[name]
 
-    def state_of(self, name: str) -> SubsystemState:
+    def link_state_of(self, name: str) -> SubsystemLinkState:
         found = self.subsystems.get(name)
-        return found.state if found is not None else SubsystemState.DOWN
+        return found.link_state if found is not None else SubsystemLinkState.DOWN
 
     @property
     def activity(self) -> Activity:

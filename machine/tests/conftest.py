@@ -3,7 +3,7 @@ import pytest
 from machine import assembled
 from machine.tests import fixture
 from shared import bench_api
-from shared.subsystem import SubsystemState
+from shared.subsystem import SubsystemLinkState
 
 FIXTURE = "machine.tests.fixture"
 
@@ -17,6 +17,6 @@ def hotplate():
 
 @pytest.fixture
 def plugged_in(hotplate):
-    fixture.set_state(SubsystemState.UP)
+    fixture.set_link_state(SubsystemLinkState.UP)
     yield hotplate
-    fixture.set_state(SubsystemState.DOWN)
+    fixture.set_link_state(SubsystemLinkState.DOWN)

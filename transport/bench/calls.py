@@ -76,7 +76,7 @@ def devices() -> tuple[Option, ...]:
     the machine is growing that table, and a copy kept here would disagree with
     the board the first time one is added.
     """
-    if transport.state() is not bench_api.SubsystemState.UP:
+    if transport.link_state() is not bench_api.SubsystemLinkState.UP:
         return ()
     try:
         reply = transport.firmware().sys.devices()
@@ -331,7 +331,7 @@ def declare() -> tuple[str, ...]:
             group, _, name = spec.name.partition(".")
             summary, body = bench_api.summary_and_body(spec.doc or "")
             bench_api.register_routine(
-                module=__name__,
+                declared_in=__name__,
                 group=group,
                 name=name,
                 title=bench_api.titled(summary) or spec.name,

@@ -45,14 +45,14 @@ HOST = bench_api.choice(
 
 def camera_is_down() -> Readiness:
     """Say whether there is no camera yet, which is what connecting needs."""
-    if capture.state() is bench_api.SubsystemState.UP:
+    if capture.link_state() is bench_api.SubsystemLinkState.UP:
         return blocked("already connected")
     return READY
 
 
 def camera_is_up() -> Readiness:
     """Say whether there is a camera to disconnect from."""
-    if capture.state() is bench_api.SubsystemState.UP:
+    if capture.link_state() is bench_api.SubsystemLinkState.UP:
         return READY
     return blocked("not connected")
 

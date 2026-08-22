@@ -803,7 +803,7 @@
     }
 
     var buttons = el("div", { class: "flex items-center gap-2" });
-    if (sub.state === "up") {
+    if (sub.link === "up") {
       var off = el("button", { class: CLS.btn, onclick: disconnect });
       off.append(icon("link_off"), el("span", { text: (T.link || {}).disconnect }));
       buttons.append(off);
@@ -838,7 +838,7 @@
 
   function probe() {
     var sub = current();
-    if (!connectRoutine() || sub.state === "up") {
+    if (!connectRoutine() || sub.link === "up") {
       state.linkReason = null;
       state.linkKnown = true;
       return Promise.resolve();
@@ -1355,7 +1355,7 @@
   }
 
   function implementationCard(sub) {
-    var spec = LINK[sub.state] || LINK.down;
+    var spec = LINK[sub.link] || LINK.down;
     var body = el("div", { class: "flex flex-col gap-2 p-4" },
       el("span", { class: CLS.lede, text: sub.summary }),
       sub.description
@@ -1364,7 +1364,7 @@
 
     var state_ = el("span", { class: "inline-flex items-center gap-2 text-xs " + spec.tone },
       el("span", { class: "w-1.5 h-1.5 rounded-full " + spec.dot }),
-      el("span", { text: (T.link || {}).state[sub.state] || sub.state }));
+      el("span", { text: (T.link || {}).state[sub.link] || sub.link }));
 
     return card((T.card || {}).implementation, body, state_);
   }
@@ -1399,7 +1399,7 @@
       return;
     }
 
-    var up = sub.state === "up";
+    var up = sub.link === "up";
     if (!up) state.tool = "link";
 
     dom.main.append(implementationCard(sub), toolTabs(up));

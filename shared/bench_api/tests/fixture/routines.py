@@ -46,14 +46,14 @@ def probe_is_warm(port: str = "") -> Readiness:
 )
 def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Connect."""
-    hardware.set_state(bench_api.SubsystemState.UP)
+    hardware.set_link_state(bench_api.SubsystemLinkState.UP)
     yield StepOutcome(PASSED, f"open on {values['port']}")
 
 
 @bench_api.routine(category=LINK)
 def disconnect(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Disconnect."""
-    hardware.set_state(bench_api.SubsystemState.DOWN)
+    hardware.set_link_state(bench_api.SubsystemLinkState.DOWN)
     yield StepOutcome(PASSED, "closed")
 
 
@@ -119,7 +119,7 @@ def ramp_that_never_starts(values: dict[str, Any]) -> Iterator[StepOutcome]:
 
 
 bench_api.register_routine(
-    module=__name__,
+    declared_in=__name__,
     group="generated",
     name="ramp_once",
     title="Ramp once",

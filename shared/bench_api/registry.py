@@ -30,7 +30,7 @@ from shared.bench_api.records import (
     SubsystemBench,
     blocked,
 )
-from shared.subsystem import SubsystemSpec, SubsystemState, prose_of, titled
+from shared.subsystem import SubsystemLinkState, SubsystemSpec, prose_of, titled
 
 TESTS = "tests"
 
@@ -69,12 +69,14 @@ class Registry:
         """Return the routine named `group.name` under one subsystem."""
         return self.subsystems[subsystem_id].routines[key]
 
-    def owner_of(self, module: str) -> SubsystemBench:
+    def owner_of(self, declared_in: str) -> SubsystemBench:
         """Return the subsystem whose package the module was written in."""
-        owners = [item for item in self.subsystems.values() if item.spec.owns(module)]
+        owners = [
+            item for item in self.subsystems.values() if item.spec.owns(declared_in)
+        ]
         if not owners:
             raise DeclarationError(
-                f"{module!r} declares against no subsystem; load its package first"
+                f"{declared_in!r} declares against no subsystem; load its package first"
             )
         return max(owners, key=lambda item: len(item.package))
 
@@ -114,7 +116,7 @@ def _is_declaration(under: str) -> bool:
 
 def register_routine(
     *,
-    module: str,
+    declared_in: str,
     group: str,
     name: str,
     title: str,
@@ -131,7 +133,7 @@ def register_routine(
 
     The decorator reads these off a function; a loop over an ABI passes them in.
     """
-    owner = REGISTRY.owner_of(module)
+    owner = REGISTRY.owner_of(declared_in)
     return REGISTRY.add_routine(
         Routine(
             id=f"{owner.id}.{group}.{name}",
@@ -163,7 +165,7 @@ def routine(
     def declare(target: Callable[..., Any]) -> Callable[..., Any]:
         summary, body = prose_of(target)
         register_routine(
-            module=target.__module__,
+            declared_in=target.__module__,
             group=target.__module__.rpartition(".")[2],
             name=target.__name__,
             title=titled(summary) or target.__name__,
@@ -186,15 +188,15 @@ def routine(
 NEEDS_LINK = (SETUP, CALL)
 
 
-def readiness_of(item: Routine, state: SubsystemState) -> Readiness:
+def readiness_of(item: Routine, link_state: SubsystemLinkState) -> Readiness:
     """Return whether this routine may run, and the sentence for when it may not.
 
     The category carries the rule, so a screen full of calls costs one state read
     rather than one question per call.
     """
-    if item.category in NEEDS_LINK and state is not SubsystemState.UP:
+    if item.category in NEEDS_LINK and link_state is not SubsystemLinkState.UP:
         return blocked("not connected")
-    if item.category is PRELINK and state is SubsystemState.UP:
+    if item.category is PRELINK and link_state is SubsystemLinkState.UP:
         return blocked("the link holds the port; disconnect first")
     if item.do.can_run is None:
         return READY

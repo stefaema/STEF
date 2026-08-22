@@ -110,7 +110,7 @@ def readiness_json(verdict: Readiness | None) -> dict[str, Any]:
     return {"ok": bool(verdict), "reason": verdict.reason}
 
 
-def routine_json(item: Routine, state: Any) -> dict[str, Any]:
+def routine_json(item: Routine, link_state: Any) -> dict[str, Any]:
     """Return one routine, its form, and whether it may be run right now."""
     return {
         "id": item.id,
@@ -124,6 +124,6 @@ def routine_json(item: Routine, state: Any) -> dict[str, Any]:
         "steps": list(item.steps),
         "inputs": [input_json(entry, item) for entry in item.inputs],
         "blank": blank_values(item.inputs),
-        "ready": readiness_json(readiness_of(item, state)),
+        "ready": readiness_json(readiness_of(item, link_state)),
         "asks_first": item.do.can_run_with is not None,
     }

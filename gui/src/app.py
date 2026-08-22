@@ -88,9 +88,9 @@ def _failed(name: str, exc: BaseException) -> str:
     return message
 
 
-def _state(name: str) -> str:
+def _link_state(name: str) -> str:
     """Return what a subsystem is doing, asked of its package rather than remembered."""
-    return stef.state_of(name).value
+    return stef.link_state_of(name).value
 
 
 # ── The screen ───────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ def machine_state() -> dict[str, Any]:
         "state": stef.activity.value,
         "busy": stef.busy_with,
         "areas": stef.openings(),
-        "subsystems": {name: _state(name) for name in stef.subsystems},
+        "subsystems": {name: _link_state(name) for name in stef.subsystems},
     }
 
 
@@ -201,9 +201,9 @@ async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc), "state": _state(name)}
+        return {"ok": False, "reason": _failed(name, exc), "link": _link_state(name)}
     stream.say(name, "ok", "result", gettext("Connected"))
-    return {"ok": True, "reason": None, "state": _state(name)}
+    return {"ok": True, "reason": None, "link": _link_state(name)}
 
 
 @app.post("/api/link/{name}/disconnect")
@@ -214,9 +214,9 @@ async def disconnect(name: str) -> dict[str, Any]:
     try:
         await asyncio.to_thread(lambda: _settle(declared, {}))
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc), "state": _state(name)}
+        return {"ok": False, "reason": _failed(name, exc), "link": _link_state(name)}
     stream.say(name, "ok", "result", gettext("Disconnected"))
-    return {"ok": True, "state": _state(name)}
+    return {"ok": True, "link": _link_state(name)}
 
 
 def _settle(declared: Any, values: dict[str, Any]) -> None:
@@ -236,7 +236,7 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
     if test_id not in record.bench.routines:
         raise HTTPException(404, f"no routine {name}.{test_id}")
     test = record.bench.routines[test_id]
-    verdict = bench_api.readiness_of(test, record.state)
+    verdict = bench_api.readiness_of(test, record.link_state)
     if not verdict:
         raise HTTPException(409, str(verdict))
     taken = bench_api.coerced_values(test.inputs, values)
@@ -283,7 +283,7 @@ async def call(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(404, f"no routine {name}.{key}")
     declared = record.bench.routines[key]
 
-    verdict = bench_api.readiness_of(declared, record.state)
+    verdict = bench_api.readiness_of(declared, record.link_state)
     if not verdict:
         raise HTTPException(409, str(verdict))
 

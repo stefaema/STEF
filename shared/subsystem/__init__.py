@@ -1,16 +1,16 @@
-"""What Transport, Capture and Detection have in common."""
+"""Vocabulary to describe a STEF subsystem and its link state."""
 
 import enum
-import importlib
 import inspect
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Any
 
-# What a subsystem package is asked for its state by.
-STATE_ATTRIBUTE = "state"
+# What a subsystem package is asked for its link state by.
+LINK_STATE_ATTRIBUTE = "link_state"
 
 
-class SubsystemState(enum.Enum):
+class SubsystemLinkState(enum.Enum):
     """Whether one subsystem is reachable."""
 
     DOWN = "down"
@@ -19,14 +19,14 @@ class SubsystemState(enum.Enum):
     ERROR = "error"
 
 
-def state_of(module: Any) -> SubsystemState:
+def link_state_of(module: Any) -> SubsystemLinkState:
     """Return the state a subsystem package reports, or DOWN where it reports none.
 
     Asked through the module rather than through a function captured at load, so
     a package that reports differently later is believed.
     """
-    reported = getattr(module, STATE_ATTRIBUTE, None)
-    return reported() if reported is not None else SubsystemState.DOWN
+    reported = getattr(module, LINK_STATE_ATTRIBUTE, None)
+    return reported() if reported is not None else SubsystemLinkState.DOWN
 
 
 # ── The prose a package states about itself ──────────────────────────────────
@@ -69,10 +69,10 @@ class SubsystemSpec:
     description: str = ""
 
     @classmethod
-    def of(cls, module: Any) -> "SubsystemSpec":
+    def of(cls, module: ModuleType) -> "SubsystemSpec":
         """Return the identity a loaded package states, its name and its docstring."""
         summary, description = prose_of(module)
-        package = str(module.__name__)
+        package = module.__name__
         return cls(
             id=package.rpartition(".")[2],
             package=package,
@@ -80,22 +80,17 @@ class SubsystemSpec:
             description=description,
         )
 
-    @classmethod
-    def of_package(cls, package: str) -> "SubsystemSpec":
-        """Return the identity of a package named rather than held."""
-        return cls.of(importlib.import_module(package))
-
-    def owns(self, module: str) -> bool:
+    def owns(self, module_name: str) -> bool:
         """Whether a module was written inside this subsystem's package."""
-        return module == self.package or module.startswith(f"{self.package}.")
+        return module_name == self.package or module_name.startswith(f"{self.package}.")
 
 
 __all__ = [
-    "STATE_ATTRIBUTE",
+    "LINK_STATE_ATTRIBUTE",
     "SubsystemSpec",
-    "SubsystemState",
+    "SubsystemLinkState",
     "prose_of",
-    "state_of",
+    "link_state_of",
     "summary_and_body",
     "titled",
 ]

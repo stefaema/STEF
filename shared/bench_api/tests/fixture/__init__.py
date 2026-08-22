@@ -3,7 +3,7 @@
 One heating element and the probe watching it.
 """
 
-from shared.bench_api import SubsystemState
-from shared.bench_api.tests.fixture.hardware import state
+from shared.bench_api import SubsystemLinkState
+from shared.bench_api.tests.fixture.hardware import link_state
 
-__all__ = ["SubsystemState", "state"]
+__all__ = ["SubsystemLinkState", "link_state"]

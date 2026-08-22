@@ -1,8 +1,8 @@
-"""The three subsystems, assembled and addressable."""
+"""The three subsystems of the STEF project as a single concept."""
 
 from machine.activity import AREAS, Activity, Busy, Focus
 from machine.machine import ROSTER, Machine, assembled
-from machine.subsystem import Subsystem, subsystem_json
+from machine.subsystem_assembly import Subsystem, subsystem_json
 
 __all__ = [
     "AREAS",

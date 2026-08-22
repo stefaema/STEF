@@ -2,12 +2,12 @@ import pytest
 
 from shared import bench_api
 from shared.bench_api import Level, Result, StepOutcome, Table
-from shared.bench_api.tests.fixture import state
+from shared.bench_api.tests.fixture import link_state
 
 
 def routine_of(oven, key):
     """Return one routine as the screen receives it."""
-    return bench_api.routine_json(oven.routines[key], state())
+    return bench_api.routine_json(oven.routines[key], link_state())
 
 
 # ── One function per record ──────────────────────────────────────────────────

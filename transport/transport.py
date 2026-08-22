@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.subsystem import SubsystemState
+from shared.subsystem import SubsystemLinkState
 from transport import fw
 
 AUTO = "auto"
@@ -24,11 +24,11 @@ def named_port(port: str) -> str | None:
 # ── The link ─────────────────────────────────────────────────────────────────
 
 
-def state() -> SubsystemState:
+def link_state() -> SubsystemLinkState:
     """Return whether the board is reachable, which is what having a link says."""
     if _link is not None:
-        return SubsystemState.UP
-    return SubsystemState.ERROR if _failure else SubsystemState.DOWN
+        return SubsystemLinkState.UP
+    return SubsystemLinkState.ERROR if _failure else SubsystemLinkState.DOWN
 
 
 def firmware() -> Any:

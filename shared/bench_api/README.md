@@ -7,8 +7,8 @@ other.
 ## Declare a subsystem
 
 A subsystem is a package. `shared/subsystem` reads its identity off it: the last
-name part is the id, the docstring is the prose the screen shows, and a `state`
-attribute is how it reports whether it is reachable:
+name part is the id, the docstring is the prose the screen shows, and a
+`link_state` attribute is how it reports whether it is reachable:
 
 ```python
 """The oven.
@@ -16,7 +16,7 @@ attribute is how it reports whether it is reachable:
 One heating element and the probe watching it.
 """
 
-from oven.oven import state
+from oven.oven import link_state
 ```
 
 Deriving its bench imports everything below it, so every routine declared under
@@ -62,7 +62,7 @@ The docstring is the prose: first line the title, the rest the description. The
 id is where it lives, `subsystem.module.function`, so nothing names itself
 twice.
 
-`category` says when it may run, and one state read answers for a whole screen:
+`category` says when it may run, and one link state read answers for a whole screen:
 
 | category | may run |
 | --- | --- |

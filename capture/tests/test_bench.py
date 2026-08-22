@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 from capture import capture
 from capture.tests import fake
 from shared import bench_api
-from shared.bench_api import FAILED, PASSED, WARNED, SubsystemState
+from shared.bench_api import FAILED, PASSED, WARNED, SubsystemLinkState
 from shared.subsystem import SubsystemSpec
 
 
@@ -20,7 +22,7 @@ def loaded():
     tests would leave every later one with nothing declared.
     """
     bench_api.REGISTRY.clear()
-    return bench_api.derive(SubsystemSpec.of_package("capture"))
+    return bench_api.derive(SubsystemSpec.of(importlib.import_module("capture")))
 
 
 @pytest.fixture
@@ -59,16 +61,16 @@ def test_a_setting_is_read_and_written_by_routines_nobody_wrote_out(loaded):
 
 
 def test_nothing_that_needs_a_camera_may_run_before_there_is_one(loaded):
-    assert capture.state() is SubsystemState.DOWN
+    assert capture.link_state() is SubsystemLinkState.DOWN
     item = bench_api.REGISTRY.routine("capture", "shots.one_frame")
 
-    assert not bench_api.readiness_of(item, capture.state())
+    assert not bench_api.readiness_of(item, capture.link_state())
 
 
 def test_the_ladder_runs_only_while_nothing_holds_the_camera(loaded, connected):
     item = bench_api.REGISTRY.routine("capture", "discover.search")
 
-    verdict = bench_api.readiness_of(item, capture.state())
+    verdict = bench_api.readiness_of(item, capture.link_state())
 
     assert not verdict
     assert "disconnect" in str(verdict)
@@ -77,7 +79,7 @@ def test_the_ladder_runs_only_while_nothing_holds_the_camera(loaded, connected):
 def test_connecting_twice_is_refused_rather_than_done(loaded, connected):
     item = bench_api.REGISTRY.routine("capture", "link.connect")
 
-    assert not bench_api.readiness_of(item, capture.state())
+    assert not bench_api.readiness_of(item, capture.link_state())
 
 
 # ── What running one does ────────────────────────────────────────────────────
@@ -87,7 +89,7 @@ def test_connecting_reports_the_versions_it_accepted(loaded):
     transport = fake.Transport()
     capture.open_link("10.0.0.2", transport)
     try:
-        assert capture.state() is SubsystemState.UP
+        assert capture.link_state() is SubsystemLinkState.UP
         found = capture.camera()
         assert found.link.registry.versions == ("ver100", "ver110", "ver140")
         assert found.link.manifest
@@ -143,7 +145,7 @@ def test_a_written_setting_is_checked_and_put_back(loaded, connected):
 def test_a_setting_this_camera_lacks_says_so_rather_than_vanishing(loaded, connected):
     item = bench_api.REGISTRY.routine("capture", "calls.read_wbshift")
 
-    verdict = bench_api.readiness_of(item, capture.state())
+    verdict = bench_api.readiness_of(item, capture.link_state())
 
     assert not verdict
     assert "does not offer" in str(verdict)

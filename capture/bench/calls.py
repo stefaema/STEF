@@ -51,7 +51,7 @@ def allowed_for(setting: Setting) -> Callable[[], tuple[Option, ...]]:
     """
 
     def options() -> tuple[Option, ...]:
-        if capture.state() is not bench_api.SubsystemState.UP:
+        if capture.link_state() is not bench_api.SubsystemLinkState.UP:
             return ()
         try:
             return tuple(
@@ -68,7 +68,7 @@ def offered(setting: Setting) -> Callable[[], Readiness]:
     """Return the gate that hides a setting this body does not have."""
 
     def can_run() -> Readiness:
-        if capture.state() is not bench_api.SubsystemState.UP:
+        if capture.link_state() is not bench_api.SubsystemLinkState.UP:
             return blocked("not connected")
         if not capture.camera().settings.offers(setting):
             return blocked("this camera does not offer it")
@@ -137,7 +137,7 @@ def declare() -> int:
     for setting in Setting:
         name = setting.name.lower()
         bench_api.register_routine(
-            module=__name__,
+            declared_in=__name__,
             group=GROUP,
             name=f"read_{name}",
             title=f"Read {name}",
@@ -147,7 +147,7 @@ def declare() -> int:
             can_run=offered(setting),
         )
         bench_api.register_routine(
-            module=__name__,
+            declared_in=__name__,
             group=GROUP,
             name=f"write_{name}",
             title=f"Write {name}",

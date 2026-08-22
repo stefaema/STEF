@@ -1,7 +1,7 @@
 { ... }:
 
 {
-  description = "what every STEF subsystem is, whatever it drives";
+  description = "Vocabulary to describe a STEF subsystem and its link state";
 
   python = ps: [ ps.pytest ];
 }

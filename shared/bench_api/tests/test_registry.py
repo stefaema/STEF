@@ -1,8 +1,8 @@
 import pytest
 
 from shared import bench_api
-from shared.bench_api import CALL, LINK, PRELINK, SETUP, SubsystemState
-from shared.bench_api.tests.fixture import state
+from shared.bench_api import CALL, LINK, PRELINK, SETUP, SubsystemLinkState
+from shared.bench_api.tests.fixture import link_state
 
 FIXTURE = "shared.bench_api.tests.fixture"
 
@@ -17,7 +17,7 @@ def test_the_package_name_is_the_id_and_its_docstring_is_the_prose(oven):
 
 
 def test_the_package_answers_for_its_own_state(oven):
-    assert state() is SubsystemState.DOWN
+    assert link_state() is SubsystemLinkState.DOWN
 
 
 def test_every_module_under_the_package_declared_into_it(oven):
@@ -44,7 +44,7 @@ def test_a_routine_declared_from_parts_lands_beside_the_decorated_ones(oven):
 def test_a_second_routine_by_one_name_is_refused(oven):
     with pytest.raises(bench_api.DeclarationError, match="two routines"):
         bench_api.register_routine(
-            module=f"{FIXTURE}.routines",
+            declared_in=f"{FIXTURE}.routines",
             group="routines",
             name="ramp",
             title="Ramp again",
@@ -57,7 +57,7 @@ def test_a_routine_declared_under_no_loaded_package_is_refused(oven):
         bench_api.DeclarationError, match="declares against no subsystem"
     ):
         bench_api.register_routine(
-            module="nobody.owns.this",
+            declared_in="nobody.owns.this",
             group="stray",
             name="ramp",
             title="Ramp",
@@ -73,31 +73,33 @@ def test_a_test_module_under_the_package_is_not_walked_for_declarations(oven):
 
 
 def test_a_routine_needing_a_link_is_blocked_while_there_is_none(oven):
-    verdict = bench_api.readiness_of(oven.routines["routines.ramp"], state())
+    verdict = bench_api.readiness_of(oven.routines["routines.ramp"], link_state())
 
     assert not verdict
     assert verdict.reason == "not connected"
 
 
 def test_the_same_routine_is_ready_once_the_link_is_up(linked):
-    assert bench_api.readiness_of(linked.routines["routines.ramp"], state())
+    assert bench_api.readiness_of(linked.routines["routines.ramp"], link_state())
 
 
 def test_a_prelink_routine_is_blocked_while_the_link_holds_the_port(linked):
-    verdict = bench_api.readiness_of(linked.routines["routines.check_probe"], state())
+    verdict = bench_api.readiness_of(
+        linked.routines["routines.check_probe"], link_state()
+    )
 
     assert not verdict
     assert "disconnect first" in str(verdict)
 
 
 def test_a_prelink_routine_is_ready_when_nothing_holds_the_port(oven):
-    assert bench_api.readiness_of(oven.routines["routines.check_probe"], state())
+    assert bench_api.readiness_of(oven.routines["routines.check_probe"], link_state())
 
 
 def test_connecting_is_refused_once_something_is_already_connected(linked):
     declared = linked.routines["routines.connect"]
 
-    assert bench_api.readiness_of(declared, state())
+    assert bench_api.readiness_of(declared, link_state())
 
 
 def test_every_category_is_one_state_read(oven):
