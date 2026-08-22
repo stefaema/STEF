@@ -3,15 +3,15 @@
 One screen drives subsystems that share nothing. The screen could learn all of them, and then
 every new subsystem edits the GUI and the GUI carries a device table it has no business knowing.
 
-So it learns none of them. It reads `shared/bench_api`'s registry, serialises what it finds, and
-renders declarations. Nothing under `src/` names a subsystem, a port or a register, and the day
+So it learns none of them. It reads the subsystems `machine/` assembles, serialises what it
+finds, and renders declarations. Nothing under `src/` names a subsystem, a port or a register, and the day
 capture is decorated it appears here with no change to this module.
 
 ## What is served
 
-The diagnostics screen, for whatever subsystems `ROSTER` in `src/app.py` lists. Operation,
-settings and the standalone log are in the rail and disabled: operation needs an orchestrator
-that is not designed, and settings needs an editor for the firmware pin.
+The diagnostics screen, for whatever subsystems `ROSTER` in `machine/machine.py` lists.
+Operation, settings and the standalone log are in the rail and disabled: operation needs
+`shared/scan_api`, which is not designed, and settings needs an editor for the firmware pin.
 
 Everything a subsystem offers is a routine. The screen groups them by the category each one
 declares, and gates each group on the one thing the category already says:
@@ -69,8 +69,7 @@ the identity function, so the screen reads correctly with none installed.
 | path | what it answers |
 | --- | --- |
 | `src/app.py` | the routes, and what a request is allowed to do |
-| `src/runner.py` | the one slot, and the stream everything reports on |
-| `src/stef.py` | what the whole machine is doing. Placeholder until an orchestrator says |
+| `src/runner.py` | running one routine off the loop, and the stream everything reports on |
 | `src/text.py` | every legend the browser writes |
 | `src/i18n.py` | where catalogs are looked for |
 | `src/templates/` | the shell the browser fills in |

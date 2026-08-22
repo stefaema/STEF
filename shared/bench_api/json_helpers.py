@@ -9,7 +9,6 @@ from shared.bench_api.records import (
     Result,
     Routine,
     StepOutcome,
-    Subsystem,
     Table,
 )
 from shared.bench_api.registry import REGISTRY, readiness_of
@@ -127,16 +126,4 @@ def routine_json(item: Routine, state: Any) -> dict[str, Any]:
         "blank": blank_values(item.inputs),
         "ready": readiness_json(readiness_of(item, state)),
         "asks_first": item.do.can_run_with is not None,
-    }
-
-
-def subsystem_json(item: Subsystem) -> dict[str, Any]:
-    """Return one subsystem, its state read once, and every routine under it."""
-    state = item.now()
-    return {
-        "id": item.id,
-        "summary": item.summary,
-        "description": item.description,
-        "state": state.value,
-        "routines": [routine_json(r, state) for r in item.routines.values()],
     }

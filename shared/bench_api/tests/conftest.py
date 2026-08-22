@@ -2,6 +2,7 @@ import pytest
 
 from shared import bench_api
 from shared.bench_api import SubsystemState
+from shared.subsystem import SubsystemSpec
 
 FIXTURE = "shared.bench_api.tests.fixture"
 
@@ -15,7 +16,7 @@ def oven():
     with no routines under it.
     """
     bench_api.REGISTRY.clear()
-    yield bench_api.load_subsystem(FIXTURE)
+    yield bench_api.derive(SubsystemSpec.of_package(FIXTURE))
     bench_api.REGISTRY.clear()
 
 

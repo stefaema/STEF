@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
-from shared.subsystem import SubsystemState, state_of
+from shared.subsystem import SubsystemSpec
 
 # ── How a declaration refuses ────────────────────────────────────────────────
 
@@ -183,27 +183,21 @@ class Routine:
 
 
 @dataclass
-class Subsystem:
-    """One part of the machine, and every routine declared under its package."""
+class SubsystemBench:
+    """Every routine declared under one subsystem's package."""
 
-    module: Any = None
-    summary: str = ""
-    description: str = ""
+    spec: SubsystemSpec
     routines: dict[str, Routine] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
         """Return the name this subsystem is known by, its package's last part."""
-        return self.package.rpartition(".")[2]
+        return self.spec.id
 
     @property
     def package(self) -> str:
         """Return the dotted path every declaration under this subsystem starts with."""
-        return self.module.__name__
-
-    def now(self) -> SubsystemState:
-        """Return the state the package reports when asked, never one remembered here."""
-        return state_of(self.module)
+        return self.spec.package
 
     def by_category(self, category: Category) -> tuple[Routine, ...]:
         """Return every routine of one category, in declaration order."""

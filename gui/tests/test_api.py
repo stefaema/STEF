@@ -143,10 +143,10 @@ def test_a_routine_that_opens_the_port_is_refused_while_the_link_holds_it(
 ):
     # Two owners of one serial port is a corrupted exchange rather than an
     # error, so this has to be refused rather than attempted.
-    from shared import bench_api
+    from gui.src.app import stef
     from shared.bench_api import SubsystemState
 
-    package = bench_api.REGISTRY.subsystem("transport").module
+    package = stef.subsystem("transport").module
     monkeypatch.setattr(package, "state", lambda: SubsystemState.UP)
     answer = client.post(
         "/api/run/transport/prelink.verify_port", json={"port": "auto"}

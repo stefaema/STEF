@@ -2,6 +2,7 @@ import pytest
 
 from shared import bench_api
 from shared.bench_api import CALL, LINK, PRELINK, SETUP, SubsystemState
+from shared.bench_api.tests.fixture import state
 
 FIXTURE = "shared.bench_api.tests.fixture"
 
@@ -11,12 +12,12 @@ FIXTURE = "shared.bench_api.tests.fixture"
 
 def test_the_package_name_is_the_id_and_its_docstring_is_the_prose(oven):
     assert oven.id == "fixture"
-    assert oven.summary.startswith("An oven with a thermocouple")
-    assert "One heating element" in oven.description
+    assert oven.spec.summary.startswith("An oven with a thermocouple")
+    assert "One heating element" in oven.spec.description
 
 
 def test_the_package_answers_for_its_own_state(oven):
-    assert oven.now() is SubsystemState.DOWN
+    assert state() is SubsystemState.DOWN
 
 
 def test_every_module_under_the_package_declared_into_it(oven):
@@ -72,33 +73,31 @@ def test_a_test_module_under_the_package_is_not_walked_for_declarations(oven):
 
 
 def test_a_routine_needing_a_link_is_blocked_while_there_is_none(oven):
-    verdict = bench_api.readiness_of(oven.routines["routines.ramp"], oven.now())
+    verdict = bench_api.readiness_of(oven.routines["routines.ramp"], state())
 
     assert not verdict
     assert verdict.reason == "not connected"
 
 
 def test_the_same_routine_is_ready_once_the_link_is_up(linked):
-    assert bench_api.readiness_of(linked.routines["routines.ramp"], linked.now())
+    assert bench_api.readiness_of(linked.routines["routines.ramp"], state())
 
 
 def test_a_prelink_routine_is_blocked_while_the_link_holds_the_port(linked):
-    verdict = bench_api.readiness_of(
-        linked.routines["routines.check_probe"], linked.now()
-    )
+    verdict = bench_api.readiness_of(linked.routines["routines.check_probe"], state())
 
     assert not verdict
     assert "disconnect first" in str(verdict)
 
 
 def test_a_prelink_routine_is_ready_when_nothing_holds_the_port(oven):
-    assert bench_api.readiness_of(oven.routines["routines.check_probe"], oven.now())
+    assert bench_api.readiness_of(oven.routines["routines.check_probe"], state())
 
 
 def test_connecting_is_refused_once_something_is_already_connected(linked):
     declared = linked.routines["routines.connect"]
 
-    assert bench_api.readiness_of(declared, linked.now())
+    assert bench_api.readiness_of(declared, state())
 
 
 def test_every_category_is_one_state_read(oven):

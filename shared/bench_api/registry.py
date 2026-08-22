@@ -2,7 +2,6 @@
 
 import dataclasses
 import importlib
-import inspect
 import pkgutil
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -28,10 +27,10 @@ from shared.bench_api.records import (
     Routine,
     StepOutcome,
     StepStatus,
-    Subsystem,
-    SubsystemState,
+    SubsystemBench,
     blocked,
 )
+from shared.subsystem import SubsystemSpec, SubsystemState, prose_of, titled
 
 TESTS = "tests"
 
@@ -44,9 +43,9 @@ class Registry:
 
     def __init__(self) -> None:
         """Start holding nothing, since a declaration arrives by import."""
-        self.subsystems: dict[str, Subsystem] = {}
+        self.subsystems: dict[str, SubsystemBench] = {}
 
-    def add_subsystem(self, item: Subsystem) -> Subsystem:
+    def add_subsystem(self, item: SubsystemBench) -> SubsystemBench:
         """Register one subsystem, refusing a second by the same id."""
         if item.id in self.subsystems:
             raise DeclarationError(f"two subsystems answer to {item.id!r}")
@@ -62,7 +61,7 @@ class Registry:
         owner.routines[key] = item
         return item
 
-    def subsystem(self, subsystem_id: str) -> Subsystem:
+    def subsystem(self, subsystem_id: str) -> SubsystemBench:
         """Return the subsystem with this id."""
         return self.subsystems[subsystem_id]
 
@@ -70,13 +69,9 @@ class Registry:
         """Return the routine named `group.name` under one subsystem."""
         return self.subsystems[subsystem_id].routines[key]
 
-    def owner_of(self, module: str) -> Subsystem:
+    def owner_of(self, module: str) -> SubsystemBench:
         """Return the subsystem whose package the module was written in."""
-        owners = [
-            item
-            for item in self.subsystems.values()
-            if module == item.package or module.startswith(f"{item.package}.")
-        ]
+        owners = [item for item in self.subsystems.values() if item.spec.owns(module)]
         if not owners:
             raise DeclarationError(
                 f"{module!r} declares against no subsystem; load its package first"
@@ -94,19 +89,15 @@ REGISTRY = Registry()
 # ── Loading one subsystem ────────────────────────────────────────────────────
 
 
-def load_subsystem(package: str) -> Subsystem:
+def derive(spec: SubsystemSpec) -> SubsystemBench:
     """Import a package and everything below it, so its declarations register.
 
-    The package is the subsystem: its name is the id, its docstring is the prose
-    the screen shows, and any routine declared beneath it belongs to it.
+    Any routine declared beneath the package belongs to the subsystem it names.
     """
-    module = importlib.import_module(package)
-    summary, description = prose_of(module)
-    found = REGISTRY.add_subsystem(
-        Subsystem(module=module, summary=summary, description=description)
-    )
-    for info in pkgutil.walk_packages(module.__path__, f"{package}."):
-        if not _is_declaration(info.name.removeprefix(f"{package}.")):
+    module = importlib.import_module(spec.package)
+    found = REGISTRY.add_subsystem(SubsystemBench(spec=spec))
+    for info in pkgutil.walk_packages(module.__path__, f"{spec.package}."):
+        if not _is_declaration(info.name.removeprefix(f"{spec.package}.")):
             continue
         importlib.import_module(info.name)
     return found
@@ -116,30 +107,6 @@ def _is_declaration(under: str) -> bool:
     """Whether a module below a subsystem could declare, rather than test what does."""
     parts = under.split(".")
     return TESTS not in parts and not parts[-1].startswith("test_")
-
-
-def prose_of(target: Any) -> tuple[str, str]:
-    """Return a docstring's summary line and its body, which is what the screen shows."""
-    return summary_and_body(inspect.getdoc(target) or "")
-
-
-def summary_and_body(prose: str) -> tuple[str, str]:
-    """Return any prose split into the line a label shows and the rest of it.
-
-    A screen gives the two different weights, so prose that arrives whole reads
-    as one long label unless it is split here.
-    """
-    summary, _, body = prose.partition("\n")
-    return summary.strip(), inspect.cleandoc(body).strip()
-
-
-def titled(summary: str) -> str:
-    """Return a docstring summary as a title, which is a label and not a sentence."""
-    return (
-        summary[:-1]
-        if summary.endswith(".") and not summary.endswith("..")
-        else summary
-    )
 
 
 # ── Declaring a routine ──────────────────────────────────────────────────────
@@ -329,7 +296,7 @@ def _next(pending: list[str]) -> str:
 # ── Which routines a link is made of ─────────────────────────────────────────
 
 
-def link_routine(item: Subsystem, name: str) -> Routine | None:
+def link_routine(item: SubsystemBench, name: str) -> Routine | None:
     """Return one of a subsystem's link routines by name, or None where it has none."""
     return next(
         (r for r in item.by_category(LINK) if r.name == name),

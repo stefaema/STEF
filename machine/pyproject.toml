@@ -1,0 +1,11 @@
+[project]
+name = "stef-machine"
+version = "0.1.0"
+description = "The three subsystems, assembled and addressable"
+requires-python = ">=3.11"
+dependencies = ["loguru>=0.7,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = [".."]
+testpaths = ["tests"]
+cache_dir = "build/pytest"

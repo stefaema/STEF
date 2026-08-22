@@ -1,8 +1,9 @@
 import pytest
 
 from shared import bench_api
+from shared.subsystem import SubsystemSpec
 
-TRANSPORT = bench_api.load_subsystem("transport")
+TRANSPORT = bench_api.derive(SubsystemSpec.of_package("transport"))
 
 
 @pytest.fixture(scope="session")

@@ -27,7 +27,6 @@ from shared.bench_api.json_helpers import (
     readiness_json,
     result_json,
     routine_json,
-    subsystem_json,
 )
 from shared.bench_api.records import (
     CALL,
@@ -52,24 +51,22 @@ from shared.bench_api.records import (
     Routine,
     StepOutcome,
     StepStatus,
-    Subsystem,
+    SubsystemBench,
     Table,
     blocked,
 )
 from shared.bench_api.registry import (
     REGISTRY,
     Registry,
+    derive,
     link_routine,
-    load_subsystem,
     readiness_of,
     readiness_with,
     register_routine,
     routine,
     run_routine,
-    summary_and_body,
-    titled,
 )
-from shared.subsystem import SubsystemState
+from shared.subsystem import SubsystemSpec, SubsystemState, summary_and_body, titled
 
 __all__ = [
     "CALL",
@@ -96,7 +93,8 @@ __all__ = [
     "Routine",
     "StepOutcome",
     "StepStatus",
-    "Subsystem",
+    "SubsystemBench",
+    "SubsystemSpec",
     "SubsystemState",
     "Table",
     "as_bytes",
@@ -108,13 +106,13 @@ __all__ = [
     "choice",
     "coerced_values",
     "current_options",
+    "derive",
     "group",
     "input_json",
     "inputs_for",
     "integer",
     "labelled_options",
     "link_routine",
-    "load_subsystem",
     "options_of",
     "outcome_json",
     "overridden",
@@ -127,7 +125,6 @@ __all__ = [
     "routine",
     "routine_json",
     "run_routine",
-    "subsystem_json",
     "summary_and_body",
     "titled",
 ]

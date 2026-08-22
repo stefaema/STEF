@@ -1,21 +1,16 @@
-import json
-
 import pytest
 
 from shared import bench_api
 from shared.bench_api import Level, Result, StepOutcome, Table
+from shared.bench_api.tests.fixture import state
 
 
 def routine_of(oven, key):
     """Return one routine as the screen receives it."""
-    return bench_api.routine_json(oven.routines[key], oven.now())
+    return bench_api.routine_json(oven.routines[key], state())
 
 
 # ── One function per record ──────────────────────────────────────────────────
-
-
-def test_a_whole_subsystem_survives_being_json(oven):
-    assert json.dumps(bench_api.subsystem_json(oven))
 
 
 def test_a_level_crosses_as_its_value():
@@ -50,10 +45,6 @@ def test_an_outcome_carries_its_step_and_whatever_it_found():
     assert packed["status"] == "passed"
     assert packed["step"] == "Holding"
     assert packed["value"]["summary"] == "s"
-
-
-def test_the_name_a_subsystem_is_known_by_reaches_the_screen(oven):
-    assert bench_api.subsystem_json(oven)["id"] == "fixture"
 
 
 # ── What never crosses ───────────────────────────────────────────────────────
@@ -118,13 +109,6 @@ def test_a_routine_says_whether_it_wants_asking_before_it_runs(oven):
 
 def test_the_form_arrives_with_what_it_starts_at(oven):
     assert routine_of(oven, "generated.ramp_once")["blank"] == {"celsius": 0}
-
-
-def test_the_state_is_read_once_for_the_whole_subsystem(oven):
-    packed = bench_api.subsystem_json(oven)
-
-    assert packed["state"] == "down"
-    assert all(r["ready"]["reason"] != "" for r in packed["routines"])
 
 
 # ── A list nobody could send ahead of time ───────────────────────────────────

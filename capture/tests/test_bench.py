@@ -8,6 +8,7 @@ from capture import capture
 from capture.tests import fake
 from shared import bench_api
 from shared.bench_api import FAILED, PASSED, WARNED, SubsystemState
+from shared.subsystem import SubsystemSpec
 
 
 @pytest.fixture(scope="session")
@@ -19,7 +20,7 @@ def loaded():
     tests would leave every later one with nothing declared.
     """
     bench_api.REGISTRY.clear()
-    return bench_api.load_subsystem("capture")
+    return bench_api.derive(SubsystemSpec.of_package("capture"))
 
 
 @pytest.fixture

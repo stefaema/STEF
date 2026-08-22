@@ -1,10 +1,12 @@
 """A file's shipped default and this machine's copy of it, read as one."""
 
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from shared import paths
+from shared.subsystem import SubsystemSpec
 
 SUFFIX = ".toml"
 
@@ -46,6 +48,29 @@ def available(package: str, *parts: str) -> tuple[str, ...]:
             if file.is_file() and file.suffix == SUFFIX
         )
     return tuple(sorted(found))
+
+
+# ── What one subsystem was told ──────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class SubsystemConfig:
+    """Everything one subsystem was told, found under its own package."""
+
+    package: str
+
+    def get(self, *parts: str) -> dict[str, Any]:
+        """Return one of this subsystem's files, its own laid over the shipped copy."""
+        return get(self.package, *parts)
+
+    def available(self, *parts: str) -> tuple[str, ...]:
+        """Return the stem of every file this subsystem has to choose from."""
+        return available(self.package, *parts)
+
+
+def derive(spec: SubsystemSpec) -> SubsystemConfig:
+    """Return the settings one subsystem reads, bound to the package they live under."""
+    return SubsystemConfig(package=spec.package)
 
 
 def _read(file: Path) -> dict[str, Any]:

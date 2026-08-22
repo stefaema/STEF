@@ -6,9 +6,9 @@ other.
 
 ## Declare a subsystem
 
-A subsystem is a package. Its last name part is the id, its docstring is the
-prose the screen shows, and a `state` attribute is how it reports whether it is
-reachable:
+A subsystem is a package. `shared/subsystem` reads its identity off it: the last
+name part is the id, the docstring is the prose the screen shows, and a `state`
+attribute is how it reports whether it is reachable:
 
 ```python
 """The oven.
@@ -19,11 +19,11 @@ One heating element and the probe watching it.
 from oven.oven import state
 ```
 
-Loading it imports everything below it, so every routine declared under the
-package registers on the way in:
+Deriving its bench imports everything below it, so every routine declared under
+the package registers on the way in:
 
 ```python
-bench_api.load_subsystem("oven")
+bench_api.derive(SubsystemSpec.of_package("oven"))
 bench_api.REGISTRY.subsystem("oven").routines
 ```
 

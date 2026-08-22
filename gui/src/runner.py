@@ -5,9 +5,10 @@ waits on a boot, `flash_board` erases for tens of seconds. The server is async
 and will happily start a second one while the first still owns the port, and two
 writers on one port is a corrupted board rather than an error message.
 
-So there is exactly one slot. Whoever holds it is what `StefState` reports, a
-second attempt is refused with a sentence rather than queued, and the work runs
-on a thread so the event loop stays free to stream what it produces.
+So the machine is held for the length of one run. Whoever holds it is what the
+machine reports it is doing, a second attempt is refused with a sentence rather
+than queued, and the work runs on a thread so the event loop stays free to
+stream what it produces.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from gui.src.stef import STEF, StefState
+from machine import Activity, Machine
 from shared.bench_api import Level
 
 DEPTH = 512
@@ -37,10 +38,6 @@ LEVELS = {
     "ERROR": Level.ERROR,
     "CRITICAL": Level.ERROR,
 }
-
-
-class Busy(Exception):
-    """Something already holds the machine, and it names what."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,37 +128,12 @@ class Stream:
                 self._listeners.remove(listener)
 
 
-class Slot:
-    """The one thing the machine may be doing, and who is doing it."""
-
-    def __init__(self, stream: Stream) -> None:
-        """Start idle, holding the stream whatever runs will report on."""
-        self.stream = stream
-        self._lock = threading.Lock()
-        self._holder: str | None = None
-
-    @property
-    def holder(self) -> str | None:
-        """Return what holds the machine, or None while nothing does."""
-        return self._holder
-
-    def take(self, what: str) -> None:
-        """Claim the machine, refusing rather than queueing when it is taken."""
-        with self._lock:
-            if self._holder is not None:
-                raise Busy(f"{self._holder} is running")
-            self._holder = what
-            STEF.state = StefState.BENCHING
-
-    def free(self) -> None:
-        """Release the machine, whatever happened while it was held."""
-        with self._lock:
-            self._holder = None
-            STEF.state = StefState.IDLE
-
-
 async def stream_run(
-    slot: Slot, what: str, produce: Callable[[], Iterator[Any]]
+    stef: Machine,
+    activity: Activity,
+    what: str,
+    refusal: str,
+    produce: Callable[[], Iterator[Any]],
 ) -> AsyncIterator[Any]:
     """Run a blocking generator on a thread, yielding what it produces as it goes.
 
@@ -184,7 +156,7 @@ async def stream_run(
         finally:
             loop.call_soon_threadsafe(handoff.put_nowait, done)
 
-    slot.take(what)
+    stef.take(activity, what, refusal)
     threading.Thread(target=pump, name=f"bench:{what}", daemon=True).start()
     try:
         while True:
@@ -193,13 +165,15 @@ async def stream_run(
                 return
             yield item
     finally:
-        slot.free()
+        stef.free()
 
 
-async def call_off_loop(slot: Slot, what: str, work: Callable[[], Any]) -> Any:
-    """Run one blocking call on a thread, holding the slot for as long as it takes."""
-    slot.take(what)
+async def call_off_loop(
+    stef: Machine, activity: Activity, what: str, refusal: str, work: Callable[[], Any]
+) -> Any:
+    """Run one blocking call on a thread, holding the machine for as long as it takes."""
+    stef.take(activity, what, refusal)
     try:
         return await asyncio.to_thread(work)
     finally:
-        slot.free()
+        stef.free()

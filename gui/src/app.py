@@ -22,15 +22,13 @@ from fastapi.templating import Jinja2Templates
 
 from gui.src import text
 from gui.src.i18n import gettext, ngettext
-from gui.src.runner import Busy, Record, Slot, Stream, call_off_loop, stream_run
-from gui.src.stef import STEF, StefState
+from gui.src.runner import Record, Stream, call_off_loop, stream_run
+from machine import Activity, Busy, Machine, subsystem_json
 from shared import bench_api, logs
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
 HEARTBEAT = 15.0
-
-ROSTER = ("transport", "capture", "detect")
 
 
 @asynccontextmanager
@@ -46,34 +44,35 @@ templates.env.add_extension("jinja2.ext.i18n")
 templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyright: ignore[reportAttributeAccessIssue]
 
 stream = Stream()
-slot = Slot(stream)
+stef = Machine()
 log = logs.component("gui")
 
 
 def wake() -> None:
-    """Put logging up, then load every subsystem package.
+    """Put logging up, then assemble the machine.
 
-    A declaration runs when its module is imported, so the walk is the
+    A declaration runs when its module is imported, so assembling is the
     registration and skipping it leaves a subsystem that silently does not
     appear. Logging goes up first so an import that fails says why.
     """
     written = logs.start()
     logs.to(stream.sink)
     log.info("writing to {}", written)
-    for name in ROSTER:
-        try:
-            bench_api.load_subsystem(name)
-        except (ImportError, KeyError) as exc:
-            log.debug("no subsystem {}: {}", name, exc)
+    stef.assemble()
     stream.say("gui", "ok", "gui", gettext("Backend ready"))
 
 
 def subsystem_of(name: str) -> Any:
-    """Return one loaded subsystem, or say there is no such thing."""
+    """Return one assembled subsystem, or say there is no such thing."""
     try:
-        return bench_api.REGISTRY.subsystem(name)
+        return stef.subsystem(name)
     except KeyError:
         raise HTTPException(404, f"no subsystem {name!r}") from None
+
+
+def _running(what: str) -> str:
+    """Return the sentence anything refused while this runs is told."""
+    return gettext("{what} is running").format(what=what)
 
 
 def _failed(name: str, exc: BaseException) -> str:
@@ -91,8 +90,7 @@ def _failed(name: str, exc: BaseException) -> str:
 
 def _state(name: str) -> str:
     """Return what a subsystem is doing, asked of its package rather than remembered."""
-    found = bench_api.REGISTRY.subsystems.get(name)
-    return found.now().value if found is not None else "down"
+    return stef.state_of(name).value
 
 
 # ── The screen ───────────────────────────────────────────────────────────────
@@ -110,7 +108,7 @@ def diagnostics(request: Request) -> Any:
     return templates.TemplateResponse(
         request,
         "diagnostics.html",
-        {"subsystems": list(ROSTER), "text": text.catalog()},
+        {"subsystems": list(stef.roster), "text": text.catalog()},
     )
 
 
@@ -121,9 +119,10 @@ def diagnostics(request: Request) -> Any:
 def machine_state() -> dict[str, Any]:
     """Return what the machine is doing and what each subsystem is doing."""
     return {
-        "state": STEF.state.value,
-        "busy": slot.holder,
-        "subsystems": {name: _state(name) for name in bench_api.REGISTRY.subsystems},
+        "state": stef.activity.value,
+        "busy": stef.busy_with,
+        "areas": stef.openings(),
+        "subsystems": {name: _state(name) for name in stef.subsystems},
     }
 
 
@@ -135,12 +134,11 @@ def declarations() -> list[dict[str, Any]]:
     honest: the part exists, and this build cannot reach it.
     """
     found = []
-    for name in ROSTER:
-        if name not in bench_api.REGISTRY.subsystems:
+    for name in stef.roster:
+        if name not in stef.subsystems:
             found.append({"id": name, "available": False})
             continue
-        record = bench_api.REGISTRY.subsystem(name)
-        found.append({**bench_api.subsystem_json(record), "available": True})
+        found.append({**subsystem_json(stef.subsystem(name)), "available": True})
     return found
 
 
@@ -161,7 +159,7 @@ async def options_for(name: str, key: str, input_name: str) -> list[dict[str, An
 
 def _link_of(name: str, which: str) -> Any:
     """Return one of a subsystem's link routines, or say it declares none."""
-    found = bench_api.link_routine(subsystem_of(name), which)
+    found = bench_api.link_routine(subsystem_of(name).bench, which)
     if found is None:
         raise HTTPException(404, f"{name} declares no {which}")
     return found
@@ -193,7 +191,13 @@ async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"connect({shown})")
     try:
-        await call_off_loop(slot, f"{name}.connect", lambda: _settle(declared, taken))
+        await call_off_loop(
+            stef,
+            Activity.BENCHING,
+            f"{name}.connect",
+            _running(f"{name}.connect"),
+            lambda: _settle(declared, taken),
+        )
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -229,10 +233,10 @@ def _settle(declared: Any, values: dict[str, Any]) -> None:
 async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingResponse:
     """Run one routine, streaming each step's outcome as the run reaches it."""
     record = subsystem_of(name)
-    if test_id not in record.routines:
+    if test_id not in record.bench.routines:
         raise HTTPException(404, f"no routine {name}.{test_id}")
-    test = record.routines[test_id]
-    verdict = bench_api.readiness_of(test, record.now())
+    test = record.bench.routines[test_id]
+    verdict = bench_api.readiness_of(test, record.state)
     if not verdict:
         raise HTTPException(409, str(verdict))
     taken = bench_api.coerced_values(test.inputs, values)
@@ -243,7 +247,11 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
     async def body() -> AsyncIterator[str]:
         try:
             produced = stream_run(
-                slot, f"{name}.{test_id}", lambda: bench_api.run_routine(test, taken)
+                stef,
+                Activity.BENCHING,
+                f"{name}.{test_id}",
+                _running(f"{name}.{test_id}"),
+                lambda: bench_api.run_routine(test, taken),
             )
             async for item in produced:
                 packed = (
@@ -271,11 +279,11 @@ def _one_result(declared: Any, values: dict[str, Any]) -> Any:
 async def call(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
     """Make one call by hand, and return what it found."""
     record = subsystem_of(name)
-    if key not in record.routines:
+    if key not in record.bench.routines:
         raise HTTPException(404, f"no routine {name}.{key}")
-    declared = record.routines[key]
+    declared = record.bench.routines[key]
 
-    verdict = bench_api.readiness_of(declared, record.now())
+    verdict = bench_api.readiness_of(declared, record.state)
     if not verdict:
         raise HTTPException(409, str(verdict))
 
@@ -285,7 +293,11 @@ async def call(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
 
     try:
         answer = await call_off_loop(
-            slot, f"{name}.{key}", lambda: _one_result(declared, taken)
+            stef,
+            Activity.BENCHING,
+            f"{name}.{key}",
+            _running(f"{name}.{key}"),
+            lambda: _one_result(declared, taken),
         )
     except Busy as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -330,4 +342,4 @@ async def events() -> StreamingResponse:
 
 app.mount("/web", StaticFiles(directory=str(WEB)), name="web")
 
-__all__ = ["Record", "StefState", "app", "slot", "stream"]
+__all__ = ["Activity", "Record", "app", "stef", "stream"]
