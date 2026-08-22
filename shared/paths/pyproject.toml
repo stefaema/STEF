@@ -1,7 +1,7 @@
 [project]
 name = "stef-paths"
 version = "0.1.0"
-description = "Where a module's shipped files are, and where this machine's own files go"
+description = "File path aggregator. Centralizes physical file addresses by facading the sources"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

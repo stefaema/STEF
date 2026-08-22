@@ -25,7 +25,9 @@ def test_a_named_home_holds_every_root_under_one_directory(clean_env, monkeypatc
     assert paths.config_dir() == clean_env / "local/config"
     assert paths.state_dir() == clean_env / "local/state"
     assert paths.log_dir() == clean_env / "local/state/logs"
-    assert paths.firmware_bins() == clean_env / "local/firmware"
+    assert paths.data_dir() == clean_env / "local/data"
+    assert paths.firmware_bins() == clean_env / "local/data/firmware"
+    assert paths.bench_runs_dir() == clean_env / "local/data/bench_runs"
 
 
 def test_without_a_home_each_root_follows_its_own_xdg_variable(clean_env, monkeypatch):
@@ -37,6 +39,7 @@ def test_without_a_home_each_root_follows_its_own_xdg_variable(clean_env, monkey
     assert paths.state_dir() == clean_env / "st" / paths.APP
     assert paths.log_dir() == clean_env / "st" / paths.APP / "logs"
     assert paths.firmware_bins() == clean_env / "dt" / paths.APP / "firmware"
+    assert paths.bench_runs_dir() == clean_env / "dt" / paths.APP / "bench_runs"
 
 
 def test_without_xdg_either_the_defaults_are_the_spec_s(clean_env):

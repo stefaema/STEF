@@ -1,37 +1,47 @@
 # paths
 
 Every module that reads a config file or writes a log needs to know where those
-go, and the answer differs between an install and a checkout. Deciding it in
-each module means each one gets it slightly differently wrong.
+go, paths do the plumbing.
 
-One function per question instead. No I/O beyond `ensure()`, no dependency.
+No I/O beyond `ensure()`, no dependency.
 
 ## The two modes
 
 `STEF_HOME`, when it names an absolute path, puts every root under it:
-`$STEF_HOME/config`, `/state`, `/firmware`. That is one directory to delete and
-one to inspect, which is what a checkout wants.
+`$STEF_HOME/config`, `/state`, `/firmware`. This was originally intended for the development stage.
 
 Unset, each root follows its own XDG variable, or the spec's default when that
 is unset too: `~/.config/stef`, `~/.local/state/stef`, `~/.local/share/stef`.
 
-A relative value is ignored rather than resolved, the same way the XDG spec
-treats one.
+A relative value is ignored rather than resolved.
 
-## What to call
+## Functions
 
-| function | answers |
+| function | with `STEF_HOME` | without |
+| --- | --- | --- |
+| `config_dir()` | `$STEF_HOME/config` | `$XDG_CONFIG_HOME/stef` |
+| `state_dir()` | `$STEF_HOME/state` | `$XDG_STATE_HOME/stef` |
+| `data_dir()` | `$STEF_HOME/data` | `$XDG_DATA_HOME/stef` |
+
+Configuration is edited by hand, state is written by the program and survives a
+restart, data is formatted information that is given or offered by the program.
+
+Everything else hangs off those three:
+
+| function | resolves to |
 | --- | --- |
-| `config_dir()` | where a machine's own settings live |
-| `state_dir()` | where the program writes what it must remember |
-| `log_dir()` | where the program writes what it wants read afterwards |
-| `bench_runs_dir()` | where one bench run's own files are kept, apart from the log it shares |
-| `data_dir()` | where the program keeps what it was given |
-| `firmware_bins()` | where flashable images are kept, one directory per version |
-| `builtin(pkg, *parts)` | one file the package ships, found through its import |
-| `layered(pkg, *parts)` | the same file under both roots, shipped first and yours second |
-| `readable(pkg, *parts)` | the layered paths that exist, in the order to read them |
-| `ensure(path)`, `ensure_parent(path)` | the directory, made if it was missing |
+| `log_dir()` | `state_dir() / logs` |
+| `bench_runs_dir()` | `data_dir() / bench_runs`, one directory per run |
+| `firmware_bins()` | `data_dir() / firmware`, one directory per version |
+
+And the files a package ships with:
+
+| function | resolves to |
+| --- | --- |
+| `builtin(pkg, *parts)` | `<pkg>/builtin/<parts>` |
+| `layered(pkg, *parts)` | both copies: the shipped one, then `config_dir() / <parts>` |
+| `readable(pkg, *parts)` | whichever of those two exist, in the order to read them |
+| `ensure(path)`, `ensure_parent(path)` | the same path, with its directory created |
 
 `builtin` locates a package through `importlib`, so it holds whether the package
 is installed or sitting in a checkout, and a caller never spells a path relative

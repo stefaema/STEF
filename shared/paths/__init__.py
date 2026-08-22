@@ -1,4 +1,4 @@
-"""Where a module's shipped files are, and where this machine's own files go."""
+"""File path aggregator. Centralizes physical file addresses by facading the sources"""
 
 import importlib.util
 import os
@@ -12,6 +12,7 @@ BUILTIN = "builtin"
 
 CONFIG = "config"
 STATE = "state"
+DATA = "data"
 FIRMWARE = "firmware"
 LOGS = "logs"
 BENCH_RUNS = "bench_runs"
@@ -68,11 +69,8 @@ def state_dir() -> Path:
 
 
 def data_dir() -> Path:
-    """Return where the program keeps what it was given."""
-    developing = home()
-    if developing is not None:
-        return developing
-    return _xdg(*XDG_DATA) / APP
+    """Return where the files worth keeping go, given to the machine or produced by it."""
+    return _root(DATA, XDG_DATA)
 
 
 def log_dir() -> Path:
@@ -82,7 +80,7 @@ def log_dir() -> Path:
 
 def bench_runs_dir() -> Path:
     """Return where one bench run's own files are kept."""
-    return state_dir() / BENCH_RUNS
+    return data_dir() / BENCH_RUNS
 
 
 def firmware_bins() -> Path:
