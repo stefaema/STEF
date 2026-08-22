@@ -1,4 +1,4 @@
-"""A camera that is not there, answering the way the reference says one would."""
+"""In-memory CCAPI camera for tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ BASE = "/ccapi/ver110"
 
 
 def endpoint(path: str, **methods: bool) -> dict[str, Any]:
-    """Return one entry of the manifest, in the shape the camera publishes it."""
+    """Return one manifest entry: a path plus True for each method named."""
     return {"path": path, **{name: True for name in methods}}
 
 
@@ -70,20 +70,17 @@ BODIES: dict[str, Any] = {
 
 
 class Camera:
-    """One camera's worth of state, and the answers that follow from it."""
+    """Fake camera state and the responses derived from it."""
 
     def __init__(self) -> None:
-        """Start with a card holding nothing and nothing on the event stream."""
         self.files: list[str] = []
         self.pending: list[str] = []
         self.shots = 0
         self.settings: dict[str, Any] = {}
         self.sent: list[tuple[str, str, Any]] = []
 
-    # ── Answers that depend on what has happened ─────────────────────────────
-
     def storage(self) -> dict[str, Any]:
-        """Return the card, whose free space and file count move as frames land."""
+        """Return the devicestatus/storage response body."""
         return {
             "storagelist": [
                 {
@@ -97,39 +94,34 @@ class Camera:
             ]
         }
 
-    def current(self) -> dict[str, Any]:
-        """Name the card frames are written to, and nothing else.
-
-        Two fields, the way the reference has it. The numbers live on the plural
-        endpoint, and a client that reads them off this one reads zeroes.
-        """
+    def current_storage(self) -> dict[str, Any]:
+        """Return the devicestatus/currentstorage body, which has no counts."""
         return {"name": "sd", "path": "/ccapi/ver100/contents/sd"}
 
     def shoot(self) -> dict[str, Any]:
-        """Write one file and remember it as news nobody has been told yet."""
+        """Add one file to the card and queue an event for it."""
         self.shots += 1
         made = f"/ccapi/ver100/contents/sd/100CANON/IMG_{self.shots:04d}.JPG"
         self.files.append(made)
         self.pending.append(made)
         return {}
 
-    def polled(self) -> dict[str, Any]:
-        """Return what changed, which is only ever said once."""
+    def drain_events(self) -> dict[str, Any]:
+        """Return the event/polling body and clear the queue."""
         added, self.pending = self.pending, []
         return {"addedcontents": added} if added else {}
 
     def setting(self, feature: str) -> dict[str, Any]:
-        """Return one setting, as this camera has it now."""
+        """Return one setting: its current value and accepted values."""
         shipped = BODIES.get(f"/ccapi/ver100/{feature}", {})
         value = self.settings.get(feature, shipped.get("value"))
         return {"value": value, "ability": shipped.get("ability", [])}
 
 
 class Transport:
-    """The seam, answering out of a `Camera` instead of off a network."""
+    """Transport that answers from a `Camera` instead of over HTTP."""
 
     def __init__(self, camera: Camera | None = None) -> None:
-        """Take the camera to answer for, making an untouched one when given none."""
         self.camera = camera or Camera()
 
     def send(
@@ -142,7 +134,7 @@ class Transport:
         stream: bool = False,
         headers: Mapping[str, str] | None = None,
     ) -> RawReply:
-        """Answer one request, recording it so a test can say what was asked."""
+        """Return the response to one request and record it."""
         path = url.split("8080", 1)[-1].split("?", 1)[0]
         self.camera.sent.append((method, path, payload))
         body = self._body(method, path, payload)
@@ -153,14 +145,14 @@ class Transport:
         return RawReply(status=200, body=json.dumps(body).encode())
 
     def _body(self, method: str, path: str, payload: Any) -> Any:
-        """Return what this camera says to one request, or None where it has nothing."""
+        """Return the response body for one request, or None if the path is unknown."""
         feature = path.split("/ccapi/ver100/", 1)[-1].split("/ccapi/ver110/", 1)[-1]
         if path == "/ccapi/ver100/devicestatus/storage":
             return self.camera.storage()
         if path == "/ccapi/ver100/devicestatus/currentstorage":
-            return self.camera.current()
+            return self.camera.current_storage()
         if path == "/ccapi/ver100/event/polling":
-            return self.camera.polled()
+            return self.camera.drain_events()
         if path.endswith("/shutterbutton"):
             return self.camera.shoot()
         if path.endswith("/shutterbutton/manual"):
@@ -176,7 +168,7 @@ class Transport:
         return BODIES.get(path)
 
     def _contents(self, method: str, path: str) -> Any:
-        """Answer the filesystem, which is a list until it is a deletion."""
+        """Return a contents listing, or delete the file at the path."""
         if method == "DELETE":
             target = path
             self.camera.files = [
@@ -195,4 +187,4 @@ class Transport:
         return None
 
     def close(self) -> None:
-        """Nothing is held, so there is nothing to let go of."""
+        """Do nothing; this transport holds no connection."""

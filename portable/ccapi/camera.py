@@ -1,3 +1,5 @@
+"""Camera client: the link plus every controller."""
+
 from __future__ import annotations
 
 import logging
@@ -9,6 +11,7 @@ from types import TracebackType
 
 from portable.ccapi.config import CameraConfig
 from portable.ccapi.endpoints import Endpoint
+from portable.ccapi.errors import CcapiError
 from portable.ccapi.events import Events
 from portable.ccapi.filesystem import Filesystem
 from portable.ccapi.functions import Functions
@@ -39,8 +42,6 @@ class Camera:
         self.movie = Movie(self.link)
         self.live_view = LiveView(self.link)
 
-    # ── Lifecycle ────────────────────────────────────────────────────────────
-
     @property
     def config(self) -> CameraConfig:
         return self.link.config
@@ -56,7 +57,24 @@ class Camera:
             )
 
     def disconnect(self) -> None:
+        self._stop_what_we_started()
         self.link.disconnect()
+
+    def _stop_what_we_started(self) -> None:
+        """Stop the recording and streams this session started, ignoring refusals."""
+        if not self.link.up:
+            return
+        for what, ours, stop in (
+            ("recording", self.movie.recording_by_us, self.movie.stop_recording),
+            ("live view", self.live_view.started_by_us, self.live_view.stop),
+            ("monitoring", self.events.watched_by_us, self.events.stop_watching),
+        ):
+            if not ours:
+                continue
+            try:
+                stop()
+            except CcapiError as exc:
+                log.warning("could not stop %s before disconnecting: %s", what, exc)
 
     @contextmanager
     def connection(self) -> Generator[None]:
@@ -81,8 +99,6 @@ class Camera:
     ) -> None:
         self.disconnect()
 
-    # ── Across several controllers ───────────────────────────────────────────
-
     def capture_confirmed(
         self,
         af: bool = False,
@@ -103,7 +119,7 @@ class Camera:
     def landed_since(self, baseline: int) -> int:
         return self.filesystem.file_count - baseline
 
-    def drain(
+    def download(
         self,
         paths: Iterable[str],
         into: Path,

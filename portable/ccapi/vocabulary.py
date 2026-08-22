@@ -1,10 +1,10 @@
+"""Parsed reply types and the functions that build them."""
+
 from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, replace
 from typing import Any
-
-# ── Where the link is ────────────────────────────────────────────────────────
 
 
 class LinkState(enum.Enum):
@@ -12,9 +12,6 @@ class LinkState(enum.Enum):
     CONNECTING = "connecting"
     UP = "up"
     ERROR = "error"
-
-
-# ── What the heat allows ─────────────────────────────────────────────────────
 
 
 class ThermalRestriction(enum.Enum):
@@ -70,9 +67,6 @@ _LIVE_VIEW_REFUSED = frozenset(
 )
 
 
-# ── What is powering it ──────────────────────────────────────────────────────
-
-
 class PowerSource(enum.Enum):
     BATTERY = "battery"
     NOT_INSERTED = "not_inserted"
@@ -124,9 +118,6 @@ _CHARGING = frozenset(
 )
 
 
-# ── What the filesystem allows, and what may be pulled off it ────────────────
-
-
 class Access(enum.Enum):
     READ_WRITE = "readwrite"
     READ_ONLY = "readonly"
@@ -154,16 +145,10 @@ class FileType(enum.Enum):
     WAV = "wav"
 
 
-# ── How long a poll waits ────────────────────────────────────────────────────
-
-
 class PollWait(enum.Enum):
     IMMEDIATELY = "immediately"
     SHORT = "short"
     LONG = "long"
-
-
-# ── What a binary stream carries ─────────────────────────────────────────────
 
 
 class PacketKind(enum.Enum):
@@ -176,9 +161,6 @@ class PacketKind(enum.Enum):
 class Packet:
     kind: PacketKind
     body: bytes
-
-
-# ── What the camera says about itself ────────────────────────────────────────
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,7 +219,7 @@ NO_FILE = "none"
 
 @dataclass(frozen=True, slots=True)
 class ImageQuality:
-    """Still image quality, which is a raw axis and a jpeg axis rather than one value."""
+    """Still image quality, set as a raw value and a jpeg value."""
 
     raw: str
     jpeg: str
@@ -279,9 +261,6 @@ class SettingValue:
 @dataclass(frozen=True, slots=True)
 class ErrorBody:
     message: str
-
-
-# ── What changed, and what we believe ────────────────────────────────────────
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,9 +312,6 @@ class CameraState:
         )
 
 
-# ── Reading one reply ────────────────────────────────────────────────────────
-
-
 def device_info(body: dict[str, Any]) -> DeviceInfo:
     return DeviceInfo(
         manufacturer=body.get("manufacturer") or body.get("munufacturer", ""),
@@ -383,12 +359,7 @@ def storage(entry: dict[str, Any]) -> Storage:
 
 
 def setting_value(body: dict[str, Any]) -> SettingValue:
-    """Return one setting, refusing to invent a list where the ability is not one.
-
-    `stillimagequality` answers with an object on both fields. Tupling that would
-    hand back its keys as though they were the values on offer, so it comes back
-    with nothing offered and `image_quality` reads it instead.
-    """
+    """Return a setting's value, and its allowed values when `ability` is a list."""
     ability = body.get("ability")
     return SettingValue(
         value=body.get("value"),
@@ -397,7 +368,7 @@ def setting_value(body: dict[str, Any]) -> SettingValue:
 
 
 def image_quality(body: dict[str, Any]) -> ImageQuality:
-    """Return still image quality off the one reply that carries two axes."""
+    """Return still image quality, whose value and ability are objects."""
     value = body.get("value")
     ability = body.get("ability")
     value = value if isinstance(value, dict) else {}

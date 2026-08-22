@@ -1,4 +1,4 @@
-"""The setting whose value has two axes, and what the generic pair does with it."""
+"""Still image quality, whose value is an object."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from portable.ccapi.tests import fake
 
 @pytest.fixture
 def camera():
-    """Return a camera linked to a body that answers like the reference."""
+    """Return a client connected to the fake camera."""
     client, _ = fake.connected()
     return client
 
@@ -28,7 +28,7 @@ def test_image_quality_reads_both_lists_of_what_is_on_offer(camera):
     assert found.jpeg_allowed == fake.JPEG_ABILITY
 
 
-def test_a_body_offering_a_file_on_each_axis_can_write_two(camera):
+def test_a_camera_offering_a_file_on_each_axis_can_write_two(camera):
     assert camera.settings.image_quality().offers_two
 
 
@@ -38,7 +38,7 @@ def test_writing_both_axes_takes(camera):
     assert camera.settings.image_quality().writes_two
 
 
-def test_one_axis_set_to_none_is_one_file_per_release(camera):
+def test_setting_one_axis_to_none_leaves_one_file_per_release(camera):
     camera.settings.set_image_quality("none", "small")
     found = camera.settings.image_quality()
 
@@ -46,10 +46,7 @@ def test_one_axis_set_to_none_is_one_file_per_release(camera):
     assert not found.writes_two
 
 
-# ── What the generic pair says about it ──────────────────────────────────────
-
-
-def test_the_generic_reader_offers_nothing_rather_than_the_names_of_the_axes(camera):
+def test_the_generic_reader_offers_nothing_rather_than_the_axis_names(camera):
     found = camera.settings.get(Setting.STILLIMAGEQUALITY)
 
     assert found.allowed == ()

@@ -86,7 +86,7 @@ def browse(values: dict[str, Any]) -> Iterator[StepOutcome]:
     if not directories:
         raise Abandoned("no directories on this card")
 
-    listed = files.under(directories[0])
+    listed = files.files_in(directories[0])
     rows = tuple((one.rsplit("/", 1)[-1],) for one in listed[:20])
     yield StepOutcome(
         PASSED,

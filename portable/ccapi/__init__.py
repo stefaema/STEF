@@ -1,3 +1,5 @@
+"""Client for Canon's Camera Control API (CCAPI)."""
+
 from portable.ccapi.camera import Camera
 from portable.ccapi.config import CameraConfig, Credentials
 from portable.ccapi.endpoints import (

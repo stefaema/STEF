@@ -1,3 +1,5 @@
+"""Packet framing for the camera binary streams."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
@@ -11,6 +13,8 @@ FOOTER = 2
 
 
 class Unpacker:
+    """Packet reader for a chunked byte stream."""
+
     def __init__(self) -> None:
         self._buffer = bytearray()
         self._dropped = 0

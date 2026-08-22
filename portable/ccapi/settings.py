@@ -1,3 +1,5 @@
+"""Shooting settings, read and written by name."""
+
 from __future__ import annotations
 
 import enum
@@ -145,11 +147,11 @@ class Settings:
         return self.get(setting).allowed
 
     def image_quality(self) -> ImageQuality:
-        """Return still image quality, the one setting the generic pair cannot hold."""
+        """Return still image quality, which `get` cannot represent."""
         return image_quality(self.link.json(GET, Setting.STILLIMAGEQUALITY))
 
     def set_image_quality(self, raw: str, jpeg: str) -> None:
-        """Write both axes of still image quality, which only move together."""
+        """Set the raw and jpeg values of still image quality."""
         self.link.json(
             PUT,
             Setting.STILLIMAGEQUALITY,

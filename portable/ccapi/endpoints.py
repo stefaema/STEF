@@ -1,3 +1,5 @@
+"""Endpoint names and the registry built from a camera manifest."""
+
 from __future__ import annotations
 
 import enum
@@ -14,6 +16,8 @@ class Methods(enum.Flag):
 
 
 class Volatility(enum.Enum):
+    """How often a feature value changes."""
+
     VOLATILE = "volatile"
     OWNED = "owned"
     CONSTANT = "constant"
@@ -117,8 +121,7 @@ class Resource:
         return method in self.methods
 
 
-# Endpoints that answer only when something happens, so a plain GET holds the
-# link until it does. Everything here is opened with `stream=True` or not at all.
+# A plain GET on these holds the link open, so they are requested with stream=True.
 STREAMED = frozenset(
     {
         Endpoint.MONITORING,
@@ -128,7 +131,7 @@ STREAMED = frozenset(
 )
 
 
-TABLE: dict[str, Volatility] = {
+VOLATILITY: dict[str, Volatility] = {
     Endpoint.DEVICEINFORMATION: Volatility.CONSTANT,
     Endpoint.LENS: Volatility.CONSTANT,
     Endpoint.BATTERY: Volatility.VOLATILE,
@@ -150,10 +153,10 @@ TABLE: dict[str, Volatility] = {
 
 
 def volatility_of(feature: str) -> Volatility:
-    return TABLE.get(feature, Volatility.VOLATILE)
+    return VOLATILITY.get(feature, Volatility.VOLATILE)
 
 
-def suffix_of(path: str) -> tuple[str, str]:
+def version_and_feature(path: str) -> tuple[str, str]:
     parts = [part for part in path.split("/") if part]
     if API_ROOT in parts:
         parts = parts[parts.index(API_ROOT) + 1 :]
@@ -176,6 +179,8 @@ def methods_of(entry: dict[str, object]) -> Methods:
 
 
 class Registry:
+    """Lookup of the features a camera manifest offers."""
+
     def __init__(self, accepted_version: str | None = None) -> None:
         self.accepted_version = accepted_version
         self._resources: dict[str, Resource] = {}
@@ -198,11 +203,11 @@ class Registry:
             self._versions.add(version)
             for entry in entries:
                 if isinstance(entry, dict):
-                    self._absorb(version, entry)
+                    self._merge(version, entry)
 
-    def _absorb(self, version: str, entry: dict[str, object]) -> None:
+    def _merge(self, version: str, entry: dict[str, object]) -> None:
         path = str(entry.get("path", ""))
-        found, feature = suffix_of(path)
+        found, feature = version_and_feature(path)
         if not feature:
             return
         version = found or version

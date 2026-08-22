@@ -1,3 +1,5 @@
+"""Live view streaming."""
+
 from __future__ import annotations
 
 import enum
@@ -6,6 +8,7 @@ from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 
 from portable.ccapi.endpoints import Endpoint
+from portable.ccapi.errors import ALREADY_STARTED, InvalidStateError
 from portable.ccapi.framing import Unpacker
 from portable.ccapi.link import GET, POST, Link
 from portable.ccapi.vocabulary import Packet, PacketKind
@@ -28,6 +31,8 @@ class CameraDisplay(enum.StrEnum):
 
 
 class Stream:
+    """Iterator of packets from the live view stream."""
+
     def __init__(self, chunks: Iterator[bytes]) -> None:
         self._chunks = chunks
         self._unpacker = Unpacker()
@@ -47,7 +52,8 @@ class LiveView:
         self.link = link
         self._size: str = OFF
 
-    def running(self) -> bool:
+    @property
+    def started_by_us(self) -> bool:
         return self._size != OFF
 
     def frame(self) -> bytes:
@@ -58,6 +64,24 @@ class LiveView:
         size: ViewSize = ViewSize.MEDIUM,
         display: CameraDisplay = CameraDisplay.KEEP,
     ) -> Stream:
+        chunks = self._open_stream(size, display)
+        self._size = size.value
+        return Stream(chunks)
+
+    def _open_stream(self, size: ViewSize, display: CameraDisplay) -> Iterator[bytes]:
+        """Open the live view stream, clearing a stale one from an earlier run."""
+        self._configure(size, display)
+        try:
+            return self.link.chunks(Endpoint.LIVEVIEW_SCROLLDETAIL)
+        except InvalidStateError as exc:
+            if ALREADY_STARTED not in str(exc) or self.started_by_us:
+                raise
+            log.warning("a live view stream outlived its process; restarting it")
+            self.stop()
+            self._configure(size, display)
+            return self.link.chunks(Endpoint.LIVEVIEW_SCROLLDETAIL)
+
+    def _configure(self, size: ViewSize, display: CameraDisplay) -> None:
         self.link.json(
             POST,
             Endpoint.LIVEVIEW,
@@ -66,8 +90,6 @@ class LiveView:
                 "cameradisplay": display.value,
             },
         )
-        self._size = size.value
-        return Stream(self.link.chunks(Endpoint.LIVEVIEW_SCROLLDETAIL))
 
     def stop(self) -> None:
         self.link.json(
@@ -86,14 +108,14 @@ class LiveView:
         size: ViewSize = ViewSize.MEDIUM,
         display: CameraDisplay = CameraDisplay.KEEP,
     ) -> Generator[Stream]:
-        found = self.running()
-        if found:
-            log.debug("live view was already running; leaving it up on exit")
+        ours = not self.started_by_us
+        if not ours:
+            log.debug("we started live view already; leaving it up on exit")
         stream = self.start(size, display)
         try:
             yield stream
         finally:
-            if not found:
+            if ours:
                 self.stop()
 
     def angle(self) -> dict[str, object]:

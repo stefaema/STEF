@@ -1,14 +1,10 @@
-"""A camera that is not there, answering the way the reference says one would.
-
-Deliberately no more generous than a real body: `currentstorage` names the card
-and nothing else, and a path it never published comes back 404. A fake that
-answers what a caller wishes it had asked hides exactly the bugs worth catching.
-"""
+"""In-memory CCAPI camera for tests."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl
 
@@ -24,7 +20,7 @@ JPEG_ABILITY = ("none", "large_fine", "large_normal", "small")
 
 
 def endpoint(feature: str, **methods: bool) -> dict[str, Any]:
-    """Return one manifest entry, in the shape the camera publishes it."""
+    """Return one manifest entry: a path plus True for each method named."""
     return {"path": f"{ROOT}/{feature}", **{name: True for name in methods}}
 
 
@@ -35,6 +31,8 @@ MANIFEST = {
         endpoint("devicestatus/currentdirectory", get=True),
         endpoint("contents", get=True, delete=True),
         endpoint("event/monitoring", get=True, delete=True),
+        endpoint("shooting/liveview", post=True),
+        endpoint("shooting/liveview/scrolldetail", get=True),
         endpoint("shooting/liveview/multipart", get=True),
         endpoint("shooting/settings/iso", get=True, put=True),
         endpoint("shooting/settings/stillimagequality", get=True, put=True),
@@ -45,22 +43,21 @@ MANIFEST = {
 
 
 class Camera:
-    """One camera's worth of state, and the answers that follow from it."""
+    """Fake camera state and the responses derived from it."""
 
     def __init__(self, mode_lag: int = 0) -> None:
-        """Take how many reads answer staleley after a mode change, which is the race."""
         self.files = ["IMG_0001.JPG", "IMG_0002.CR3", "IMG_0003.JPG"]
         self.quality = {"raw": "none", "jpeg": "large_fine"}
         self.in_movie = False
         self.recording = False
         self.mode_lag = mode_lag
+        self.monitoring_open = False
+        self.live_view_open = False
         self.asked: list[tuple[str, str]] = []
         self._stale = 0
 
-    # ── The card ─────────────────────────────────────────────────────────────
-
     def storages(self) -> dict[str, Any]:
-        """Return every card, which is where the numbers live."""
+        """Return the devicestatus/storage response body."""
         return {
             "storagelist": [
                 {
@@ -75,14 +72,11 @@ class Camera:
         }
 
     def current_storage(self) -> dict[str, Any]:
-        """Name the card being written to. Two fields, as the reference has it."""
+        """Return the devicestatus/currentstorage response body."""
         return {"name": CARD, "path": f"{ROOT}/contents/{CARD}"}
 
     def contents(self, tail: str, page: str = "") -> dict[str, Any] | None:
-        """Return one listing, or nothing for a path this camera never published.
-
-        A page past the end is empty, which is what tells a walk to stop.
-        """
+        """Return the contents listing for `tail`, or None if the path is unknown."""
         if not tail:
             return {"path": [f"{ROOT}/contents/{CARD}"]}
         if tail == CARD:
@@ -96,37 +90,62 @@ class Camera:
             "contentsnumber": len(self.files),
         }
 
-    # ── The one setting with two axes ────────────────────────────────────────
-
     def still_image_quality(self) -> dict[str, Any]:
-        """Return quality the way the reference documents its one exception."""
+        """Return the stillimagequality body, whose value and ability are objects."""
         return {
             "value": dict(self.quality),
             "ability": {"raw": list(RAW_ABILITY), "jpeg": list(JPEG_ABILITY)},
         }
 
-    # ── The mode, which does not arrive when the acknowledgement does ────────
-
     def movie_mode(self) -> dict[str, Any]:
-        """Return the mode, answering with the old one while the change is settling."""
+        """Return the mode, reporting the old one for the next `mode_lag` reads."""
         settled = self.in_movie
         if self._stale > 0:
             self._stale -= 1
             settled = not self.in_movie
         return {"status": "on" if settled else "off"}
 
+    def watch(self, method: str) -> dict[str, Any] | Refused:
+        """Open or close the monitoring stream; a second open is refused."""
+        if method == "DELETE":
+            self.monitoring_open = False
+            return {}
+        if self.monitoring_open:
+            return Refused("Already started")
+        self.monitoring_open = True
+        return {}
+
+    def size_live_view(self, size: str) -> dict[str, Any]:
+        """Apply live view settings; `off` also ends the stream."""
+        if size == "off":
+            self.live_view_open = False
+        return {}
+
+    def open_live_view_stream(self) -> dict[str, Any] | Refused:
+        """Start the live view stream; a second start is refused."""
+        if self.live_view_open:
+            return Refused("Already started")
+        self.live_view_open = True
+        return {}
+
     def change_mode(self, action: str) -> dict[str, Any]:
-        """Acknowledge a mode change now and arrive at it later."""
+        """Set the mode and begin the run of stale reads."""
         self.in_movie = action == "on"
         self._stale = self.mode_lag
         return {}
 
 
+@dataclass(frozen=True, slots=True)
+class Refused:
+    """A 503 response with a refusal message."""
+
+    message: str
+
+
 class Transport:
-    """The seam, answering out of a `Camera` instead of off a network."""
+    """Transport that answers from a `Camera` instead of over HTTP."""
 
     def __init__(self, camera: Camera | None = None) -> None:
-        """Take the camera to answer for, making an untouched one when given none."""
         self.camera = camera or Camera()
 
     def send(
@@ -139,7 +158,7 @@ class Transport:
         stream: bool = False,
         headers: Mapping[str, str] | None = None,
     ) -> RawReply:
-        """Answer one request, recording it so a test can say what was asked."""
+        """Return the response to one request and record it."""
         path, _, query = url.split("8080", 1)[-1].partition("?")
         self.camera.asked.append((method, path))
         body = self._body(method, path, payload, dict(parse_qsl(query)))
@@ -147,10 +166,14 @@ class Transport:
             return RawReply(
                 status=404, body=json.dumps({"message": "URL not found"}).encode()
             )
+        if isinstance(body, Refused):
+            return RawReply(
+                status=503, body=json.dumps({"message": body.message}).encode()
+            )
         return RawReply(status=200, body=json.dumps(body).encode())
 
     def _body(self, method: str, path: str, payload: Any, query: dict[str, str]) -> Any:
-        """Return what this camera says to one request, or None where it has nothing."""
+        """Return the response body for one request, or None if the path is unknown."""
         if path == "/ccapi":
             return MANIFEST
         feature = path.removeprefix(f"{ROOT}/")
@@ -171,6 +194,12 @@ class Transport:
             if method == "POST":
                 return self.camera.change_mode((payload or {}).get("action", ""))
             return self.camera.movie_mode()
+        if feature == "event/monitoring":
+            return self.camera.watch(method)
+        if feature == "shooting/liveview":
+            return self.camera.size_live_view((payload or {}).get("liveviewsize", ""))
+        if feature == "shooting/liveview/scrolldetail":
+            return self.camera.open_live_view_stream()
         if feature == "shooting/control/recbutton":
             self.camera.recording = (payload or {}).get("action") == "start"
             return {}
@@ -183,11 +212,11 @@ class Transport:
         return None
 
     def close(self) -> None:
-        """Nothing is held, so there is nothing to let go of."""
+        """Do nothing; this transport holds no connection."""
 
 
 def connected(camera: Camera | None = None):
-    """Return a camera object already linked to a fake, and the fake behind it."""
+    """Return a connected client and the fake camera behind it."""
     from portable.ccapi import Camera as Client
 
     transport = Transport(camera)

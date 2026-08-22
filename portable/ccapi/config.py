@@ -1,3 +1,5 @@
+"""Camera address and connection settings."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

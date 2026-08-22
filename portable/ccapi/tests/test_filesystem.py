@@ -1,4 +1,4 @@
-"""The card: which endpoint carries the numbers, and what a path may be handed back as."""
+"""Storage counts and path handling in listings."""
 
 from __future__ import annotations
 
@@ -10,15 +10,12 @@ from portable.ccapi.tests import fake
 
 @pytest.fixture
 def camera():
-    """Return a camera linked to a body that answers like the reference."""
+    """Return a client connected to the fake camera."""
     client, _ = fake.connected()
     return client
 
 
-# ── Where the numbers actually live ──────────────────────────────────────────
-
-
-def test_the_current_card_reports_the_numbers_the_plural_endpoint_carries(camera):
+def test_the_current_card_reports_the_counts_from_the_storage_endpoint(camera):
     found = camera.filesystem.current()
 
     assert found.file_count == 3
@@ -45,14 +42,11 @@ def test_a_card_the_camera_writes_to_but_does_not_list_is_refused():
         client.filesystem.current()
 
 
-# ── A path the camera gave back is a path it will take back ──────────────────
-
-
 def test_listing_takes_the_full_path_a_listing_returned(camera):
     volumes = camera.filesystem.volumes()
     directories = camera.filesystem.directories(volumes[0])
 
-    assert camera.filesystem.under(directories[0])
+    assert camera.filesystem.files_in(directories[0])
 
 
 def test_counting_takes_the_full_path_a_listing_returned(camera):
@@ -62,13 +56,13 @@ def test_counting_takes_the_full_path_a_listing_returned(camera):
 
 
 def test_a_full_path_is_never_joined_onto_the_prefix_it_already_carries(camera):
-    camera.filesystem.under(camera.filesystem.current_directory())
+    camera.filesystem.files_in(camera.filesystem.current_directory())
 
     asked = [path for _, path in camera.link._transport.camera.asked]
     assert not any(one.count("/contents") > 1 for one in asked)
 
 
-def test_a_bare_name_still_lists_the_way_it_always_did(camera):
+def test_a_bare_volume_name_lists_too(camera):
     assert camera.filesystem.directories(fake.CARD)
 
 

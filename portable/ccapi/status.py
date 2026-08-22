@@ -1,3 +1,5 @@
+"""Camera status: device, battery, lens, temperature."""
+
 from __future__ import annotations
 
 from portable.ccapi.endpoints import Endpoint

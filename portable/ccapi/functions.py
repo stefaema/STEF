@@ -1,3 +1,5 @@
+"""Camera-wide settings: power, clock, metadata names, certificates."""
+
 from __future__ import annotations
 
 import logging
@@ -25,8 +27,6 @@ class Functions:
     def __init__(self, link: Link) -> None:
         self.link = link
 
-    # ── Staying awake ────────────────────────────────────────────────────────
-
     def auto_power_off(self) -> str:
         body = self.link.json(GET, Endpoint.AUTOPOWEROFF)
         return str(body.get("value", ""))
@@ -47,8 +47,6 @@ class Functions:
         finally:
             self.set_auto_power_off(found)
 
-    # ── The clock every filename is stamped from ─────────────────────────────
-
     def datetime(self) -> str:
         body = self.link.json(GET, Endpoint.DATETIME)
         return str(body.get("datetime", ""))
@@ -58,21 +56,17 @@ class Functions:
         stamp = f"{moment.strftime(CAMERA_TIME)} {moment.strftime('%z')}"
         self.link.json(PUT, Endpoint.DATETIME, payload={"datetime": stamp, "dst": dst})
 
-    # ── The identity stamped into every file ─────────────────────────────────
-
     def registered(self, which: str) -> str:
         body = self.link.json(GET, NAMES[which])
-        return str(body.get(_field(which), ""))
+        return str(body.get(_body_key(which), ""))
 
     def set_registered(self, which: str, value: str) -> None:
-        self.link.json(PUT, NAMES[which], payload={_field(which): value})
+        self.link.json(PUT, NAMES[which], payload={_body_key(which): value})
 
     def clear_registered(self, which: str) -> None:
         from portable.ccapi.link import DELETE
 
         self.link.json(DELETE, NAMES[which])
-
-    # ── Making itself known ──────────────────────────────────────────────────
 
     def beep(self) -> None:
         self.link.json(POST, Endpoint.BEEP, payload={"action": "on"})
@@ -82,8 +76,6 @@ class Functions:
 
     def viewfinder_off(self) -> None:
         self.link.json(POST, Endpoint.VIEWFINDEROFF, payload={"action": "on"})
-
-    # ── Network administration ───────────────────────────────────────────────
 
     def cors_origin(self) -> str:
         body = self.link.json(GET, Endpoint.CORS_ORIGIN)
@@ -100,5 +92,5 @@ class Functions:
         return self.link.blob(Endpoint.SSL_CACERT)
 
 
-def _field(which: str) -> str:
+def _body_key(which: str) -> str:
     return "ownername" if which == "owner" else which

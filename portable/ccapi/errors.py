@@ -1,3 +1,5 @@
+"""Exception types and the mapping from response status to them."""
+
 from __future__ import annotations
 
 from portable.ccapi.vocabulary import ErrorBody
@@ -59,8 +61,6 @@ class InvalidStateError(DeviceError): ...
 
 class ShootingError(DeviceError): ...
 
-
-# ── What the camera says when it refuses ─────────────────────────────────────
 
 DEVICE_BUSY = "Device busy"
 DURING_SHOOTING = "During shooting or recording"

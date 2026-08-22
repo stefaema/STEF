@@ -1,3 +1,5 @@
+"""HTTP connection to a camera and the requests sent over it."""
+
 from __future__ import annotations
 
 import json as jsonlib
@@ -126,8 +128,6 @@ class Link:
         self._manifest_body: dict[str, Any] = {}
         self._lock = threading.Lock()
 
-    # ── Where it is ──────────────────────────────────────────────────────────
-
     @property
     def state(self) -> LinkState:
         return self._state
@@ -148,8 +148,6 @@ class Link:
     def version(self) -> str | None:
         found = self.registry.versions
         return found[-1] if found else None
-
-    # ── Opening and closing ──────────────────────────────────────────────────
 
     def connect(self) -> None:
         if self.up:
@@ -214,8 +212,6 @@ class Link:
             raise error_for(reply.status, error_body(reply.json()))
         return reply.json()
 
-    # ── Asking it something ──────────────────────────────────────────────────
-
     def url_for(self, feature: str, *tail: str) -> str:
         path = self.registry.path_for(feature)
         whole = "/".join((path.rstrip("/"), *(part.strip("/") for part in tail)))
@@ -266,8 +262,6 @@ class Link:
             GET, self.url_for(feature, *tail), query=query, stream=True
         )
         return reply.chunks or iter(())
-
-    # ── One request, with the refusals that clear waited out ─────────────────
 
     def _request(
         self,
@@ -322,7 +316,7 @@ class Link:
         stream: bool = False,
         headers: Mapping[str, str] | None = None,
     ) -> RawReply:
-        transport = self._reach()
+        transport = self._ensure_transport()
         with self._lock:
             return transport.send(
                 method,
@@ -333,7 +327,7 @@ class Link:
                 headers=headers,
             )
 
-    def _reach(self) -> Transport:
+    def _ensure_transport(self) -> Transport:
         if self._transport is None:
             self._transport = HttpTransport(self.config)
             self._owns_transport = True

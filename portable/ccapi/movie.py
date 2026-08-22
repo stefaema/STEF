@@ -1,3 +1,5 @@
+"""Movie mode and recording."""
+
 from __future__ import annotations
 
 import enum
@@ -31,8 +33,6 @@ class Movie:
         self.link = link
         self._recording = False
 
-    # ── The mode ─────────────────────────────────────────────────────────────
-
     def in_movie_mode(self) -> bool:
         body = self.link.json(GET, Endpoint.MOVIEMODE)
         return str(body.get("status", "")) == MovieModeAction.ON.value
@@ -56,12 +56,7 @@ class Movie:
             self.leave_movie_mode()
 
     def _change_mode(self, action: MovieModeAction) -> None:
-        """Ask for a mode and return once the camera is in it.
-
-        The 200 acknowledges the request; the mirror and the sensor take longer
-        than the next call does to arrive. A single read afterwards is a race,
-        and losing it looks exactly like the camera refusing.
-        """
+        """Request a mode change and return once the camera reports it."""
         self.link.json(POST, Endpoint.MOVIEMODE, payload={"action": action.value})
         wanted = action is MovieModeAction.ON
         if not self._mode_becomes(wanted, SETTLE):
@@ -71,7 +66,7 @@ class Movie:
             )
 
     def _mode_becomes(self, wanted: bool, timeout: float) -> bool:
-        """Whether the mode reads as wanted before the time runs out."""
+        """Return whether the mode reads as `wanted` before `timeout` elapses."""
         deadline = time.monotonic() + timeout
         while True:
             if self.in_movie_mode() is wanted:
@@ -79,8 +74,6 @@ class Movie:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(POLL)
-
-    # ── The recording inside it ──────────────────────────────────────────────
 
     @property
     def recording_by_us(self) -> bool:
@@ -91,11 +84,11 @@ class Movie:
             raise InvalidStateError(
                 "movie mode is not on; nothing can be recorded from stills mode"
             )
-        self._act(RecAction.START)
+        self._press_rec_button(RecAction.START)
         self._recording = True
 
     def stop_recording(self) -> None:
-        self._act(RecAction.STOP)
+        self._press_rec_button(RecAction.STOP)
         self._recording = False
 
     @contextmanager
@@ -106,5 +99,5 @@ class Movie:
         finally:
             self.stop_recording()
 
-    def _act(self, action: RecAction) -> None:
+    def _press_rec_button(self, action: RecAction) -> None:
         self.link.json(POST, Endpoint.RECBUTTON, payload={"action": action.value})

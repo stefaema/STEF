@@ -119,7 +119,7 @@ def half_press_takes_nothing(values: dict[str, Any]) -> Iterator[StepOutcome]:
     found = capture.camera()
     before = found.filesystem.file_count
     found.events.poll(PollWait.IMMEDIATELY)
-    found.shooting.act(ShutterAction.HALF_PRESS, af=False)
+    found.shooting.manual_shutter(ShutterAction.HALF_PRESS, af=False)
     yield StepOutcome(PASSED, "held at half")
     found.shooting.release()
     yield StepOutcome(PASSED, "released")
@@ -282,7 +282,7 @@ def burst(values: dict[str, Any]) -> Iterator[StepOutcome]:
         ),
     )
 
-    made = found.filesystem.under(found.filesystem.current_directory())
+    made = found.filesystem.files_in(found.filesystem.current_directory())
     removed = swept(found, made[-written:] if written else ())
     yield StepOutcome(PASSED, f"{removed} removed")
 

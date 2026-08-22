@@ -1,3 +1,5 @@
+"""Storage cards and the files on them."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -21,8 +23,6 @@ NUMBER = "number"
 class Filesystem:
     def __init__(self, link: Link) -> None:
         self.link = link
-
-    # ── The media it is made of ──────────────────────────────────────────────
 
     def storages(self) -> tuple[Storage, ...]:
         return storage_list(self.link.json(GET, Endpoint.STORAGE))
@@ -56,8 +56,6 @@ class Filesystem:
     def holds(self, frames: int, bytes_each: int) -> bool:
         return self.current().holds(frames, bytes_each)
 
-    # ── Walking it ───────────────────────────────────────────────────────────
-
     def volumes(self) -> tuple[str, ...]:
         body = self.link.json(GET, Endpoint.CONTENTS)
         return tuple(str(entry) for entry in body.get("path", ()))
@@ -66,7 +64,7 @@ class Filesystem:
         body = self.link.json(GET, Endpoint.CONTENTS, _relative(volume))
         return tuple(str(entry) for entry in body.get("path", ()))
 
-    def under(
+    def files_in(
         self,
         directory: str,
         kind: FileType = FileType.ALL,
@@ -90,13 +88,11 @@ class Filesystem:
     def walk(self, directory: str, kind: FileType = FileType.ALL) -> Iterator[str]:
         page = 1
         while True:
-            found = self.under(directory, kind, page=page)
+            found = self.files_in(directory, kind, page=page)
             if not found:
                 return
             yield from found
             page += 1
-
-    # ── Taking things off it ─────────────────────────────────────────────────
 
     def fetch(
         self,
@@ -125,12 +121,7 @@ class Filesystem:
 
 
 def _relative(path: str) -> str:
-    """Return a path as the tail `contents` is joined with, whatever the camera gave back.
-
-    Every listing answers in absolute paths, and those are what a caller has to
-    hand to ask the next question. Joining one onto `contents` again doubles the
-    prefix and 404s, so anything the camera said is stripped back here first.
-    """
+    """Return `path` as a tail for the `contents` endpoint, without a doubled prefix."""
     marker = "/contents"
     at = path.find(marker)
     return path[at + len(marker) :].strip("/") if at >= 0 else path.strip("/")

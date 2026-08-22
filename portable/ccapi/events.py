@@ -1,3 +1,5 @@
+"""Camera state changes from polling or the push stream."""
+
 from __future__ import annotations
 
 import json as jsonlib
@@ -21,6 +23,8 @@ log = logging.getLogger("ccapi.events")
 
 
 class Feed:
+    """Iterator of state changes from the push event stream."""
+
     def __init__(self, link: Link, chunks: Iterator[bytes]) -> None:
         self.link = link
         self._chunks = chunks
@@ -69,9 +73,20 @@ class Events:
         self.link.json(DELETE, Endpoint.POLLING)
 
     def start_watching(self) -> Feed:
-        chunks = self.link.chunks(Endpoint.MONITORING)
+        chunks = self._open_stream()
         self._watching = True
         return Feed(self.link, chunks)
+
+    def _open_stream(self) -> Iterator[bytes]:
+        """Open the monitoring stream, clearing a stale one from an earlier run."""
+        try:
+            return self.link.chunks(Endpoint.MONITORING)
+        except InvalidStateError as exc:
+            if ALREADY_STARTED not in str(exc) or self.watched_by_us:
+                raise
+            log.warning("a monitoring stream outlived its process; restarting it")
+            self.stop_watching()
+            return self.link.chunks(Endpoint.MONITORING)
 
     def stop_watching(self) -> None:
         try:
@@ -82,14 +97,7 @@ class Events:
 
     @contextmanager
     def watching(self) -> Generator[Feed]:
-        try:
-            feed = self.start_watching()
-        except InvalidStateError as exc:
-            if ALREADY_STARTED not in str(exc):
-                raise
-            log.warning("a monitoring stream is already open; leaving it alone")
-            yield Feed(self.link, iter(()))
-            return
+        feed = self.start_watching()
         try:
             yield feed
         finally:

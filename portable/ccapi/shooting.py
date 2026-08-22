@@ -1,3 +1,5 @@
+"""Shutter release, focus, zoom, and flicker detection."""
+
 from __future__ import annotations
 
 import enum
@@ -39,6 +41,8 @@ class FlickerResult:
 
 
 class HeldButton:
+    """The shutter button held down by `Shooting.held`."""
+
     def __init__(self, shooting: Shooting, af: bool) -> None:
         self._shooting = shooting
         self._af = af
@@ -50,12 +54,12 @@ class HeldButton:
 
     def press(self) -> None:
         if self._down:
-            self._shooting.act(ShutterAction.HALF_PRESS, self._af)
-        self._shooting.act(ShutterAction.FULL_PRESS, self._af)
+            self._shooting.manual_shutter(ShutterAction.HALF_PRESS, self._af)
+        self._shooting.manual_shutter(ShutterAction.FULL_PRESS, self._af)
         self._down = True
 
     def let_up(self) -> None:
-        self._shooting.act(ShutterAction.HALF_PRESS, self._af)
+        self._shooting.manual_shutter(ShutterAction.HALF_PRESS, self._af)
         self._down = False
 
 
@@ -63,14 +67,10 @@ class Shooting:
     def __init__(self, link: Link) -> None:
         self.link = link
 
-    # ── One frame ────────────────────────────────────────────────────────────
-
     def capture(self, af: bool = False) -> None:
         self.link.json(POST, Endpoint.SHUTTERBUTTON, payload={"af": af})
 
-    # ── The button, held ─────────────────────────────────────────────────────
-
-    def act(self, action: ShutterAction, af: bool = False) -> None:
+    def manual_shutter(self, action: ShutterAction, af: bool = False) -> None:
         self.link.json(
             POST,
             Endpoint.SHUTTERBUTTON_MANUAL,
@@ -78,17 +78,15 @@ class Shooting:
         )
 
     def release(self) -> None:
-        self.act(ShutterAction.RELEASE)
+        self.manual_shutter(ShutterAction.RELEASE)
 
     @contextmanager
     def held(self, af: bool = False) -> Generator[HeldButton]:
-        self.act(ShutterAction.HALF_PRESS, af)
+        self.manual_shutter(ShutterAction.HALF_PRESS, af)
         try:
             yield HeldButton(self, af)
         finally:
             self.release()
-
-    # ── Focus ────────────────────────────────────────────────────────────────
 
     def autofocus(self, start: bool = True) -> None:
         self.link.json(
@@ -98,12 +96,8 @@ class Shooting:
     def drive_focus(self, step: FocusStep) -> None:
         self.link.json(POST, Endpoint.DRIVEFOCUS, payload={"action": step.value})
 
-    # ── Zoom ─────────────────────────────────────────────────────────────────
-
     def zoom(self, action: ZoomAction) -> None:
         self.link.json(POST, Endpoint.ZOOM, payload={"action": action.value})
-
-    # ── Flicker ──────────────────────────────────────────────────────────────
 
     def detect_flicker(self) -> FlickerResult:
         body = self.link.json(POST, Endpoint.FLICKERDETECTION, payload={"action": "on"})
@@ -123,8 +117,6 @@ class Shooting:
     def recommended_flicker_tv(self) -> str:
         body = self.link.json(GET, Endpoint.HFFLICKERTV)
         return str(body.get("value", ""))
-
-    # ── Overriding the physical dial ─────────────────────────────────────────
 
     def dial_ignored_now(self) -> bool:
         body = self.link.json(GET, Endpoint.IGNORESHOOTINGMODEDIALMODE)

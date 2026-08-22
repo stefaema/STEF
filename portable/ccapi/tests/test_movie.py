@@ -1,4 +1,4 @@
-"""Entering a mode, which the camera acknowledges before it is in it."""
+"""Entering movie mode, which lags its acknowledgement."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def test_recording_starts_after_a_mode_that_took_a_moment_to_arrive():
     assert not client.movie.in_movie_mode()
 
 
-def test_a_mode_that_never_arrives_says_so_rather_than_recording_into_nothing(
+def test_a_mode_that_never_arrives_raises_instead_of_recording(
     monkeypatch,
 ):
     from portable.ccapi import movie
@@ -38,7 +38,7 @@ def test_a_mode_that_never_arrives_says_so_rather_than_recording_into_nothing(
         client.movie.enter_movie_mode()
 
 
-def test_leaving_puts_the_body_back_in_stills():
+def test_leaving_puts_the_camera_back_in_stills():
     client, _ = fake.connected(fake.Camera(mode_lag=2))
 
     client.movie.enter_movie_mode()
