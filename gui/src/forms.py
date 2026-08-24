@@ -88,7 +88,9 @@ class _Scoped(Mapping[str, Any]):
         getter = getattr(self._form, "getlist", None)
         if getter is not None:
             return list(getter(self._prefix + key))
-        return [self._form[self._prefix + key]] if self._prefix + key in self._form else []
+        return (
+            [self._form[self._prefix + key]] if self._prefix + key in self._form else []
+        )
 
 
 __all__ = ["values_from"]

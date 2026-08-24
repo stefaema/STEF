@@ -101,11 +101,15 @@ def is_up(sub: Subsystem[Any]) -> bool:
 
 
 def routines_of(sub: Subsystem[Any], category: str) -> list[Routine]:
-    return [one for one in sub.bench.routines.values() if one.category.value == category]
+    return [
+        one for one in sub.bench.routines.values() if one.category.value == category
+    ]
 
 
 def connect_routine(sub: Subsystem[Any]) -> Routine | None:
-    return next((one for one in routines_of(sub, "link") if one.name == "connect"), None)
+    return next(
+        (one for one in routines_of(sub, "link") if one.name == "connect"), None
+    )
 
 
 def disconnect_routine(sub: Subsystem[Any]) -> Routine | None:
@@ -233,9 +237,13 @@ def _field(spec, owner: Routine, warm) -> Field:
         unit=spec.unit,
         min=spec.min,
         max=spec.max,
-        options=cached if live else (list(labelled_options(spec)) if spec.options is not None else None),
+        options=cached
+        if live
+        else (list(labelled_options(spec)) if spec.options is not None else None),
         reload=reload_at,
         autoload=live and cached is None,
-        row_at=f"/diagnostics/{owner.subsystem}/row/{key}/{spec.name}" if spec.kind == "group" else None,
+        row_at=f"/diagnostics/{owner.subsystem}/row/{key}/{spec.name}"
+        if spec.kind == "group"
+        else None,
         columns=tuple(_field(one, owner, warm) for one in spec.columns),
     )

@@ -87,4 +87,13 @@ class RunStore:
 
 RUNS = RunStore()
 
-__all__ = ["IDLE", "RUNNING", "RUNS", "PASSED", "RunState", "RunStore", "address_of", "key_of"]
+__all__ = [
+    "IDLE",
+    "RUNNING",
+    "RUNS",
+    "PASSED",
+    "RunState",
+    "RunStore",
+    "address_of",
+    "key_of",
+]

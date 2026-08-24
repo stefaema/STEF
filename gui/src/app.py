@@ -19,9 +19,9 @@ from gui.src.i18n import gettext, ngettext
 from gui.src.render import OPTIONS
 from gui.src.runner import Record, Stream, call_off_loop, start_run
 from gui.src.runs import RUNS, address_of
-from shared.bench_api.inputs import options_are_live
 from machine import Activity, Busy, Machine, subsystem_json
 from shared import bench_api, logs
+from shared.bench_api.inputs import options_are_live
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
