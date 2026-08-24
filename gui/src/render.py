@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
@@ -86,6 +87,17 @@ def hexdump(value: Any) -> str:
     return str(value or "")
 
 
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def data_uri(value: Any) -> str:
+    """Return image bytes as a source an `img` tag can use directly."""
+    if not isinstance(value, bytes) or not value:
+        return ""
+    kind = "png" if value.startswith(PNG_MAGIC) else "jpeg"
+    return f"data:image/{kind};base64,{base64.b64encode(value).decode()}"
+
+
 def as_record(answer: Result | None) -> str:
     if answer is None:
         return "{}"
@@ -96,6 +108,8 @@ def as_record(answer: Result | None) -> str:
         packed["note"] = answer.note
     if answer.raw:
         packed["raw"] = answer.raw.hex(" ")
+    if answer.image:
+        packed["image"] = f"{len(answer.image)} bytes"
     if answer.fields:
         packed["fields"] = dict(answer.fields)
     if answer.table:
@@ -178,6 +192,7 @@ FILTERS = {
     "bitset": bitset,
     "hexnote": hexnote,
     "hexdump": hexdump,
+    "data_uri": data_uri,
     "as_record": as_record,
     "as_run": as_run,
 }

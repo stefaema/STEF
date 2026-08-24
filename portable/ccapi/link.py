@@ -6,7 +6,8 @@ import json as jsonlib
 import logging
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlencode
@@ -28,8 +29,6 @@ GET = "GET"
 POST = "POST"
 PUT = "PUT"
 DELETE = "DELETE"
-
-BACKOFF_BASE = 0.5
 
 log = logging.getLogger("ccapi.link")
 
@@ -120,6 +119,8 @@ class Link:
         self, config: CameraConfig, transport: Transport | None = None
     ) -> None:
         self.config = config
+        self.retries = config.retries
+        self.backoff = config.backoff
         self.registry = Registry(config.accepted_version)
         self._transport = transport
         self._owns_transport = transport is None
@@ -127,6 +128,30 @@ class Link:
         self._failure: str | None = None
         self._manifest_body: dict[str, Any] = {}
         self._lock = threading.Lock()
+
+    @contextmanager
+    def retrying(
+        self, *, retries: int | None = None, backoff: float | None = None
+    ) -> Generator[None]:
+        """Hold a different retry policy for the duration, then put the old one back.
+
+        Only the two numbers `_request` counts with change. The transport, its
+        sessions and their open connections are not built from them and never
+        see this, so a routine may ask for a different policy mid-run without
+        costing a reconnection.
+
+        A caller that wants to see `DeviceBusyError` itself, and time its own
+        wait, asks for `retries=0`.
+        """
+        was = (self.retries, self.backoff)
+        if retries is not None:
+            self.retries = retries
+        if backoff is not None:
+            self.backoff = backoff
+        try:
+            yield
+        finally:
+            self.retries, self.backoff = was
 
     @property
     def state(self) -> LinkState:
@@ -276,7 +301,7 @@ class Link:
         if not self.up:
             raise NotConnectedError("the camera is not connected")
         whole = f"{url}?{urlencode(dict(query))}" if query else url
-        for attempt in range(self.config.retries + 1):
+        for attempt in range(self.retries + 1):
             reply = self._send(
                 method, whole, payload=payload, stream=stream, headers=headers
             )
@@ -291,7 +316,7 @@ class Link:
                     refusal,
                 )
                 raise refusal
-            if attempt == self.config.retries:
+            if attempt == self.retries:
                 log.warning(
                     "%s %s still refused after %d attempts: %s",
                     method,
@@ -300,7 +325,7 @@ class Link:
                     refusal,
                 )
                 raise refusal
-            pause = BACKOFF_BASE * (2**attempt)
+            pause = self.backoff * (2**attempt)
             log.debug(
                 "%s %s refused (%s), waiting %.1fs", method, whole, refusal, pause
             )

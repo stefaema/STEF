@@ -22,6 +22,7 @@ class CameraConfig:
     auth: Credentials | None = None
     timeout: float = 5.0
     retries: int = 3
+    backoff: float = 0.5
     accepted_version: str | None = None
 
     @property

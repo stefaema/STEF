@@ -56,6 +56,7 @@ class Result:
     summary: str
     note: str | None = None
     raw: bytes | None = None
+    image: bytes | None = None
     fields: tuple[tuple[str, str], ...] = ()
     table: Table | None = None
 

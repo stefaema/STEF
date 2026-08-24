@@ -31,6 +31,11 @@
     <div class="max-h-24 overflow-auto font-mono text-xs tracking-widest text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ answer.raw|hexdump }}</div>
   </div>
   {%- endif %}
+  {%- if answer.image %}
+  <div class="px-3 py-2 border-b border-gray-300 dark:border-gray-700">
+    <img src="{{ answer.image|data_uri }}" alt="{{ answer.summary }}" class="max-h-64 w-auto rounded border border-gray-300 dark:border-gray-700">
+  </div>
+  {%- endif %}
   {%- if answer.fields %}<div class="p-3">{{ kv_table(answer.fields) }}</div>{% endif %}
   {%- if answer.table %}<div class="p-3">{{ kv_table(answer.table.rows, answer.table.head) }}</div>{% endif %}
 </div>

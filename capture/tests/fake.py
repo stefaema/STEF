@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import parse_qs
 
 from portable.ccapi import RawReply
 
@@ -32,7 +33,12 @@ MANIFEST = {
         endpoint("/ccapi/ver100/shooting/settings/drive", get=True, put=True),
         endpoint("/ccapi/ver100/functions/autopoweroff", get=True, put=True),
     ],
-    "ver110": [endpoint("/ccapi/ver110/devicestatus/battery", get=True)],
+    "ver110": [
+        endpoint("/ccapi/ver110/devicestatus/battery", get=True),
+        endpoint(
+            "/ccapi/ver110/shooting/settings/stillimagequality", get=True, put=True
+        ),
+    ],
     "ver140": [endpoint("/ccapi/ver140/devicestatus/battery", get=True)],
 }
 
@@ -52,11 +58,31 @@ BODIES: dict[str, Any] = {
         "level": "full",
         "quality": "good",
     },
+    "/ccapi/ver140/devicestatus/battery": {
+        "name": "LP-E17",
+        "kind": "battery",
+        "level": "full",
+        "quality": "good",
+    },
     "/ccapi/ver100/devicestatus/temperature": {"status": "normal"},
     "/ccapi/ver100/devicestatus/currentdirectory": {"path": "sd/100CANON"},
     "/ccapi/ver100/shooting/settings/iso": {
         "value": "400",
         "ability": ["100", "200", "400", "800"],
+    },
+    "/ccapi/ver110/shooting/settings/stillimagequality": {
+        "value": {"raw": "none", "jpeg": "small"},
+        "ability": {
+            "raw": ["none", "raw", "craw"],
+            "jpeg": [
+                "none",
+                "large_fine",
+                "large_normal",
+                "medium_fine",
+                "medium_normal",
+                "small",
+            ],
+        },
     },
     "/ccapi/ver100/shooting/settings/drive": {
         "value": "single",
@@ -67,6 +93,13 @@ BODIES: dict[str, Any] = {
         "ability": ["disable", "1min", "5min"],
     },
 }
+
+
+# Enough of a jpeg that anything sniffing magic bytes agrees what it is.
+JPEG = b"\xff\xd8\xff\xe0"
+
+# How many bytes each rendering costs, so the sizes are told apart in a test.
+RENDERED = {"thumbnail": 970, "display": 100_000, "main": 16_167_276}
 
 
 class Camera:
@@ -111,9 +144,22 @@ class Camera:
         added, self.pending = self.pending, []
         return {"addedcontents": added} if added else {}
 
+    def content(self, path: str, kind: str) -> bytes | None:
+        """Return the bytes of one file, or nothing if this is not a fetch of one.
+
+        The camera renders `thumbnail` and `display` itself rather than reading
+        them out of the file, so it answers for a raw original too. Both are
+        jpeg whatever the original is.
+        """
+        if kind not in RENDERED or path not in self.files:
+            return None
+        return JPEG + bytes(RENDERED[kind])
+
     def setting(self, feature: str) -> dict[str, Any]:
         """Return one setting: its current value and accepted values."""
-        shipped = BODIES.get(f"/ccapi/ver100/{feature}", {})
+        shipped = next(
+            (body for path, body in BODIES.items() if path.endswith(f"/{feature}")), {}
+        )
         value = self.settings.get(feature, shipped.get("value"))
         return {"value": value, "ability": shipped.get("ability", [])}
 
@@ -135,8 +181,13 @@ class Transport:
         headers: Mapping[str, str] | None = None,
     ) -> RawReply:
         """Return the response to one request and record it."""
-        path = url.split("8080", 1)[-1].split("?", 1)[0]
+        whole = url.split("8080", 1)[-1]
+        path, _, query = whole.partition("?")
         self.camera.sent.append((method, path, payload))
+        if method == "GET":
+            blob = self.camera.content(path, parse_qs(query).get("kind", [""])[0])
+            if blob is not None:
+                return RawReply(status=200, body=blob)
         body = self._body(method, path, payload)
         if body is None:
             return RawReply(

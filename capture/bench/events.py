@@ -39,26 +39,6 @@ def described(change: Any) -> tuple[tuple[str, ...], ...]:
     return tuple(rows)
 
 
-@bench_api.routine(category=SETUP, steps=["Poll"])
-def poll_once(values: dict[str, Any]) -> Iterator[StepOutcome]:
-    """Ask what has changed since the last time anything asked.
-
-    Only what moved comes back, so an empty answer is the normal one and is not
-    a failure. It is also the only place a capture reports the file it wrote.
-    """
-    change = capture.camera().events.poll(PollWait.IMMEDIATELY)
-    rows = described(change)
-    yield StepOutcome(
-        PASSED,
-        "nothing changed" if change.empty else f"{len(rows)} field(s) changed",
-        Result(
-            level=Level.OK,
-            summary="nothing changed" if change.empty else "what changed",
-            table=Table(head=("Field", "Value"), rows=rows) if rows else None,
-        ),
-    )
-
-
 @bench_api.routine(category=SETUP, steps=["Immediately", "Short", "Long"])
 def how_long_a_poll_waits(values: dict[str, Any]) -> Iterator[StepOutcome]:
     """Time each of the three waits a poll may be asked for.
