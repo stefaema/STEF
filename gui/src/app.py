@@ -19,7 +19,7 @@ from gui.src.i18n import gettext, ngettext
 from gui.src.render import OPTIONS
 from gui.src.runner import Record, Stream, call_off_loop, start_run
 from gui.src.runs import RUNS, address_of
-from machine import Activity, Busy, Machine, subsystem_json
+from machine import AREAS, Activity, Area, Busy, Machine, subsystem_json
 from shared import bench_api, logs
 from shared.bench_api.inputs import options_are_live
 
@@ -62,8 +62,20 @@ def subsystem_of(name: str) -> Any:
         raise HTTPException(404, f"no subsystem {name!r}") from None
 
 
-def _running(what: str) -> str:
-    return gettext("{what} is running").format(what=what)
+def _refusal(activity: Activity) -> str:
+    if activity is Activity.CONFIGURING:
+        return gettext("There are unsaved changes")
+    if activity is Activity.SCANNING:
+        return gettext("A scan is running")
+    return gettext("A bench routine is running")
+
+
+def _area_refusals() -> dict[str, str | None]:
+    held = stef.activity
+    return {
+        area.value: _refusal(held) if held and AREAS[area] is not held else None
+        for area in Area
+    }
 
 
 def _failed(name: str, exc: BaseException) -> str:
@@ -150,13 +162,12 @@ def _begin(name: str, key: str, values: dict[str, Any]) -> None:
             stef,
             Activity.BENCHING,
             what,
-            _running(what),
             lambda: bench_api.run_routine(test, values),
             _reporting(name, key),
         )
     except Busy as exc:
         RUNS.finish(what, bench_api.SKIPPED)
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, _refusal(exc.activity)) from exc
 
 
 # ── The JSON a machine reads ─────────────────────────────────────────────────
@@ -170,9 +181,8 @@ def index() -> RedirectResponse:
 @app.get("/api/state")
 def machine_state() -> dict[str, Any]:
     return {
-        "state": stef.activity.value,
-        "busy": stef.busy_with,
-        "areas": stef.openings(),
+        "state": stef.activity.value if stef.activity else "idle",
+        "areas": _area_refusals(),
         "subsystems": {name: _link_state(name) for name in stef.subsystems},
     }
 
@@ -223,7 +233,7 @@ async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
     try:
         await _opened(name, declared, taken)
     except Busy as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, _refusal(exc.activity)) from exc
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": _failed(name, exc), "link": _link_state(name)}
     return {"ok": True, "reason": None, "link": _link_state(name)}
@@ -273,7 +283,6 @@ async def _opened(name: str, declared: Any, taken: dict[str, Any]) -> None:
         stef,
         Activity.BENCHING,
         f"{name}.connect",
-        _running(f"{name}.connect"),
         lambda: _settle(declared, taken),
     )
     OPTIONS.forget(name)
@@ -297,11 +306,10 @@ async def _called(
             stef,
             Activity.BENCHING,
             f"{name}.{key}",
-            _running(f"{name}.{key}"),
             lambda: _one_result(declared, taken),
         )
     except Busy as exc:
-        return {"ok": False, "reason": str(exc), "value": None}
+        return {"ok": False, "reason": _refusal(exc.activity), "value": None}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": _failed(name, exc), "value": None}
     stream.say(name, "ok", "result", answer.summary if answer else key)
@@ -528,7 +536,7 @@ async def connect_html(request: Request, name: str) -> Any:
     try:
         await _opened(name, declared, taken)
     except Busy as exc:
-        error = str(exc)
+        error = _refusal(exc.activity)
     except Exception as exc:  # noqa: BLE001
         error = _failed(name, exc)
     held = _link_context(name, "link", error=error, known=True)

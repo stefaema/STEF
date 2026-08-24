@@ -1,66 +1,49 @@
 import pytest
 
-from machine import Activity, Busy, Machine
+from machine import AREAS, Activity, Area, Busy, Machine
 
 
 def test_nothing_is_gated_while_the_machine_is_idle():
     stef = Machine(roster=())
 
-    assert stef.activity is Activity.IDLE
-    assert stef.openings() == {"bench": None, "scan": None, "config": None}
+    assert stef.activity is None
 
 
-def test_an_activity_leaves_its_own_area_open_and_closes_the_others():
+def test_an_activity_is_the_one_the_machine_reports():
     stef = Machine(roster=())
 
-    with stef.doing(Activity.SCANNING, "transport.forward_film", "A scan is running."):
-        assert stef.may_open("scan")
-        assert not stef.may_open("bench")
-        assert stef.blocked_reason("config") == "A scan is running."
+    with stef.focusing_on(Activity.SCANNING):
+        assert stef.activity is Activity.SCANNING
 
 
 def test_the_machine_is_released_however_the_activity_ends():
     stef = Machine(roster=())
 
     with pytest.raises(RuntimeError):
-        with stef.doing(Activity.BENCHING, "transport.flash_board", "Flashing."):
+        with stef.focusing_on(Activity.BENCHING):
             raise RuntimeError("boom")
 
-    assert stef.activity is Activity.IDLE
-    assert stef.busy_with is None
+    assert stef.activity is None
 
 
-def test_a_second_holder_is_refused_rather_than_queued():
+def test_a_second_activity_is_refused_rather_than_queued():
     stef = Machine(roster=())
 
-    with stef.doing(
-        Activity.BENCHING, "transport.flash_board", "The board is being flashed."
-    ):
-        with pytest.raises(Busy, match="The board is being flashed."):
-            stef.take(Activity.SCANNING, "transport.forward_film", "A scan is running.")
+    with stef.focusing_on(Activity.BENCHING):
+        with pytest.raises(Busy) as refused:
+            stef.focus_on(Activity.SCANNING)
+
+    assert refused.value.activity is Activity.BENCHING
 
 
 def test_configuring_holds_the_machine_like_any_other_activity():
     stef = Machine(roster=())
 
-    with stef.doing(
-        Activity.CONFIGURING,
-        "config.transport",
-        "Unsaved changes in the transport settings.",
-    ):
-        assert stef.may_open("config")
-        assert not stef.may_open("bench")
-        assert not stef.may_open("scan")
+    with stef.focusing_on(Activity.CONFIGURING):
+        with pytest.raises(Busy):
+            stef.focus_on(Activity.BENCHING)
 
 
-def test_the_taker_states_the_sentence_the_next_comer_is_told():
-    stef = Machine(roster=())
-
-    stef.take(
-        Activity.CONFIGURING,
-        "config.transport",
-        "Unsaved changes in the transport settings.",
-    )
-
-    assert stef.blocked_reason("bench") == "Unsaved changes in the transport settings."
-    assert stef.busy_with == "config.transport"
+def test_every_area_answers_to_exactly_one_activity():
+    assert set(AREAS) == set(Area)
+    assert set(AREAS.values()) == set(Activity)

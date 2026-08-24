@@ -6,7 +6,7 @@ and will happily start a second one while the first still owns the port, and two
 writers on one port is a corrupted board rather than an error message.
 
 So the machine is held for the length of one run. Whoever holds it is what the
-machine reports it is doing, a second attempt is refused with a sentence rather
+machine reports it is doing, a second attempt is refused rather
 than queued, and the work runs on a thread so the event loop stays free to
 stream what it produces.
 """
@@ -135,12 +135,11 @@ class Stream:
 def start_run(
     stef: Machine,
     activity: Activity,
-    what: str,
-    refusal: str,
+    by: str,
     produce: Callable[[], Iterator[Any]],
     report: Callable[[str, Any], None],
 ) -> None:
-    stef.take(activity, what, refusal)
+    stef.focus_on(activity)
 
     def pump() -> None:
         try:
@@ -149,19 +148,19 @@ def start_run(
         except Exception as exc:  # noqa: BLE001
             report("outcome", {"error": f"{type(exc).__name__}: {exc}"})
         finally:
-            stef.free()
+            stef.unfocus()
             report("done", None)
 
     report("started", None)
-    threading.Thread(target=pump, name=f"bench:{what}", daemon=True).start()
+    threading.Thread(target=pump, name=f"bench:{by}", daemon=True).start()
 
 
 async def call_off_loop(
-    stef: Machine, activity: Activity, what: str, refusal: str, work: Callable[[], Any]
+    stef: Machine, activity: Activity, by: str, work: Callable[[], Any]
 ) -> Any:
     """Run one blocking call on a thread, holding the machine for as long as it takes."""
-    stef.take(activity, what, refusal)
+    stef.focus_on(activity)
     try:
         return await asyncio.to_thread(work)
     finally:
-        stef.free()
+        stef.unfocus()
