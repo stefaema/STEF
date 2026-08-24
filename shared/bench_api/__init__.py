@@ -66,6 +66,7 @@ from shared.bench_api.registry import (
     routine,
     run_routine,
 )
+from shared.bench_api.run_log import verdict
 from shared.subsystem import SubsystemLinkState, SubsystemSpec, summary_and_body, titled
 
 __all__ = [
@@ -126,5 +127,6 @@ __all__ = [
     "routine_json",
     "run_routine",
     "summary_and_body",
+    "verdict",
     "titled",
 ]

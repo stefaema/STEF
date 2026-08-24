@@ -1106,72 +1106,49 @@
     return card;
   }
 
+  var liveRun = null;
+
   function runTest(test) {
     var sub = current();
     var entry = runFor(test);
+    var key = keyOf(test);
     entry.status = "running";
     entry.open = true;
     entry.outcomes = [];
     entry.when = clock(Date.now() / 1000);
+    liveRun = { key: key, entry: entry };
     renderMain();
 
-    streamPost("/api/run/" + sub.id + "/" + keyOf(test), entry.values, function (event, payload) {
-      if (event === "outcome") {
-        if (payload.error) {
-          entry.outcomes.push({ status: "failed", detail: payload.error, value: null });
-        } else {
-          entry.outcomes.push(payload);
-        }
-        entry.status = "running";
-        renderMain();
-      } else if (event === "refused") {
-        entry.status = "idle";
-        toast("warn", (T.misc || {}).busy, payload.reason);
-        renderMain();
-      } else if (event === "done") {
-        entry.status = worst(entry.outcomes.map(function (one) { return one.status; }));
-        if (entry.status === "idle") entry.status = "passed";
-        renderMain();
-        refreshState();
-      }
-    }).catch(function (error) {
-      entry.status = "failed";
-      entry.outcomes.push({ status: "failed", detail: error.message, value: null });
+    api("/api/run/" + sub.id + "/" + key, entry.values).catch(function (error) {
+      if (!liveRun || liveRun.entry !== entry) return;
+      liveRun = null;
+      entry.status = "idle";
+      toast("warn", (T.misc || {}).busy, error.message);
       renderMain();
     });
   }
 
-  function streamPost(path, body, onEvent) {
-    return fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }).then(function (response) {
-      if (!response.ok) throw new Error(response.statusText);
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = "";
+  function watchRuns() {
+    var source = new EventSource("/api/runs/events");
 
-      function pump() {
-        return reader.read().then(function (chunk) {
-          if (chunk.done) return;
-          buffer += decoder.decode(chunk.value, { stream: true });
-          var blocks = buffer.split("\n\n");
-          buffer = blocks.pop();
-          blocks.forEach(function (block) {
-            var event = "message";
-            var data = "";
-            block.split("\n").forEach(function (line) {
-              if (line.indexOf("event:") === 0) event = line.slice(6).trim();
-              else if (line.indexOf("data:") === 0) data += line.slice(5).trim();
-            });
-            if (data) onEvent(event, JSON.parse(data));
-          });
-          return pump();
-        });
-      }
-      return pump();
+    source.addEventListener("outcome", function (message) {
+      var record = JSON.parse(message.data);
+      if (!liveRun || liveRun.key !== record.data.key) return;
+      liveRun.entry.outcomes.push(record.data.outcome);
+      liveRun.entry.status = "running";
+      renderMain();
     });
+
+    source.addEventListener("done", function (message) {
+      var record = JSON.parse(message.data);
+      if (!liveRun || liveRun.key !== record.data.key) return;
+      liveRun.entry.status = record.data.status;
+      liveRun = null;
+      renderMain();
+      refreshState();
+    });
+
+    source.onerror = function () { /* EventSource reconnects on its own. */ };
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -1526,6 +1503,7 @@
 
     redrawLog();
     listen();
+    watchRuns();
     refreshState().then(renderLogChips).catch(function (error) {
       dom.main.append(el("div", { class: CLS.noteError, text: error.message }));
     });

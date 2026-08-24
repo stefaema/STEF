@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from gui.src import text
 from gui.src.i18n import gettext, ngettext
-from gui.src.runner import Record, Stream, call_off_loop, stream_run
+from gui.src.runner import Record, Stream, call_off_loop, start_run
 from machine import Activity, Busy, Machine, subsystem_json
 from shared import bench_api, logs
 
@@ -44,6 +44,7 @@ templates.env.add_extension("jinja2.ext.i18n")
 templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyright: ignore[reportAttributeAccessIssue]
 
 stream = Stream()
+runs = Stream()
 stef = Machine()
 log = logs.as_component("gui")
 
@@ -229,9 +230,42 @@ def _settle(declared: Any, values: dict[str, Any]) -> None:
 # ── Running a routine ────────────────────────────────────────────────────────
 
 
+OUTCOME_LEVEL = {"failed": "error", "warned": "warn"}
+
+
+def _reporting(name: str, key: str) -> Any:
+    settled: list[bench_api.StepStatus] = []
+
+    def report(event: str, item: Any) -> None:
+        if event == "started":
+            runs.say(name, "ok", "started", key, {"key": key})
+            return
+        if event == "done":
+            verdict = bench_api.verdict(settled)
+            runs.say(name, "ok", "done", key, {"key": key, "status": verdict.value})
+            return
+        packed = item if isinstance(item, dict) else bench_api.outcome_json(item)
+        if "error" in packed:
+            packed = {
+                "status": bench_api.FAILED.value,
+                "detail": packed["error"],
+                "value": None,
+                "step": "",
+            }
+        settled.append(bench_api.StepStatus(packed["status"]))
+        runs.say(
+            name,
+            OUTCOME_LEVEL.get(packed["status"], "ok"),
+            "outcome",
+            packed["detail"],
+            {"key": key, "outcome": packed},
+        )
+
+    return report
+
+
 @app.post("/api/run/{name}/{test_id}")
-async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingResponse:
-    """Run one routine, streaming each step's outcome as the run reaches it."""
+async def run(name: str, test_id: str, values: dict[str, Any]) -> dict[str, Any]:
     record = subsystem_of(name)
     if test_id not in record.bench.routines:
         raise HTTPException(404, f"no routine {name}.{test_id}")
@@ -244,26 +278,20 @@ async def run(name: str, test_id: str, values: dict[str, Any]) -> StreamingRespo
     shown = ", ".join(f"{k}={v!r}" for k, v in taken.items())
     stream.say(name, "ok", "command", f"{test_id}({shown})")
 
-    async def body() -> AsyncIterator[str]:
-        try:
-            produced = stream_run(
-                stef,
-                Activity.BENCHING,
-                f"{name}.{test_id}",
-                _running(f"{name}.{test_id}"),
-                lambda: bench_api.run_routine(test, taken),
-            )
-            async for item in produced:
-                packed = (
-                    item if isinstance(item, dict) else bench_api.outcome_json(item)
-                )
-                yield _sse("outcome", packed)
-        except Busy as exc:
-            yield _sse("refused", {"reason": str(exc)})
-            return
-        yield _sse("done", {})
-
-    return StreamingResponse(body(), media_type="text/event-stream")
+    what = f"{name}.{test_id}"
+    runs.forget()
+    try:
+        start_run(
+            stef,
+            Activity.BENCHING,
+            what,
+            _running(what),
+            lambda: bench_api.run_routine(test, taken),
+            _reporting(name, test_id),
+        )
+    except Busy as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"ok": True, "run": what}
 
 
 def _one_result(declared: Any, values: dict[str, Any]) -> Any:
@@ -318,26 +346,35 @@ def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-@app.get("/api/events")
-async def events() -> StreamingResponse:
+def _served(source: Stream, event: str | None) -> StreamingResponse:
     """Stream every record, catching a late listener up on what it missed."""
-    listener, backlog = stream.listen()
+    listener, backlog = source.listen()
 
     async def body() -> AsyncIterator[str]:
         try:
             for record in backlog:
-                yield _sse("record", record.payload())
+                yield _sse(event or record.kind, record.payload())
             while True:
                 try:
                     record = await asyncio.to_thread(listener.get, True, HEARTBEAT)
                 except Exception:  # noqa: BLE001
                     yield ": keep-alive\n\n"
                     continue
-                yield _sse("record", record.payload())
+                yield _sse(event or record.kind, record.payload())
         finally:
-            stream.drop(listener)
+            source.drop(listener)
 
     return StreamingResponse(body(), media_type="text/event-stream")
+
+
+@app.get("/api/events")
+async def events() -> StreamingResponse:
+    return _served(stream, "record")
+
+
+@app.get("/api/runs/events")
+async def run_events() -> StreamingResponse:
+    return _served(runs, None)
 
 
 app.mount("/web", StaticFiles(directory=str(WEB)), name="web")

@@ -18,7 +18,7 @@ import itertools
 import queue
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -114,6 +114,10 @@ class Stream:
             str(record["message"]),
         )
 
+    def forget(self) -> None:
+        with self._lock:
+            self._backlog.clear()
+
     def listen(self) -> tuple[queue.Queue[Record], list[Record]]:
         """Register a listener and hand back what it missed."""
         listener: queue.Queue[Record] = queue.Queue(maxsize=DEPTH)
@@ -128,44 +132,28 @@ class Stream:
                 self._listeners.remove(listener)
 
 
-async def stream_run(
+def start_run(
     stef: Machine,
     activity: Activity,
     what: str,
     refusal: str,
     produce: Callable[[], Iterator[Any]],
-) -> AsyncIterator[Any]:
-    """Run a blocking generator on a thread, yielding what it produces as it goes.
-
-    The generator is the contract's own `run()`, which yields one outcome per
-    step as the step settles. Pulling it on a thread and handing each item to the
-    loop is what keeps "the screen fills in step by step" true across a socket.
-    """
-    loop = asyncio.get_running_loop()
-    handoff: asyncio.Queue[Any] = asyncio.Queue()
-    done = object()
+    report: Callable[[str, Any], None],
+) -> None:
+    stef.take(activity, what, refusal)
 
     def pump() -> None:
         try:
             for item in produce():
-                loop.call_soon_threadsafe(handoff.put_nowait, item)
+                report("outcome", item)
         except Exception as exc:  # noqa: BLE001
-            loop.call_soon_threadsafe(
-                handoff.put_nowait, {"error": f"{type(exc).__name__}: {exc}"}
-            )
+            report("outcome", {"error": f"{type(exc).__name__}: {exc}"})
         finally:
-            loop.call_soon_threadsafe(handoff.put_nowait, done)
+            stef.free()
+            report("done", None)
 
-    stef.take(activity, what, refusal)
+    report("started", None)
     threading.Thread(target=pump, name=f"bench:{what}", daemon=True).start()
-    try:
-        while True:
-            item = await handoff.get()
-            if item is done:
-                return
-            yield item
-    finally:
-        stef.free()
 
 
 async def call_off_loop(

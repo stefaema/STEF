@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -158,24 +159,46 @@ def test_a_routine_that_opens_the_port_is_refused_while_the_link_holds_it(
 # ── Running ──────────────────────────────────────────────────────────────────
 
 
-def outcomes(text):
-    """Return the outcomes out of one server-sent stream."""
-    settled = []
-    for block in text.strip().split("\n\n"):
-        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
-        if lines.get("event") == "outcome":
-            settled.append(json.loads(lines["data"]))
-    return settled
+def outcomes(timeout=5.0):
+    from gui.src.app import runs
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if any(record.kind == "done" for record in runs._backlog):
+            break
+        time.sleep(0.01)
+    else:
+        raise AssertionError("the run never ended")
+    return [
+        record.data["outcome"] for record in runs._backlog if record.kind == "outcome"
+    ]
 
 
-def test_a_run_streams_one_outcome_per_step_as_it_reaches_it(client, unplugged):
+def test_a_run_reports_one_outcome_per_step_as_it_reaches_it(client, unplugged):
     answer = client.post(
         "/api/run/transport/prelink.verify_port", json={"port": "auto"}
     )
     assert answer.status_code == 200
-    settled = outcomes(answer.text)
+    settled = outcomes()
     assert len(settled) == 3
     assert settled[0]["status"] == "failed"
+
+
+def test_a_run_says_it_started_before_it_says_anything_it_produced(client, unplugged):
+    from gui.src.app import runs
+
+    client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
+    outcomes()
+    assert [record.kind for record in runs._backlog][0] == "started"
+
+
+def test_a_run_s_verdict_is_the_worst_step_it_produced(client, unplugged):
+    from gui.src.app import runs
+
+    client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
+    outcomes()
+    (ended,) = [record for record in runs._backlog if record.kind == "done"]
+    assert ended.data["status"] == "failed"
 
 
 def test_a_step_with_nothing_to_report_writes_no_log_line(client, unplugged):
@@ -183,6 +206,7 @@ def test_a_step_with_nothing_to_report_writes_no_log_line(client, unplugged):
 
     before = len(stream._backlog)
     client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
+    outcomes()
     written = stream._backlog[before:]
     assert written
     assert all(record.text for record in written)
@@ -191,11 +215,8 @@ def test_a_step_with_nothing_to_report_writes_no_log_line(client, unplugged):
 def test_abandoning_leaves_the_steps_after_it_skipped_rather_than_failed(
     client, unplugged
 ):
-    settled = outcomes(
-        client.post(
-            "/api/run/transport/prelink.verify_port", json={"port": "auto"}
-        ).text
-    )
+    client.post("/api/run/transport/prelink.verify_port", json={"port": "auto"})
+    settled = outcomes()
     assert [s["status"] for s in settled[1:]] == ["skipped", "skipped"]
 
 
