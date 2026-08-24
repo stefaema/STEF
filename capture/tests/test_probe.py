@@ -111,11 +111,11 @@ def test_an_unasked_search_is_not_reported_as_an_absent_camera():
     assert "no interface carried" in swept.sentence
 
 
-def test_a_search_that_went_out_and_heard_nothing_says_where_it_went():
+def test_a_search_that_heard_nothing_names_both_reasons_it_could_have():
     swept = probe.Sweep(found=(), carried=("wlan0",), refused=(), answered=0)
 
-    assert "wlan0" in swept.sentence
-    assert "multicast" in swept.sentence
+    assert "no camera available" in swept.sentence
+    assert "network is preventing discovery" in swept.sentence
 
 
 def test_a_device_that_answers_and_will_not_describe_itself_is_its_own_case():

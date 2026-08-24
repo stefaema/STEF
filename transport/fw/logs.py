@@ -16,7 +16,7 @@ LEVELS = {
 }
 UNKNOWN = "INFO"
 
-log = logs.component("transport.firmware")
+log = logs.as_component("transport.firmware")
 
 
 def forward(record: framing.LogRecord) -> None:

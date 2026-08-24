@@ -12,7 +12,7 @@ def recorded():
     kept: list = []
     logs.logger.remove()
     logs.logger.configure(extra=dict(logs.DEFAULTS))
-    logs.logger.add(kept.append, level="DEBUG", format=logs.template_for)
+    logs.logger.add(kept.append, level="DEBUG", format=logs.file_format)
     yield kept
     logs.logger.remove()
 
@@ -139,7 +139,7 @@ def test_the_moment_a_run_began_is_fine_enough_to_tell_two_of_them_apart():
 
 
 def test_a_line_nothing_ran_under_names_no_routine(recorded):
-    logs.component("ccapi.link").debug("connecting")
+    logs.as_component("ccapi.link").debug("connecting")
 
     assert recorded[0].record["extra"]["routine"] == ""
     assert "[]" not in str(recorded[0])

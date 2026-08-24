@@ -19,7 +19,7 @@ def written(tmp_path: Path):
     lines: list[str] = []
     logs.logger.remove()
     logs.logger.configure(extra=dict(logs.DEFAULTS))
-    logs.logger.add(lines.append, format=logs.template_for, level="DEBUG")
+    logs.logger.add(lines.append, format=logs.file_format, level="DEBUG")
     yield lines
     logs.logger.remove()
 
@@ -28,7 +28,7 @@ def written(tmp_path: Path):
 
 
 def test_a_line_names_its_level_time_and_component_in_that_order(written):
-    logs.component("transport.prelink").warning("open load")
+    logs.as_component("transport.prelink").warning("open load")
 
     head, _, message = written[0].partition("] ")
     assert head == "[WARNING "
@@ -37,8 +37,8 @@ def test_a_line_names_its_level_time_and_component_in_that_order(written):
 
 
 def test_every_level_leaves_the_message_in_the_same_column(written):
-    logs.component("a.b").debug("one")
-    logs.component("a.b").critical("two")
+    logs.as_component("a.b").debug("one")
+    logs.as_component("a.b").critical("two")
 
     columns = {line.index("] ", line.index("[a.b")) for line in written}
     assert len(columns) == 1
@@ -65,7 +65,7 @@ def test_retention_drops_the_oldest_once_the_budget_is_passed(tmp_path):
     middle = _archive(tmp_path, "middle.zip", 100, now - 200)
     new = _archive(tmp_path, "new.zip", 100, now - 100)
 
-    logs.keep_under(150)([str(old), str(middle), str(new)])
+    logs.capped_at(150)([str(old), str(middle), str(new)])
 
     assert new.exists()
     assert not middle.exists()
@@ -75,7 +75,7 @@ def test_retention_drops_the_oldest_once_the_budget_is_passed(tmp_path):
 def test_the_newest_survives_even_when_it_alone_passes_the_budget(tmp_path):
     only = _archive(tmp_path, "only.zip", 500, time.time())
 
-    logs.keep_under(10)([str(only)])
+    logs.capped_at(10)([str(only)])
 
     assert only.exists()
 
@@ -114,6 +114,18 @@ def test_a_record_s_own_attributes_are_not_mistaken_for_what_was_attached(writte
     assert attached == {"component", "routine"}
 
 
+def test_an_intercepted_line_is_attributed_to_the_code_that_logged(written):
+    logs.intercept_stdlib()
+    logging.getLogger("ccapi.link").info("connecting")
+
+    stamped = written[0].record
+    assert stamped["file"].name == Path(__file__).name
+    assert (
+        stamped["function"]
+        == "test_an_intercepted_line_is_attributed_to_the_code_that_logged"
+    )
+
+
 def test_a_caller_may_name_the_component_without_colliding_with_the_one_derived(
     written,
 ):
@@ -128,7 +140,7 @@ def test_a_caller_may_name_the_component_without_colliding_with_the_one_derived(
 
 def test_the_file_is_one_json_object_per_line_carrying_its_own_rendered_text(tmp_path):
     written = logs.start(directory=tmp_path, console_level=None)
-    logs.component("capture").info("connected to {}", "192.168.1.2")
+    logs.as_component("capture").info("connected to {}", "192.168.1.2")
     logs.logger.remove()
 
     (line,) = written.read_text().splitlines()

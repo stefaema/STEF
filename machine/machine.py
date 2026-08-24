@@ -10,7 +10,7 @@ from shared.subsystem import SubsystemLinkState, SubsystemSpec
 
 ROSTER = ("transport", "capture", "detect")
 
-log = logs.component("machine")
+log = logs.as_component("machine")
 
 
 def assembled(package: str) -> Subsystem[None]:

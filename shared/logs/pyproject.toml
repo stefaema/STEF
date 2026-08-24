@@ -1,7 +1,7 @@
 [project]
 name = "stef-logs"
 version = "0.1.0"
-description = "One line, one shape, one file"
+description = "Log system of the STEF project"
 requires-python = ">=3.11"
 dependencies = ["loguru>=0.7,<1"]
 

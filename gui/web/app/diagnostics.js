@@ -166,16 +166,45 @@
     });
   }
 
-  // What a live list last answered, by the address it was asked at. A redraw
-  // must not blank a list the screen has already been told, so the control
-  // paints what is remembered and replaces it when the fresh answer lands.
+  // What a live list last answered, by the address it was asked at. Asking can
+  // cost seconds on the wire, so a redraw paints what is remembered and only a
+  // first sight or a deliberate act goes back for more.
   var known = {};
+  var pending = {};
+  var era = 0;
 
+  // One request per address at a time. A control is redrawn while its list is
+  // still in flight, and a second draw must join that request rather than start
+  // another one.
   function ask(at) {
-    return api(at).then(function (list) {
-      known[at] = list;
-      return list;
-    });
+    if (pending[at]) return pending[at];
+    var mine = era;
+    var request = api(at).then(
+      function (list) {
+        if (mine === era) known[at] = list;
+        if (pending[at] === request) delete pending[at];
+        return list;
+      },
+      function (error) {
+        if (pending[at] === request) delete pending[at];
+        throw error;
+      }
+    );
+    pending[at] = request;
+    return request;
+  }
+
+  function askOnce(at) {
+    return known[at] ? Promise.resolve(known[at]) : ask(at);
+  }
+
+  // Every list the screen holds is about to be wrong: a different subsystem is
+  // showing, or a link opened and closed under the one that is. An answer still
+  // in flight belongs to the era it was asked in and is dropped when it lands.
+  function forgetLists() {
+    era += 1;
+    known = {};
+    pending = {};
   }
 
   // ── What the screen is showing ─────────────────────────────────────────────
@@ -582,7 +611,7 @@
     }
 
     // A fixed list crossed with the payload. One that can move crossed as an
-    // address instead, and is asked for whenever this control is drawn.
+    // address instead, and is asked for the first time this control is drawn.
     var box = fieldBox(spec, select);
     fill(spec.options || known[spec.reload]);
     if (spec.reload) {
@@ -597,7 +626,7 @@
       }, icon("sync", "size-4"));
       box = fieldBox(spec, row);
       row.append(select, refresh);
-      ask(spec.reload).then(fill);
+      askOnce(spec.reload).then(fill);
     }
     return box;
   }
@@ -865,6 +894,7 @@
           if (!answer.ok) state.linkError = answer.reason;
         }
         if (!answer.ok) toast("error", (T.link || {}).blocked, answer.reason);
+        forgetLists();
         return refreshState();
       })
       .catch(function (error) {
@@ -883,6 +913,7 @@
         state.linkError = null;
         state.linkKnown = false;
       }
+      forgetLists();
       refreshState();
     });
   }
@@ -1345,6 +1376,7 @@
             state.call = null;
             state.callAnswer = null;
             forgetLink();
+            forgetLists();
             renderMain();
             probe();
           },

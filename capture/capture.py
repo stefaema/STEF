@@ -13,7 +13,7 @@ PACKAGE = "capture"
 SETTINGS = f"camera{config.SUFFIX}"
 AUTO = "auto"
 
-log = logs.component("capture")
+log = logs.as_component("capture")
 
 _camera: Camera | None = None
 _failure: str | None = None
@@ -65,16 +65,15 @@ def settle(host: str) -> str:
     chosen = named_host(host)
     if chosen is not None:
         return chosen
-    found = probe.search()
+    swept = probe.sweep()
+    found = swept.found
     if len(found) == 1:
         return found[0].host
     if not found:
         pinned = pinned_host()
         if pinned:
             return pinned
-        raise probe.NoCameraError(
-            "nothing answered a discovery search, and no address is configured"
-        )
+        raise probe.NoCameraError(f"{swept.sentence} No address is configured either.")
     raise probe.NoCameraError(
         f"{len(found)} cameras answered; name the one to use: "
         + ", ".join(one.host for one in found)

@@ -40,7 +40,7 @@ RUN_LEVEL = {
 # Worst first, so the verdict is the first of these the run produced.
 SEVERITY = (FAILED, WARNED, PASSED, SKIPPED)
 
-log = logs.component(COMPONENT)
+log = logs.as_component(COMPONENT)
 
 
 # ── What names one run ───────────────────────────────────────────────────────

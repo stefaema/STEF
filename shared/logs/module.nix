@@ -1,7 +1,7 @@
 { ... }:
 
 {
-  description = "log system of the STEF project";
+  description = "Log system of the STEF project";
 
   python = ps: [ ps.pytest ps.loguru ];
 }

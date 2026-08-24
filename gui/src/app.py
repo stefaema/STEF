@@ -45,7 +45,7 @@ templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyr
 
 stream = Stream()
 stef = Machine()
-log = logs.component("gui")
+log = logs.as_component("gui")
 
 
 def wake() -> None:

@@ -33,7 +33,7 @@ LOOPBACK = "lo"
 ANY = b"\x00\x00\x00\x00"
 DEFAULT_ROUTE = 0
 
-log = logs.component("capture.probe")
+log = logs.as_component("capture.probe")
 
 
 class NoCameraError(CcapiError):
@@ -100,16 +100,16 @@ class Sweep:
                 "no interface carried a discovery search, so nothing was asked. "
                 "Check this host is on the camera's network."
             )
-        where = ", ".join(self.carried)
         if self.answered:
+            where = ", ".join(self.carried)
             return (
                 f"{self.answered} device(s) answered on {where}, and none of them "
                 "would describe itself"
             )
         return (
-            f"nothing answered on {where}. A camera reached by address alone is "
-            "still there: discovery is multicast, and an access point or switch "
-            "between it and here may be dropping it."
+            "nothing answered a discovery search. Either there is no camera "
+            "available to link, or the network is preventing discovery from "
+            "succeeding."
         )
 
 
