@@ -1,0 +1,21 @@
+{%- import "macros/style.html" as S -%}
+<div class="flex flex-wrap items-start gap-4 p-4">
+  <div class="flex flex-col min-w-56 flex-1">
+    <label class="{{ S.label }}">{{ _("Namespace") }}</label>
+    <select class="{{ S.input }} font-mono" name="group" hx-get="/diagnostics/{{ sub.spec.id }}/calls/panel"
+            hx-include="this" hx-target="#panel" hx-swap="outerHTML">
+      {%- for name, items in groups %}
+      <option value="{{ name }}"{{ " selected" if name == routine.group }}>{{ name }} ({{ items|length }})</option>
+      {%- endfor %}
+    </select>
+  </div>
+  <div class="flex flex-col min-w-56 flex-1">
+    <label class="{{ S.label }}">{{ _("Method") }}</label>
+    <select class="{{ S.input }} font-mono" name="key" hx-get="/diagnostics/{{ sub.spec.id }}/calls/method"
+            hx-include="this" hx-target="#method" hx-swap="outerHTML">
+      {%- for one in siblings %}
+      <option value="{{ one.group }}.{{ one.name }}"{{ " selected" if one.name == routine.name }}>{{ one.name }}</option>
+      {%- endfor %}
+    </select>
+  </div>
+</div>

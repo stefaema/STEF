@@ -1,0 +1,13 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+<div class="{{ S.card }}" id="implementation">
+  <div class="{{ S.cardHead }}">
+    <span class="{{ S.sectionTitle }}">{{ _("Implementation") }}</span>
+    <span class="{{ S.spacer }}"></span>
+    {{ M.link_mark(sub.link_state.value) }}
+  </div>
+  <div class="flex flex-col gap-2 p-4">
+    <span class="{{ S.lede }}">{{ sub.spec.summary }}</span>
+    {%- if sub.spec.description %}{{ M.show_more(sub.spec.description) }}{% endif %}
+  </div>
+</div>

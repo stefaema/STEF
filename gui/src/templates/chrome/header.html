@@ -1,0 +1,17 @@
+{%- import "macros/style.html" as S -%}
+  <header class="area-header flex items-center gap-5 px-4 bg-surface border-b border-gray-200 dark:border-gray-700">
+    <div class="flex items-center gap-3">
+{% include "chrome/logo.html" %}
+      <span class="flex items-baseline gap-2">
+        <span class="text-lg font-bold tracking-wide">STEF</span>
+        <span class="text-xs text-gray-500 dark:text-gray-400">{{ _("Film Transport and Scanning System") }}</span>
+      </span>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <div id="theme" class="inline-flex gap-0.5 p-0.5 bg-inset border border-gray-200 dark:border-gray-700 rounded-lg">
+      <button type="button" data-theme="light" class="px-3 py-1 text-xs rounded-md cursor-pointer">{{ _("Light") }}</button>
+      <button type="button" data-theme="dark" class="px-3 py-1 text-xs rounded-md cursor-pointer">{{ _("Dark") }}</button>
+    </div>
+  </header>

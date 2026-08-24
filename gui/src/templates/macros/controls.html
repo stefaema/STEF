@@ -1,0 +1,143 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+
+{%- macro field(spec, body, extra_hint=None) -%}
+<div class="flex flex-col">
+  <label class="{{ S.label }}">{{ spec.name }}{% if spec.unit %} ({{ spec.unit }}){% endif %}</label>
+  {{ body }}
+  {%- if spec.hint %}<div class="{{ S.hint }} mt-1">{{ spec.hint }}</div>{% endif %}
+  {%- if extra_hint %}<div class="{{ S.hint }} mt-1">{{ extra_hint }}</div>{% endif %}
+</div>
+{%- endmacro -%}
+
+{%- macro options_list(offered, chosen) -%}
+{%- for one in offered or [] -%}
+<option value="{{ one.value }}"{{ " selected" if chosen is not none and one.value|string == chosen|string }}>{{ one.label }}</option>
+{%- endfor -%}
+{%- endmacro -%}
+
+{%- macro bare(spec, name, value, uid) -%}
+{%- if spec.kind == "choice" and spec.reload -%}{{ select_live(spec, name, value, uid) }}
+{%- elif spec.kind == "choice" -%}{{ select_fixed(spec, name, value) }}
+{%- elif spec.kind == "boolean" -%}{{ boolean(name, value) }}
+{%- elif spec.kind == "integer" -%}{{ number(spec, name, value) }}
+{%- elif spec.kind == "bitmask" -%}{{ bits(spec, name, value, uid) }}
+{%- elif spec.kind == "raw_bytes" -%}{{ hexbytes(name, value, uid) }}
+{%- else -%}<span class="{{ S.hint }}">{{ _("No control declared for this") }}</span>
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro control(spec, name, value, uid) -%}
+{%- if spec.kind == "group" -%}{{ group(spec, name, value, uid) }}
+{%- elif spec.kind == "integer" -%}{{ field(spec, number(spec, name, value), range_hint(spec)) }}
+{%- else -%}{{ field(spec, bare(spec, name, value, uid)) }}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro select_fixed(spec, name, value) -%}
+<select class="{{ S.input }}" name="{{ name }}">{{ options_list(spec.options, value) }}</select>
+{%- endmacro -%}
+
+{%- macro select_live(spec, name, value, uid) -%}
+<div class="flex items-center gap-2">
+  <select class="{{ S.input }} flex-1" name="{{ name }}" id="opt-{{ uid }}"
+          {%- if spec.autoload %} hx-get="{{ spec.reload }}" hx-trigger="load" hx-target="this" hx-swap="innerHTML"{% endif %}>
+    {%- if spec.autoload %}<option value="">{{ _("Loading") }}</option>{% else %}{{ options_list(spec.options, value) }}{% endif %}
+  </select>
+  <button type="button" class="{{ S.btnQuiet }}" title="{{ _("Refresh") }}"
+          hx-get="{{ spec.reload }}?refresh=1" hx-target="#opt-{{ uid }}" hx-swap="innerHTML">
+    {{ M.icon("sync", "size-4") }}
+  </button>
+</div>
+{%- endmacro -%}
+
+{%- macro boolean(name, value) -%}
+<div class="{{ S.segmented }} segset">
+  {%- for side in [False, True] %}
+  <label>
+    <input type="radio" name="{{ name }}" value="{{ "true" if side else "false" }}"{{ " checked" if value|truthy == side }}>
+    <span>{{ "True" if side else "False" }}</span>
+  </label>
+  {%- endfor %}
+</div>
+{%- endmacro -%}
+
+{%- macro number(spec, name, value) -%}
+<input class="{{ S.input }}" type="number" name="{{ name }}" value="{{ value if value is not none else (spec.min or 0) }}"
+  {%- if spec.min is not none %} min="{{ spec.min }}"{% endif %}
+  {%- if spec.max is not none %} max="{{ spec.max }}"{% endif %}>
+{%- endmacro -%}
+
+{%- macro range_hint(spec) -%}
+{%- if spec.min is not none or spec.max is not none -%}
+{{ _("Range") }} {{ spec.min if spec.min is not none else "" }} to {{ spec.max if spec.max is not none else "" }}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro bits(spec, name, value, uid) -%}
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-1.5 bg-surface border border-gray-400 rounded-md dark:border-gray-600"
+     data-bits="hex-{{ uid }}">
+  {%- for one in spec.options or [] %}
+  <label class="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+    <input class="{{ S.checkbox }}" type="checkbox" name="{{ name }}" value="{{ one.value }}"{{ " checked" if value|bitset(one.value) }}>
+    {{ one.label }}
+  </label>
+  {%- endfor %}
+  <span class="ml-auto font-mono text-xs text-gray-500" id="hex-{{ uid }}">{{ value|hex32 }}</span>
+</div>
+{%- endmacro -%}
+
+{%- macro hexbytes(name, value, uid) -%}
+<input class="{{ S.inputMono }}" type="text" name="{{ name }}" value="{{ value or "" }}" spellcheck="false"
+       data-hex="note-{{ uid }}"
+       data-bytes-label="{{ _("bytes") }}" data-invalid-label="{{ _("Not valid hexadecimal") }}">
+<div class="{{ S.hint }} mt-1" id="note-{{ uid }}">{{ value|hexnote }}</div>
+{%- endmacro -%}
+
+{%- macro group(spec, name, rows, uid) -%}
+<div class="flex flex-col">
+  <label class="{{ S.label }}">{{ spec.name }}</label>
+  <fieldset class="border border-gray-300 rounded-md p-2 dark:border-gray-700">
+    <div class="overflow-x-auto">
+      <table class="{{ S.table }}">
+        <thead><tr>
+          {%- for column in spec.columns %}<th class="{{ S.th }}">{{ column.name }}</th>{% endfor %}
+          <th class="{{ S.th }}"></th>
+        </tr></thead>
+        <tbody id="rows-{{ uid }}">
+          {%- for row in rows or [] %}{{ group_row(spec, name, row, loop.index0, uid) }}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="flex gap-2 items-center mt-2">{{ add_row(spec, uid, (rows or [])|length) }}</div>
+  </fieldset>
+  {%- if spec.hint %}<div class="{{ S.hint }} mt-1">{{ spec.hint }}</div>{% endif %}
+</div>
+{%- endmacro -%}
+
+{%- macro add_row(spec, uid, index, oob=False) -%}
+<button type="button" class="{{ S.btn }}" id="add-{{ uid }}"{{ ' hx-swap-oob="outerHTML"'|safe if oob }}
+        hx-get="{{ spec.row_at }}?index={{ index }}&uid={{ uid }}" hx-target="#rows-{{ uid }}" hx-swap="beforeend">
+  {{ M.icon("add") }}<span>{{ _("Add row") }}</span>
+</button>
+{%- endmacro -%}
+
+{%- macro group_row(spec, name, row, index, uid) -%}
+<tr>
+  {%- for column in spec.columns %}
+  <td class="{{ S.td }}">{{ bare(column, name ~ "." ~ index ~ "." ~ column.name, (row or {}).get(column.name), uid ~ "-" ~ index ~ "-" ~ column.name) }}</td>
+  {%- endfor %}
+  <td class="{{ S.td }}">
+    <button type="button" class="{{ S.btnQuiet }}" title="{{ _("Remove") }}"
+            hx-on:click="this.closest('tr').remove()">{{ M.icon("close", "size-4") }}</button>
+  </td>
+</tr>
+{%- endmacro -%}
+
+{%- macro form_grid(specs, values, uid) -%}
+{%- if specs %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+  {%- for spec in specs %}{{ control(spec, spec.name, (values or {}).get(spec.name), uid ~ "-" ~ spec.name) }}{% endfor %}
+</div>
+{%- endif -%}
+{%- endmacro -%}

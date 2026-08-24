@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ _("STEF - Bench Diagnostics") }}{% endblock %}</title>
+<script>
+  (function () {
+    var stored = null;
+    try { stored = localStorage.getItem("stef.theme"); } catch (e) {}
+    if (stored !== "light" && stored !== "dark") {
+      stored = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.classList.toggle("dark", stored === "dark");
+  })();
+</script>
+<link rel="stylesheet" href="/web/tailwind.css">
+<script src="/web/vendor/htmx/htmx.min.js"></script>
+<script src="/web/vendor/htmx-ext-sse/sse.js"></script>
+<script src="/web/vendor/material-symbols/icons.js"></script>
+</head>
+<body class="h-full text-sm text-gray-900 dark:text-white" hx-ext="sse">
+
+<div class="app-grid">
+{% include "chrome/header.html" %}
+{% include "chrome/rail.html" %}
+
+  <main class="area-main overflow-auto p-5 flex flex-col gap-4" id="main">{% block main %}{% endblock %}</main>
+
+{% include "chrome/logdock.html" %}
+</div>
+
+<div class="toasts fixed bottom-4 right-4 z-[60] flex flex-col gap-2" id="toasts"></div>
+<div id="runstream" sse-connect="/diagnostics/stream/runs" sse-swap="run" hx-swap="none" hidden></div>
+
+<script src="/web/app/stef.js"></script>
+</body>
+</html>

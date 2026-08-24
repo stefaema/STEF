@@ -1,0 +1,18 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- if reason %}<div class="{{ S.note }}">{{ reason }}</div>{% endif %}
+{%- if error %}<div class="{{ S.noteError }}">{{ error }}</div>{% endif %}
+<div class="flex items-center gap-2">
+  {%- if up %}
+  <button type="button" class="{{ S.btn }}"
+          hx-post="/diagnostics/{{ sub.spec.id }}/link/disconnect" hx-target="#main" hx-swap="innerHTML">
+    {{ M.icon("link_off") }}<span>{{ _("Disconnect") }}</span>
+  </button>
+  {%- else %}
+  <button type="button" class="{{ S.btnPrimary }}"{{ " disabled" if reason or not known }}
+          {%- if not reason and known %} hx-post="/diagnostics/{{ sub.spec.id }}/link/connect" hx-include="#linkform"
+          hx-target="#main" hx-swap="innerHTML" hx-indicator="this" hx-disabled-elt="this"{% endif %}>
+    {{ M.spinner(not known, "link") }}<span>{{ _("Checking") if not known else _("Connect") }}</span>
+  </button>
+  {%- endif %}
+</div>

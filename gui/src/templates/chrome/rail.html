@@ -1,0 +1,17 @@
+  <nav class="area-rail flex flex-col gap-1 p-2 bg-surface border-r border-gray-200 dark:border-gray-700">
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="theaters">
+        {{ _("Film Scanning") }}
+      </span>
+      <a href="/diagnostics" class="flex items-center gap-3 px-3 py-2 rounded-lg font-medium text-gray-900 bg-gray-200 dark:text-white dark:bg-gray-700" aria-current="page" data-icon="vital_signs">
+        {{ _("Bench Diagnostics") }}
+      </a>
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="list_alt">
+        {{ _("Log") }}
+      </span>
+      <span class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-400 cursor-not-allowed dark:text-gray-600" aria-disabled="true" title="{{ _("Not served yet") }}" data-icon="settings">
+        {{ _("Settings") }}
+      </span>
+    <div class="mt-auto pt-3 px-3 border-t border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      <span class="app-version">{{ _("Firmware not queried") }}</span>
+    </div>
+  </nav>

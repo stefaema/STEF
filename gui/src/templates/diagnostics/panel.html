@@ -1,0 +1,4 @@
+{%- if tool == "routines" %}{% include "diagnostics/routines/panel.html" %}
+{%- elif tool == "calls" %}{% include "diagnostics/calls/panel.html" %}
+{%- else %}{% include "diagnostics/link/panel.html" %}
+{%- endif %}

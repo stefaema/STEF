@@ -1,0 +1,12 @@
+{%- import "macros/style.html" as S -%}
+<div id="panel" class="flex flex-col gap-4">
+  {%- if not groups %}
+  <div class="{{ S.card }}"><div class="{{ S.cardBody }}"><div class="{{ S.hint }}">{{ _("This subsystem declares no calls") }}</div></div></div>
+  {%- else %}
+  <div class="{{ S.card }}">
+    <div class="{{ S.cardHead }}"><span class="{{ S.sectionTitle }}">{{ _("Calls") }}</span></div>
+    {% include "diagnostics/calls/picker.html" %}
+  </div>
+  {% include "diagnostics/calls/method.html" %}
+  {%- endif %}
+</div>

@@ -7,6 +7,7 @@
     ps.fastapi
     ps.uvicorn
     ps.jinja2
+    ps.python-multipart
     ps.loguru
     ps.httpx
     ps.pytest

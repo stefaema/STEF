@@ -1,0 +1,6 @@
+<div class="log-record log-row-gui px-4 py-px hover:bg-gray-200/40 dark:hover:bg-gray-800" data-source="{{ record.source }}">
+  <span class="text-gray-500">{{ record.time|clock }}</span>
+  <span class="truncate text-gray-600 dark:text-gray-400" title="{{ record.source }}">{{ record.source }}</span>
+  <span class="text-xs font-semibold uppercase tracking-wide truncate {{ LEVEL_TONE.get(record.level, "text-gray-500") }}" title="{{ record.kind }}">{{ record.kind }}</span>
+  <span class="clamp-2 whitespace-pre-wrap break-words {{ "text-red-500" if record.level == "error" else "text-gray-900 dark:text-white" }}" title="{{ record.text }}">{{ record.text }}</span>
+</div>

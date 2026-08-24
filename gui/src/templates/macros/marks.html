@@ -1,0 +1,78 @@
+{%- import "macros/style.html" as S -%}
+
+{%- macro icon(name, extra="size-[18px]") -%}
+<svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="shrink-0 {{ extra }}" data-glyph="{{ name }}"></svg>
+{%- endmacro -%}
+
+{%- macro spinner(spinning, name="play_arrow") -%}
+{{ icon("progress_activity", "size-[18px] animate-spin") if spinning else icon(name) }}
+{%- endmacro -%}
+
+{%- macro outcome_mark(status, labelled=True) -%}
+{%- set glyph, tone = OUTCOME.get(status, OUTCOME["idle"]) -%}
+<span class="inline-flex items-center gap-1.5 text-xs {{ tone }}">
+  {{ icon(glyph, "size-4 animate-spin" if status == "running" else "size-4") }}
+  {%- if labelled %}<span>{{ _(STATUS_LABEL.get(status, status)) }}</span>{% endif -%}
+</span>
+{%- endmacro -%}
+
+{%- macro outcome_cage(status) -%}
+{%- set glyph, tone = OUTCOME.get(status, OUTCOME["idle"]) -%}
+<span class="{{ S.cage }} {{ S.cageTone.get(status, S.cageTone["idle"]) }}"
+      title="{{ _(STATUS_LABEL.get(status, status)) }}">
+  {{ icon(glyph, "size-[18px] animate-spin" if status == "running" else "size-[18px]") }}
+</span>
+{%- endmacro -%}
+
+{%- macro hazard_mark() -%}
+<span class="inline-flex items-center gap-1 text-xs text-red-600" title="{{ _("Hazardous") }}">
+  {{ icon("warning", "size-4") }}<span>{{ _("Hazardous") }}</span>
+</span>
+{%- endmacro -%}
+
+{%- macro link_mark(state) -%}
+{%- set glyph, dot, tone = LINK_MARK.get(state, LINK_MARK["down"]) -%}
+<span class="inline-flex items-center gap-2 text-xs {{ tone }}">
+  <span class="w-1.5 h-1.5 rounded-full {{ dot }}"></span>
+  <span>{{ _(LINK_LABEL.get(state, state)) }}</span>
+</span>
+{%- endmacro -%}
+
+{%- macro section(title, aside=None) -%}
+<div class="flex items-center gap-3 px-1">
+  <span class="{{ S.sectionTitle }}">{{ title }}</span>
+  <span class="{{ S.spacer }}"></span>
+  {{ aside if aside }}
+</div>
+{%- endmacro -%}
+
+{%- macro card_open(title=None, aside=None, extra="") -%}
+<div class="{{ S.card }} {{ extra }}">
+  {%- if title %}
+  <div class="{{ S.cardHead }}">
+    <span class="{{ S.sectionTitle }}">{{ title }}</span>
+    <span class="{{ S.spacer }}"></span>
+    {{ aside if aside }}
+  </div>
+  {%- endif %}
+{%- endmacro -%}
+
+{%- macro card_close() -%}
+</div>
+{%- endmacro -%}
+
+{%- macro show_more(text, extra="text-sm text-gray-600 dark:text-gray-300") -%}
+<div data-more>
+  <div class="{{ extra }} clamp-3" title="{{ text }}" data-more-body>{{ text }}</div>
+  <button type="button" class="mt-1 text-xs underline text-gray-500 hover:text-gray-900 dark:hover:text-white"
+          data-more-toggle data-more-label="{{ _("Show more") }}" data-less-label="{{ _("Show less") }}" hidden>{{ _("Show more") }}</button>
+</div>
+{%- endmacro -%}
+
+{%- macro copy_button(payload) -%}
+<button type="button" class="{{ S.btnQuiet }} shrink-0" data-copy data-copy-payload="{{ payload }}"
+        data-copied="{{ _("Copied") }}" data-failed="{{ _("Could not reach the clipboard") }}"
+        title="{{ _("Copy") }}">
+  {{ icon("content_copy", "size-4") }}<span>{{ _("Copy") }}</span>
+</button>
+{%- endmacro -%}

@@ -1,0 +1,8 @@
+{%- import "macros/style.html" as S -%}
+{%- if not sub %}
+<div class="{{ S.card }}"><div class="{{ S.cardBody }}"><div class="{{ S.hint }}">{{ _("This part is not built yet") }}</div></div></div>
+{%- else %}
+{% include "diagnostics/implementation.html" %}
+{% include "diagnostics/tools.html" %}
+{% include "diagnostics/panel.html" %}
+{%- endif %}

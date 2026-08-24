@@ -1,0 +1,14 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+<div id="panel" class="flex flex-col gap-4">
+  {%- if not groups %}
+  <div class="{{ S.card }}"><div class="{{ S.cardBody }}"><div class="{{ S.hint }}">{{ _("This subsystem declares no routines") }}</div></div></div>
+  {%- else %}
+  {%- for name, items in groups %}
+  {{ M.section(category_label(name), M.outcome_mark(worst_of(items))) }}
+  <div class="flex flex-col gap-2">
+    {%- for item in items %}{% with routine = item %}{% include "diagnostics/routines/routine.html" %}{% endwith %}{% endfor %}
+  </div>
+  {%- endfor %}
+  {%- endif %}
+</div>

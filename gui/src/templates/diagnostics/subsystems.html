@@ -1,0 +1,10 @@
+{%- import "macros/style.html" as S -%}
+<div class="{{ S.tabbar }}" id="subsystems">
+  {%- for one in tabs %}
+  <button type="button" class="{{ S.tab(one.current) }}"{{ " disabled" if not one.available }}
+          {%- if not one.available %} title="{{ _("This part is not built yet") }}"{% endif %}
+          {%- if one.available and not one.current %} hx-get="/diagnostics/{{ one.id }}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true"{% endif %}>
+    <span>{{ one.label }}</span>
+  </button>
+  {%- endfor %}
+</div>

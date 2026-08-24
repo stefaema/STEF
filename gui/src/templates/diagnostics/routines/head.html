@@ -1,0 +1,23 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- set gate_ = gate_of(routine) -%}
+<summary class="check-grid px-4 py-2.5" id="head-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
+  <span class="flex items-center gap-2 min-w-0 text-left font-semibold text-gray-900 dark:text-white">
+    <span class="caret inline-block shrink-0 text-gray-500 transition-transform">&#9656;</span>
+    <span class="truncate" title="{{ routine.title }}">{{ routine.title }}</span>
+    {%- if routine.hazardous %}{{ M.hazard_mark() }}{% endif %}
+  </span>
+  <span class="font-mono text-xs text-gray-500">{{ run.when|clock }}</span>
+  <button type="button" data-nofold
+          class="{{ S.btnRunDanger if routine.hazardous else S.btnRun }}"
+          {{ " disabled" if not gate_ or run.running }}
+          {%- if not gate_ %} title="{{ gate_.reason or _("Connect first") }}"{% endif %}
+          {%- if gate_ and not run.running %}
+          hx-post="/diagnostics/{{ sub.spec.id }}/routines/{{ routine.group }}.{{ routine.name }}/run"
+          hx-include="#form-{{ uid }}" hx-target="#steps-{{ uid }}" hx-swap="outerHTML"
+          {%- if routine.hazardous %} hx-confirm="{{ _("Confirm") }}"{% endif %}
+          {%- endif %}>
+    {{ M.spinner(run.running) }}<span>{{ _("Running") if run.running else (_("Re-run") if run.outcomes else _("Run")) }}</span>
+    {{ M.outcome_cage(run.status) }}
+  </button>
+</summary>

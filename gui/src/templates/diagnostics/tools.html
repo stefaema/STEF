@@ -1,0 +1,12 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+<div class="{{ S.tabbar }}" id="tools">
+  {%- for one in TOOLS %}
+  {%- set gated = one != "link" and not up %}
+  <button type="button" class="{{ S.tab(one == tool) }}"{{ " disabled" if gated }}
+          {%- if gated %} title="{{ _("Connect first") }}"{% endif %}
+          {%- if not gated and one != tool %} hx-get="/diagnostics/{{ sub.spec.id }}/{{ one }}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true"{% endif %}>
+    {{ M.icon(TOOL_ICON[one], "size-4") }}<span>{{ _(TOOL_LABEL[one]) }}</span>
+  </button>
+  {%- endfor %}
+</div>

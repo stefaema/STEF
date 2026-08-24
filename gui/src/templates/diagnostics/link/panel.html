@@ -1,0 +1,28 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- import "macros/controls.html" as C -%}
+<div id="panel" class="flex flex-col gap-4">
+  <div class="{{ S.card }}">
+    <div class="{{ S.cardHead }}"><span class="{{ S.sectionTitle }}">{{ _("Connection") }}</span></div>
+    <div class="{{ S.cardBody }}">
+      {%- if connect_fields %}
+      <div id="linkform"
+           {%- if not up %} hx-post="/diagnostics/{{ sub.spec.id }}/link/readiness" hx-trigger="change"
+           hx-target="#linkactions" hx-swap="innerHTML" hx-sync="this:replace" hx-include="this"{% endif %}>
+        {{ C.form_grid(connect_fields, connect_values, "link-" ~ sub.spec.id) }}
+      </div>
+      {%- endif %}
+      <div id="linkactions"
+           {%- if not up %} hx-post="/diagnostics/{{ sub.spec.id }}/link/readiness"
+           hx-trigger="load, htmx:afterSettle from:#linkform"
+           hx-target="this" hx-swap="innerHTML" hx-sync="this:replace" hx-include="#linkform"{% endif %}>{% include "diagnostics/link/actions.html" %}</div>
+    </div>
+  </div>
+
+  {%- if prelink %}
+  {{ M.section(_("Before connecting")) }}
+  <div class="flex flex-col gap-2">
+    {%- for item in prelink %}{% with routine = item %}{% include "diagnostics/routines/routine.html" %}{% endwith %}{% endfor %}
+  </div>
+  {%- endif %}
+</div>

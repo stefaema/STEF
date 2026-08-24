@@ -1,0 +1,12 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/result.html" as R -%}
+<div id="reply">
+  {%- if answer is defined and answer %}
+  <hr class="{{ S.divider }}">
+  <div class="pt-4">
+    <div class="{{ S.label }}">{{ _("Reply") }}</div>
+    {%- if answer.ok %}{{ R.result(answer.value, True) }}
+    {%- else %}<div class="{{ S.noteError }}">{{ answer.reason }}</div>{% endif %}
+  </div>
+  {%- endif %}
+</div>

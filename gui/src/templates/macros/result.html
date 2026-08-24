@@ -1,0 +1,51 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+
+{%- macro kv_table(rows, head=None) -%}
+<div class="overflow-x-auto">
+  <table class="{{ S.table }}">
+    <thead><tr>
+      {%- for one in head or [_("field"), _("value")] %}<th class="{{ S.th }}">{{ one }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {%- for row in rows %}
+      <tr>{% for cell in row %}<td class="{{ S.td }}{{ " font-mono tabular-nums text-gray-900 dark:text-white" if not loop.first else " text-gray-500 dark:text-gray-400" }}">{{ cell }}</td>{% endfor %}</tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro -%}
+
+{%- macro result(answer, copyable=False) -%}
+{%- if answer %}
+<div class="{{ S.card }} overflow-hidden">
+  <div class="flex items-start gap-2 px-3 py-2 border-b border-gray-300 dark:border-gray-700">
+    <div class="min-w-0 flex-1">
+      <div class="{{ S.mono }} text-gray-900 dark:text-white">{{ answer.summary }}</div>
+      {%- if answer.note %}<div class="{{ S.hint }}">{{ answer.note }}</div>{% endif %}
+    </div>
+    {%- if copyable %}{{ M.copy_button(answer|as_record) }}{% endif %}
+  </div>
+  {%- if answer.raw %}
+  <div class="px-3 py-2 border-b border-gray-300 dark:border-gray-700">
+    <div class="max-h-24 overflow-auto font-mono text-xs tracking-widest text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ answer.raw|hexdump }}</div>
+  </div>
+  {%- endif %}
+  {%- if answer.fields %}<div class="p-3">{{ kv_table(answer.fields) }}</div>{% endif %}
+  {%- if answer.table %}<div class="p-3">{{ kv_table(answer.table.rows, answer.table.head) }}</div>{% endif %}
+</div>
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro step_row(title, settled, status) -%}
+<div class="step-grid px-3 py-2 border-t border-gray-300 first:border-t-0 dark:border-gray-700">
+  <div class="min-w-0">
+    <div class="truncate text-sm text-gray-900 dark:text-white">{{ title }}</div>
+    {%- if settled and settled.detail %}
+    <div class="mt-0.5 font-mono text-xs {{ DETAIL_TONE.get(settled.status.value, "text-gray-500") }}">{{ settled.detail }}</div>
+    {%- endif %}
+    {%- if settled and settled.value %}<div class="mt-2">{{ result(settled.value) }}</div>{% endif %}
+  </div>
+  {{ M.outcome_mark(status, False) }}
+</div>
+{%- endmacro -%}

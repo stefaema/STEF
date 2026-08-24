@@ -1,0 +1,18 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- import "macros/controls.html" as C -%}
+{%- set addr = sub.spec.id ~ "." ~ routine.group ~ "." ~ routine.name -%}
+{%- set uid = addr|slug -%}
+{%- set run = run_of(addr) -%}
+<div class="{{ S.card }}" id="routine-{{ uid }}">
+  <details id="fold-{{ uid }}"{{ " open" if run.ran }}>
+    {% with %}{% include "diagnostics/routines/head.html" %}{% endwith %}
+    <div class="px-4 pb-4 flex flex-col gap-3">
+      {%- if routine.description %}
+      <div class="pt-3">{{ M.show_more(routine.description) }}</div>
+      {%- endif %}
+      <div id="form-{{ uid }}">{{ C.form_grid(fields_for(routine), run.values, uid) }}</div>
+      {% with %}{% include "diagnostics/routines/steps.html" %}{% endwith %}
+    </div>
+  </details>
+</div>

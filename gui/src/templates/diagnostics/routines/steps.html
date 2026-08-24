@@ -1,0 +1,12 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- import "macros/result.html" as R -%}
+<div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
+  <div class="flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700">
+    <div class="flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ _("Steps") }}</div>
+    {%- if run.outcomes %}{{ M.copy_button(run|as_run(routine, sub.spec.id)) }}{% endif %}
+  </div>
+  {%- for title, settled, status in steps_of(routine, run) %}
+  {{ R.step_row(title, settled, status) }}
+  {%- endfor %}
+</div>
