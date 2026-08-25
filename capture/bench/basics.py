@@ -75,7 +75,9 @@ def health(values: dict[str, Any]) -> Iterator[StepOutcome]:
         Result(
             level=Level.ERROR if refusing else Level.WARN if warm else Level.OK,
             summary=summary,
-            note="nothing else here will behave until this clears" if refusing else None,
+            note="nothing else here will behave until this clears"
+            if refusing
+            else None,
         ),
     )
 
