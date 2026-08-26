@@ -19,7 +19,6 @@ STEP_RUN = 6.0
 
 class Wago222Mount:
     CHANNEL_LENGTH = 20.0
-    CHANNEL_WIDTH = 26.0
     CHANNEL_HEIGHT = 7.0
 
     CLAMP_POINTS: tuple[tuple[float, float], ...] = ()
@@ -30,8 +29,10 @@ class Wago222Mount:
         self,
         at: tuple[float, float, float],
         facing: SidePanelFacing,
+        channel_width: float,
         sidewall_thickness: float = 2.0,
     ) -> None:
+        self.CHANNEL_WIDTH = channel_width
         self.sidewall_thickness = sidewall_thickness
         self._placement = Pos(*at) * Rot(0.0, 0.0, facing.z_rotation)
 
@@ -91,8 +92,20 @@ class Wago222Mount:
         return as_part(floor + body)
 
 
-def sample() -> Part:
-    return Wago222Mount(
-        at=(0.0, 0.0, 0.0),
-        facing=SidePanelFacing.X_POS,
-    ).sample()
+CHANNEL_WIDTH_5CABLE = 26.0
+CHANNEL_WIDTH_3CABLE = 17.0
+
+
+def sample() -> dict[str, Part]:
+    return {
+        "5cable": Wago222Mount(
+            at=(0.0, 0.0, 0.0),
+            facing=SidePanelFacing.X_POS,
+            channel_width=CHANNEL_WIDTH_5CABLE,
+        ).sample(),
+        "3cable": Wago222Mount(
+            at=(0.0, 0.0, 0.0),
+            facing=SidePanelFacing.X_POS,
+            channel_width=CHANNEL_WIDTH_3CABLE,
+        ).sample(),
+    }
