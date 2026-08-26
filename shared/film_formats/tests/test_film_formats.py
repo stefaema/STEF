@@ -16,11 +16,7 @@ def test_super16_frame_is_wider_than_standard_16():
 
 
 def test_symmetric_formats_mirror_their_band_start():
-    symmetric = (
-        ff.FILM_35MM_SILENT,
-        ff.FILM_35MM_SOUND,
-        ff.FILM_16MM_SILENT
-    )
+    symmetric = (ff.FILM_35MM_SILENT, ff.FILM_35MM_SOUND, ff.FILM_16MM_SILENT)
     for film_format in symmetric:
         assert film_format.opposite_side_start == -film_format.guide_side_start
 
@@ -40,7 +36,7 @@ def test_band_finishes_at_the_film_edge():
 
 
 def test_zero_margin_has_no_usable_band():
-    no_margin = ff.FilmFormat(
+    no_margin = ff.FilmGeometricFormat(
         width=10.0,
         frame_width=10.0,
         frame_height=5.0,

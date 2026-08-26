@@ -1,10 +1,23 @@
-"""Physical dimensions of motion-picture film gauges, all measurements in millimeters."""
+"""Physical properties of motion-picture film, geometric dimensions in millimeters."""
 
 from dataclasses import dataclass
+from enum import Enum, auto
+
+
+class FilmBase(Enum):
+    ACETATE = auto()
+    POLYESTER = auto()
+    NITRATE = auto()
 
 
 @dataclass(frozen=True)
-class FilmFormat:
+class FilmMaterialProfile:
+    base: FilmBase
+    is_negative: bool
+
+
+@dataclass(frozen=True)
+class FilmGeometricFormat:
     """One film gauge's overall size and where its image sits within it.
 
     `guide_side_margin` is the distance from the film edge with perforations
@@ -58,7 +71,7 @@ FILM_35MM_WIDTH = 34.976
 
 # Full Aperture ("Silent"), frame centered, no soundtrack.
 # Frame 0.980 x 0.735in = 24.89 x 18.67mm.
-FILM_35MM_SILENT = FilmFormat(
+FILM_35MM_SILENT = FilmGeometricFormat(
     width=FILM_35MM_WIDTH,
     frame_width=24.89,
     frame_height=18.67,
@@ -70,7 +83,7 @@ FILM_35MM_SILENT = FilmFormat(
 # Academy sound aperture: the optical soundtrack sits directly against the
 # image, inside the frame's old width, not in the margin, so the margin
 # measured from real stock matches the silent format above.
-FILM_35MM_SOUND = FilmFormat(
+FILM_35MM_SOUND = FilmGeometricFormat(
     width=FILM_35MM_WIDTH,
     frame_width=22.05,
     frame_height=16.03,
@@ -84,7 +97,7 @@ FILM_16MM_WIDTH = 15.950
 
 # Double-perf ("Regular 16"), no soundtrack, perforations on both edges,
 # frame centered. Margin confirmed by direct ruler measurement.
-FILM_16MM_SILENT = FilmFormat(
+FILM_16MM_SILENT = FilmGeometricFormat(
     width=FILM_16MM_WIDTH,
     frame_width=10.26,
     frame_height=7.49,
@@ -96,7 +109,7 @@ FILM_16MM_SILENT = FilmFormat(
 # Single-perf, one row of perforations traded for an optical soundtrack
 # against the image, same as the 35mm sound case. Margin confirmed by
 # direct ruler measurement, both edges.
-FILM_16MM_SOUND = FilmFormat(
+FILM_16MM_SOUND = FilmGeometricFormat(
     width=FILM_16MM_WIDTH,
     frame_width=9.65,
     frame_height=7.21,
@@ -109,7 +122,7 @@ FILM_16MM_SOUND = FilmFormat(
 # would occupy. guide_side_margin matches Standard 16; opposite_side_margin
 # is derived, not measured: width - frame_width - guide_side_margin = 0.73,
 # Super 16 doesn't use quite all of the freed-up space.
-FILM_SUPER16 = FilmFormat(
+FILM_SUPER16 = FilmGeometricFormat(
     width=FILM_16MM_WIDTH,
     frame_width=12.52,
     frame_height=7.41,
@@ -123,7 +136,7 @@ FILM_SUPER8_WIDTH = 7.975
 
 # Single-perf, no sound variant modeled here. Margin is derived, not
 # measured: (width - frame_width) / 2 = 1.09
-FILM_SUPER8 = FilmFormat(
+FILM_SUPER8 = FilmGeometricFormat(
     width=FILM_SUPER8_WIDTH,
     frame_width=5.79,
     frame_height=4.01,
