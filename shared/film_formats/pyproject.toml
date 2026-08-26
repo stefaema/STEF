@@ -1,0 +1,10 @@
+[project]
+name = "stef-film-formats"
+version = "0.1.0"
+description = "Physical dimensions of motion-picture film gauges, all measurements in millimeters"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["../.."]
+testpaths = ["tests"]
+cache_dir = "build/pytest"
