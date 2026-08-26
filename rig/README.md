@@ -13,21 +13,21 @@ Parts are Python, not saved model files: the part and its geometry derive from t
 | path | what it holds |
 | --- | --- |
 | `src/` | one module per part |
-| `builds/` | parts, derived from `src/`, never edited by hand |
-| `builds/samples/` | coupons that prove a fit, not parts of the machine |
+| `out/` | parts, derived from `src/`, never edited by hand |
+| `out/samples/` | coupons that prove a fit, not parts of the machine |
 | `nix/overlay.nix` | the build123d packages nixpkgs does not carry |
 
 ## What gets exported
 
-Nothing lists the parts. `scripts/discovery.py` walks `src/` and takes two names:
+Nothing lists the parts. `discovery.py` walks `src/` and takes two names:
 `build()` for a part that goes into the machine, `sample()` for a coupon used to test that everything fits.
 
 Either may return a single part, exported as the module's own name, or a dict, whose
 keys extend that name into one file per variant:
 
 ```
-builds/rollers/idler_groove.stl
-builds/samples/mounts/dc_barrel_jack.stl
+out/rollers/idler_groove.stl
+out/samples/mounts/dc_barrel_jack.stl
 ```
 
 ## The shell
@@ -42,13 +42,27 @@ Entirely Nix, so there is no venv and no `pip install`. A new package goes in
 it. That overlay extends the whole repository's interpreter, which is why the
 editor shell resolves `build123d` too.
 
-## Previewing a part
+`rig` is a package rooted at the repository root, like `ci_cd`, so `-m` resolves it
+regardless of whether the shell's `cwd` is the repository root or `rig/` itself.
 
-`yacv` draws in a browser, so it needs no GPU driver from Nix:
+## Building
 
 ```bash
-python scripts/open_viewer.py              # everything
-python scripts/open_viewer.py square_band  # only names containing that
+python -m rig.build                       # every part under src/, as 3mf
+python -m rig.build mounts                # only src/mounts
+python -m rig.build mounts --format stl   # comma-separated: stl, 3mf
+```
+
+## Previewing a part
+
+`yacv` draws in a browser, so it needs no GPU driver from Nix. Viewing is scoped to one
+category under `src/` at a time, both so the browser isn't laying out every part in the
+repository and so a category still mid-rewrite (`rollers` today) can't keep the others
+from showing:
+
+```bash
+python -m rig.view mounts               # everything under src/mounts
+python -m rig.view rollers square_band  # only rollers/ names containing that
 ```
 
 Then open <http://localhost:32323>, or wherever `YACV_HOST` and `YACV_PORT` point.
