@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import cast
 
 from build123d import (
@@ -10,20 +11,34 @@ from build123d import (
 
 from bearings.seat import BearingSeat
 
-SAMPLE_LENGTH = 35.2
+SAMPLE_LENGTH = 32
+
+
+class BearingPlacement(Enum):
+    """Which end(s) of a BearingCore get a bearing seat cut into them."""
+
+    BOTH_SIDES = "both_sides"
+    TOP_SIDE = "top_side"
+    BOTTOM_SIDE = "bottom_side"
 
 
 class BearingCore:
+    """A cylinder with a bearing seat cut into one or both ends."""
+
     def __init__(
         self,
         length: float,
+        seat: BearingSeat,
+        bearing_at: BearingPlacement = BearingPlacement.BOTH_SIDES,
         at: tuple[float, float, float] = (0.0, 0.0, 0.0),
-        seat: BearingSeat | None = None,
     ) -> None:
-        self.seat = seat or BearingSeat()
-        if length < 2 * self.seat.depth:
+        self.seat = seat
+        self.bearing_at = bearing_at
+        seat_count = 2 if bearing_at is BearingPlacement.BOTH_SIDES else 1
+        if length < seat_count * self.seat.depth:
             raise ValueError(
-                f"length {length} leaves no wall between two {self.seat.depth} seats"
+                f"length {length} leaves no wall for {seat_count} "
+                f"{self.seat.depth}-deep seat(s)"
             )
         self.length = length
         self.at = at
@@ -37,6 +52,7 @@ class BearingCore:
         return (self.seat.depth, self.length - self.seat.depth)
 
     def body(self) -> Part:
+        """The cylinder that will be cut to make the bearing seat(s)."""
         return Pos(self.at) * Cylinder(
             self.seat.boss_radius,
             self.length,
@@ -44,6 +60,7 @@ class BearingCore:
         )
 
     def cutters(self) -> Part:
+        """The cutout(s) that will be subtracted from the body to make the bearing seat(s)."""
         lower_shoulder, upper_shoulder = self.shoulder_heights
         lower = (
             Pos(0.0, 0.0, lower_shoulder)
@@ -51,11 +68,17 @@ class BearingCore:
             * self.seat.cutter(self.length)
         )
         upper = Pos(0.0, 0.0, upper_shoulder) * self.seat.cutter(self.length)
-        return cast(Part, Pos(self.at) * (lower + upper))
+        cutout = {
+            BearingPlacement.BOTH_SIDES: lower + upper,
+            BearingPlacement.BOTTOM_SIDE: lower,
+            BearingPlacement.TOP_SIDE: upper,
+        }[self.bearing_at]
+        return cast(Part, Pos(self.at) * cutout)
 
     def build(self) -> Part:
+        """The cylinder with the bearing seat(s) cut into it."""
         return cast(Part, self.body() - self.cutters())
 
 
 def sample() -> Part:
-    return BearingCore(length=SAMPLE_LENGTH).build()
+    return BearingCore(length=SAMPLE_LENGTH, seat=BearingSeat()).build()
