@@ -1,10 +1,13 @@
 import contextlib
 import importlib
+import inspect
 import os
 import pkgutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from rig.materials import Material
 
 if TYPE_CHECKING:
     from build123d import Part
@@ -31,11 +34,15 @@ def _stderr_silenced():
         os.close(saved)
 
 
-def collect(category: str | None = None) -> dict[str, "Part"]:
+def collect(
+    category: str | None = None, material: Material | None = None
+) -> dict[str, "Part"]:
     """Collect build() and sample() across src/, or just src/<category> if given.
 
     Args:
         category: directory under src/ to scope to, or all of src/ if None.
+        material: passed to a build()/sample() that declares a `material`
+            parameter; a module with no use for one is called with none.
 
     Returns:
         Output path stem (relative) to Part, ready for export.
@@ -57,7 +64,13 @@ def collect(category: str | None = None) -> dict[str, "Part"]:
             maker = getattr(module, convention, None)
             if maker is None:
                 continue
-            for stem, part in _named(maker(), module_info.name).items():
+            kwargs = (
+                {"material": material}
+                if material is not None
+                and "material" in inspect.signature(maker).parameters
+                else {}
+            )
+            for stem, part in _named(maker(**kwargs), module_info.name).items():
                 found[f"{PREFIXES[convention]}{stem}"] = part
     return found
 

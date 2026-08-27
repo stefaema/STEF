@@ -5,6 +5,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from rig.discovery import collect
+from rig.materials import Material
 
 if TYPE_CHECKING:
     from build123d import Part
@@ -39,14 +40,28 @@ def laid_out(parts: dict[str, "Part"]) -> dict[str, "Part"]:
 
 def main() -> None:
     """Collect build() and sample() across the category, and serve them for yacv to view."""
-    if len(sys.argv) < 2:
-        print("usage: python -m rig.view <category|all> [name filter]")
+    args = sys.argv[1:]
+
+    material = Material.PLA
+    if "--material" in args:
+        index = args.index("--material")
+        try:
+            material = Material.parse(args.pop(index + 1))
+        except ValueError as error:
+            print(error)
+            return
+        args.pop(index)
+
+    if not args:
+        print(
+            "usage: python -m rig.view <category|all> [name filter] [--material pla|petg]"
+        )
         print("category is a directory under src/, e.g. mounts or rollers")
         return
-    category = sys.argv[1] if sys.argv[1] != "all" else None
-    wanted = sys.argv[2] if len(sys.argv) > 2 else ""
+    category = args[0] if args[0] != "all" else None
+    wanted = args[1] if len(args) > 1 else ""
 
-    found = collect(category)
+    found = collect(category, material)
     if not found:
         where = f"src/{category}" if category else "src/"
         print(f"no module under {where} defines build() or sample()")

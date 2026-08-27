@@ -7,6 +7,7 @@ from bearings.core import BearingCore
 from bearings.seat import BearingSeat
 from build123d import Part
 
+from rig.materials import Material
 from rollers.film_roller import FilmRoller, total_length
 from rollers.gauges import FilmRollerGauge
 from shared.film_formats import FILM_16MM_SILENT, FILM_35MM_SILENT, FILM_SUPER8
@@ -37,13 +38,13 @@ class Idler:
     gauges: list[FilmRollerGauge]
     two_piece: bool = False
 
-    def _core(self) -> BearingCore:
-        seat = BearingSeat()
+    def _core(self, material: Material) -> BearingCore:
+        seat = BearingSeat(material=material)
         length = total_length(self.gauges, seat.depth)
         return BearingCore(length=length, seat=seat, at=(0.0, 0.0, -length / 2))
 
-    def build(self) -> Part | dict[str, Part]:
-        roller = FilmRoller(gauges=self.gauges, core=self._core())
+    def build(self, material: Material = Material.PLA) -> Part | dict[str, Part]:
+        roller = FilmRoller(gauges=self.gauges, core=self._core(material))
         if self.two_piece:
             female, male = roller.build_two_piece()
             return {"female": female, "male": male}
@@ -65,10 +66,10 @@ IDLERS = [
 ]
 
 
-def build() -> dict[str, Part]:
+def build(material: Material = Material.PLA) -> dict[str, Part]:
     result: dict[str, Part] = {}
     for idler in IDLERS:
-        produced = idler.build()
+        produced = idler.build(material)
         if isinstance(produced, dict):
             for variant, part in produced.items():
                 result[f"{idler.name}_{variant}"] = part

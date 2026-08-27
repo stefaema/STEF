@@ -2,6 +2,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from rig.discovery import BUILDS, collect
+from rig.materials import Material
 
 if TYPE_CHECKING:
     from build123d import Part
@@ -26,13 +27,26 @@ DEFAULT_FORMATS = ("3mf",)
 
 
 def main() -> None:
-    """Export every part under src/, or one category, to out/ in the given --format (default 3mf)."""
+    """Export every part under src/, or one category, to out/
+    in the given --format (default 3mf) and --material (default PLA).
+    """
+
     args = sys.argv[1:]
 
     formats = DEFAULT_FORMATS
     if "--format" in args:
         index = args.index("--format")
         formats = tuple(args.pop(index + 1).split(","))
+        args.pop(index)
+
+    material = Material.PLA
+    if "--material" in args:
+        index = args.index("--material")
+        try:
+            material = Material.parse(args.pop(index + 1))
+        except ValueError as error:
+            print(error)
+            return
         args.pop(index)
 
     unknown = [fmt for fmt in formats if fmt not in EXPORTERS]
@@ -44,7 +58,7 @@ def main() -> None:
 
     category = args[0] if args and args[0] != "all" else None
 
-    parts = collect(category)
+    parts = collect(category, material)
     if not parts:
         where = f"src/{category}" if category else "src/"
         print(f"no module under {where} defines build() or sample()")

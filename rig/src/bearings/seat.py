@@ -13,11 +13,14 @@ from build123d import (
 )
 
 from bearings.bearing_specs import BEARING_608, RadialBearingSpec
+from rig.materials import Material
 
 # press fit via ribs, instead of against the whole seat wall
 RIB_COUNT = 6
 RIB_RADIUS = 1.0
-RIB_INTERFERENCE = 0.1  # how far the ribs pinch inside the bearing OD, radially
+
+# How far the ribs pinch inside the bearing OD, radially.
+RIB_INTERFERENCE = {Material.PLA: 0.1, Material.PETG: 0.2}
 
 # pocket dimensions
 RACE_SHOULDER_WIDTH = (
@@ -44,8 +47,9 @@ class BearingSeat:
         self,
         bearing: RadialBearingSpec = BEARING_608,
         race_shoulder_width: float = RACE_SHOULDER_WIDTH,
+        material: Material = Material.PLA,
     ) -> None:
-        self.interference_radius = bearing.od / 2 - RIB_INTERFERENCE
+        self.interference_radius = bearing.od / 2 - RIB_INTERFERENCE[material]
         self.seat_radius = bearing.od / 2 + SEAT_CLEARANCE
         self.race_clearance_radius = bearing.od / 2 - race_shoulder_width
         self.depth = bearing.width + RIM_CLEARANCE
@@ -102,9 +106,9 @@ class BearingSeat:
         return cast(Part, (body - ribs) + mouth)
 
 
-def sample() -> Part:
+def sample(material: Material = Material.PLA) -> Part:
     """Sample part that demonstrates the bearing seat geometry. Used for testing and visualization."""
-    seat = BearingSeat()
+    seat = BearingSeat(material=material)
     puck = Cylinder(
         seat.boss_radius,
         SAMPLE_BACKING + seat.depth,

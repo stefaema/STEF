@@ -14,6 +14,7 @@ from mounts.side_panel import (
     SidePanelMount,
     as_part,
 )
+from rig.materials import Material
 
 BARREL_RIB_LENGTH = 8.5
 CHAMFER_LENGTH = 3.0
@@ -25,6 +26,8 @@ STEP_HEIGHT = 1.5
 
 CUTOUT_DIAMETER = 8.0
 CUTOUT_CENTRE_HEIGHT = 6.0
+
+SIDEWALL_THICKNESS = {Material.PLA: 2.0, Material.PETG: 3.0}
 
 
 class DCBarrelJackMount(SidePanelMount):
@@ -40,6 +43,19 @@ class DCBarrelJackMount(SidePanelMount):
         (0.0, BARREL_RIB_LENGTH, STEP_HEIGHT),
         (CHANNEL_LENGTH - TERMINAL_RIB_LENGTH, TERMINAL_RIB_LENGTH, STEP_HEIGHT),
     )
+
+    def __init__(
+        self,
+        at: tuple[float, float, float],
+        facing: SidePanelFacing,
+        panel_thickness: float,
+        material: Material = Material.PLA,
+        sidewall_thickness: float | None = None,
+    ) -> None:
+        if sidewall_thickness is None:
+            sidewall_thickness = SIDEWALL_THICKNESS[material]
+        super().__init__(at, facing, panel_thickness, sidewall_thickness)
+        self.material = material
 
     def _cutout_solid(self) -> Part:
         depth = self.panel_thickness + 2 * CUT_OVERSHOOT
@@ -67,9 +83,10 @@ class DCBarrelJackMount(SidePanelMount):
         return as_part(barrel + mirror(barrel, Plane.XZ))
 
 
-def sample() -> Part:
+def sample(material: Material = Material.PLA) -> Part:
     return DCBarrelJackMount(
         at=(0.0, 0.0, 0.0),
         facing=SidePanelFacing.X_POS,
         panel_thickness=3.0,
+        material=material,
     ).sample()

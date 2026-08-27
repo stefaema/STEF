@@ -1,6 +1,7 @@
 from build123d import Part, Plane, Polygon, Pos, extrude
 
 from mounts.side_panel import CUT_OVERSHOOT, SidePanelFacing, SidePanelMount
+from rig.materials import Material
 
 ENGAGEMENT_DEPTH = 5.0
 STEP_GAP = 26.0
@@ -9,8 +10,9 @@ PANEL_STEP_HEIGHT = 4.0
 FAR_STEP_LENGTH = 2.0
 FAR_STEP_HEIGHT = 2.0
 
-CUTOUT_WIDTH = 14.5
-CUTOUT_HEIGHT = 16.0
+
+CUTOUT_WIDTH = {Material.PLA: 14.5, Material.PETG: 14.5 * 1.02}
+CUTOUT_HEIGHT = {Material.PLA: 16.0, Material.PETG: 16.0 * 1.02}
 CUTOUT_BOTTOM = 4.0
 
 
@@ -25,9 +27,11 @@ class RJ45KeystoneMount(SidePanelMount):
         at: tuple[float, float, float],
         facing: SidePanelFacing,
         panel_thickness: float,
+        material: Material = Material.PLA,
         sidewall_thickness: float = 2.0,
     ) -> None:
         super().__init__(at, facing, panel_thickness, sidewall_thickness)
+        self.material = material
 
         uncovered = max(0.0, ENGAGEMENT_DEPTH - panel_thickness)
         far = (uncovered + STEP_GAP, FAR_STEP_LENGTH, FAR_STEP_HEIGHT)
@@ -37,8 +41,8 @@ class RJ45KeystoneMount(SidePanelMount):
 
     def _cutout_solid(self) -> Part:
         depth = self.panel_thickness + 2 * CUT_OVERSHOOT
-        half_width = CUTOUT_WIDTH / 2
-        top = CUTOUT_BOTTOM + CUTOUT_HEIGHT
+        half_width = CUTOUT_WIDTH[self.material] / 2
+        top = CUTOUT_BOTTOM + CUTOUT_HEIGHT[self.material]
 
         profile = Plane.YZ * Polygon(
             (-half_width, CUTOUT_BOTTOM),
@@ -55,9 +59,10 @@ class RJ45KeystoneMount(SidePanelMount):
         return Part()
 
 
-def sample() -> Part:
+def sample(material: Material = Material.PLA) -> Part:
     return RJ45KeystoneMount(
         at=(0.0, 0.0, 0.0),
         facing=SidePanelFacing.X_POS,
         panel_thickness=3.0,
+        material=material,
     ).sample()

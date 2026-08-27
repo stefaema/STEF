@@ -1,25 +1,37 @@
 from build123d import Part, Plane, Polygon, Pos, extrude
 
 from mounts.side_panel import CUT_OVERSHOOT, SidePanelFacing, SidePanelMount
+from rig.materials import Material
 
-CUTOUT_WIDTH = 10.0
-CUTOUT_HEIGHT = 28.0
+CUTOUT_WIDTH = {Material.PLA: 10.0, Material.PETG: 10.0 * 1.02}
+CUTOUT_HEIGHT = {Material.PLA: 28.0, Material.PETG: 28.0 * 1.02}
 CUTOUT_BOTTOM = 1.0
 
 
 class RockerSwitchMount(SidePanelMount):
     CHANNEL_LENGTH = 15.0
-    CHANNEL_WIDTH = CUTOUT_WIDTH
     CHANNEL_HEIGHT = 30.0
 
     CLAMP_POINTS = ()
 
     STEP_SPANS = ()
 
+    def __init__(
+        self,
+        at: tuple[float, float, float],
+        facing: SidePanelFacing,
+        panel_thickness: float,
+        material: Material = Material.PLA,
+        sidewall_thickness: float = 2.0,
+    ) -> None:
+        self.CHANNEL_WIDTH = CUTOUT_WIDTH[material]
+        super().__init__(at, facing, panel_thickness, sidewall_thickness)
+        self.material = material
+
     def _cutout_solid(self) -> Part:
         depth = self.panel_thickness + 2 * CUT_OVERSHOOT
-        half_width = CUTOUT_WIDTH / 2
-        top = CUTOUT_BOTTOM + CUTOUT_HEIGHT
+        half_width = CUTOUT_WIDTH[self.material] / 2
+        top = CUTOUT_BOTTOM + CUTOUT_HEIGHT[self.material]
 
         profile = Plane.YZ * Polygon(
             (-half_width, CUTOUT_BOTTOM),
@@ -36,9 +48,10 @@ class RockerSwitchMount(SidePanelMount):
         return Part()
 
 
-def sample() -> Part:
+def sample(material: Material = Material.PLA) -> Part:
     return RockerSwitchMount(
         at=(0.0, 0.0, 0.0),
         facing=SidePanelFacing.X_POS,
         panel_thickness=3.0,
+        material=material,
     ).sample()

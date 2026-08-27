@@ -10,6 +10,7 @@ from build123d import (
 )
 
 from bearings.seat import BearingSeat
+from rig.materials import Material
 
 SAMPLE_LENGTH = 32
 
@@ -80,5 +81,7 @@ class BearingCore:
         return cast(Part, self.body() - self.cutters())
 
 
-def sample() -> Part:
-    return BearingCore(length=SAMPLE_LENGTH, seat=BearingSeat()).build()
+def sample(material: Material = Material.PLA) -> Part:
+    return BearingCore(
+        length=SAMPLE_LENGTH, seat=BearingSeat(material=material)
+    ).build()
