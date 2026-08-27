@@ -1,3 +1,4 @@
+import shutil
 import sys
 from typing import TYPE_CHECKING
 
@@ -32,6 +33,11 @@ def main() -> None:
     """
 
     args = sys.argv[1:]
+
+    if args and args[0] == "clean":
+        shutil.rmtree(BUILDS, ignore_errors=True)
+        print(f"removed {BUILDS.relative_to(BUILDS.parent.parent)}")
+        return
 
     formats = DEFAULT_FORMATS
     if "--format" in args:
