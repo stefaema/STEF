@@ -110,6 +110,4 @@ def sample(material: Material = Material.PLA) -> Part:
     insert = HeatInsert(
         at=(0.0, 0.0, height), facing=InsertFacing.DOWN, material=material
     )
-    return cast(
-        Part, slab - insert.cutter(insert.bore_depth_for(SAMPLE_SCREW_LENGTH))
-    )
+    return cast(Part, slab - insert.cutter(insert.bore_depth_for(SAMPLE_SCREW_LENGTH)))
