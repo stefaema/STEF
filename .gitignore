@@ -2,6 +2,10 @@
 build/
 .ci-build/
 
+# Nix build symlinks.
+result
+result-*
+
 # Runtime roots in development, what STEF_HOME points at.
 local/
 
