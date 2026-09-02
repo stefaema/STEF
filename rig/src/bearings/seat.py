@@ -20,7 +20,7 @@ RIB_COUNT = 6
 RIB_RADIUS = 1.0
 
 # How far the ribs pinch inside the bearing OD, radially.
-RIB_INTERFERENCE = {Material.PLA: 0.1, Material.PETG: 0.2}
+RIB_INTERFERENCE = {Material.PLA: 0.1, Material.PETG: 0.3}
 
 # pocket dimensions
 RACE_SHOULDER_WIDTH = (
