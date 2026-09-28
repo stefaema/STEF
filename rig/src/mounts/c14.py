@@ -31,7 +31,7 @@ class C14Mount(SidePanelMount):
     CHANNEL_WIDTH = 27.5
     CHANNEL_HEIGHT = 22.0
 
-    CLAMP_POINTS = ((10.0, 19.0), (50.0, 18.0))
+    CLAMP_POINTS = ((10.0, 23.0), (50.0, 22.0))
 
     STEP_SPANS = ((25.0, 5.0, STEP_HEIGHT), (50.0, 5.0, STEP_HEIGHT))
 

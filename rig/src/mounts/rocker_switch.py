@@ -7,6 +7,9 @@ CUTOUT_WIDTH = {Material.PLA: 10.0, Material.PETG: 10.0 * 1.02}
 CUTOUT_HEIGHT = {Material.PLA: 28.0, Material.PETG: 28.0 * 1.02}
 CUTOUT_BOTTOM = 1.0
 
+SAMPLE_CEILING = {Material.PLA: 2.0, Material.PETG: 4.0}
+SIDEWALL_THICKNESS = {Material.PLA: 2.0, Material.PETG: 3.0}
+
 
 class RockerSwitchMount(SidePanelMount):
     CHANNEL_LENGTH = 15.0
@@ -21,10 +24,11 @@ class RockerSwitchMount(SidePanelMount):
         at: tuple[float, float, float],
         facing: SidePanelFacing,
         panel_thickness: float,
+        sidewall_thickness: float,
         material: Material = Material.PLA,
-        sidewall_thickness: float = 2.0,
     ) -> None:
         self.CHANNEL_WIDTH = CUTOUT_WIDTH[material]
+        self.SAMPLE_CEILING = SAMPLE_CEILING[material]
         super().__init__(at, facing, panel_thickness, sidewall_thickness)
         self.material = material
 
@@ -53,5 +57,6 @@ def sample(material: Material = Material.PLA) -> Part:
         at=(0.0, 0.0, 0.0),
         facing=SidePanelFacing.X_POS,
         panel_thickness=3.0,
+        sidewall_thickness=SIDEWALL_THICKNESS[material],
         material=material,
     ).sample()

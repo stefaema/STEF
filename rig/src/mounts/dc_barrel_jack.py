@@ -28,16 +28,16 @@ CUTOUT_DIAMETER = 8.0
 CUTOUT_CENTRE_HEIGHT = 6.0
 
 SIDEWALL_THICKNESS = {Material.PLA: 2.0, Material.PETG: 3.0}
+CHANNEL_WIDTH = {Material.PLA: 13.5, Material.PETG: 13.5 * 1.02}
 
 
 class DCBarrelJackMount(SidePanelMount):
     CHANNEL_LENGTH = (
         BARREL_RIB_LENGTH + CHAMFER_LENGTH + PLAIN_LENGTH + TERMINAL_RIB_LENGTH
     )
-    CHANNEL_WIDTH = 13.5
     CHANNEL_HEIGHT = 12.0
 
-    CLAMP_POINTS = ((12.0, 12.0),)
+    CLAMP_POINTS = ((12.0, 15.0),)
 
     STEP_SPANS = (
         (0.0, BARREL_RIB_LENGTH, STEP_HEIGHT),
@@ -54,6 +54,7 @@ class DCBarrelJackMount(SidePanelMount):
     ) -> None:
         if sidewall_thickness is None:
             sidewall_thickness = SIDEWALL_THICKNESS[material]
+        self.CHANNEL_WIDTH = CHANNEL_WIDTH[material]
         super().__init__(at, facing, panel_thickness, sidewall_thickness)
         self.material = material
 

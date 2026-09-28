@@ -1,3 +1,10 @@
+"""Base for connectors that mount through a wall, facing out of it.
+
+A mount knows its own channel and nothing about the wall it ends up in. An
+enclosure picks the mounts, the wall and the position, so the dependency only
+ever runs that way.
+"""
+
 from abc import ABC, abstractmethod
 from enum import Enum
 from math import atan2, degrees
@@ -12,6 +19,30 @@ SAMPLE_CEILING = 2.0
 
 def as_part(shape: Shape) -> Part:
     return Part(shape.solids())
+
+
+def _floor_and_panel(
+    span: float,
+    panel_thickness: float,
+    channel_length: float,
+    floor_thickness: float,
+    panel_height: float,
+) -> tuple[Part, Part]:
+    """The floor and panel boxes a sample coupon sits on, `span` wide."""
+    base = Pos(-panel_thickness, -span / 2, -floor_thickness)
+    floor = base * Box(
+        panel_thickness + channel_length,
+        span,
+        floor_thickness,
+        align=(Align.MIN, Align.MIN, Align.MIN),
+    )
+    panel = base * Box(
+        panel_thickness,
+        span,
+        floor_thickness + panel_height,
+        align=(Align.MIN, Align.MIN, Align.MIN),
+    )
+    return floor, panel
 
 
 class SidePanelFacing(Enum):
@@ -35,6 +66,12 @@ class SidePanelFacing(Enum):
         east, north = self.value
         return degrees(atan2(north, east)) % 360.0
 
+    @property
+    def opposite(self) -> "SidePanelFacing":
+        """Return the facing that looks the other way along the same axis."""
+        east, north = self.value
+        return SidePanelFacing((-east, -north))
+
     def is_perpendicular_to(self, other: "SidePanelFacing") -> bool:
         """Return True if this facing is perpendicular to the other facing."""
         east, north = self.value
@@ -48,6 +85,7 @@ class SidePanelMount(ABC):
     CHANNEL_HEIGHT: float
     CLAMP_POINTS: tuple[tuple[float, float], ...]
     STEP_SPANS: tuple[tuple[float, float, float], ...]
+    SAMPLE_CEILING: float = SAMPLE_CEILING
 
     def __init__(
         self,
@@ -69,11 +107,13 @@ class SidePanelMount(ABC):
         panel_thickness: float,
         count: int,
         growing_toward: SidePanelFacing,
-        sidewall_thickness: float = 2.0,
+        **kwargs,
     ) -> list[Self]:
         """
         Return a list of side panel mounts arranged in a bank,
         starting at the given position and growing in the given direction.
+        Neighboring mounts are pitched one sidewall_thickness apart, so
+        the wall between them is shared.
         """
         if count < 1:
             raise ValueError(f"count must be at least 1, got {count}")
@@ -83,7 +123,9 @@ class SidePanelMount(ABC):
                 f"facing {facing.name}"
             )
 
-        pitch = cls.CHANNEL_WIDTH + sidewall_thickness
+        probe = cls(at=at, facing=facing, panel_thickness=panel_thickness, **kwargs)
+        pitch = probe.CHANNEL_WIDTH + probe.sidewall_thickness
+
         east, north = growing_toward.unit_vector
         x, y, z = at
         return [
@@ -91,10 +133,51 @@ class SidePanelMount(ABC):
                 at=(x + n * pitch * east, y + n * pitch * north, z),
                 facing=facing,
                 panel_thickness=panel_thickness,
-                sidewall_thickness=sidewall_thickness,
+                **kwargs,
             )
             for n in range(count)
         ]
+
+    @classmethod
+    def banked_sample(
+        cls,
+        count: int,
+        panel_thickness: float,
+        floor_thickness: float = 2.0,
+        **kwargs,
+    ) -> Part:
+        """
+        Return `count` mounts of this class fused into a single sample
+        coupon, laid out the way bank() places them.
+        """
+        mounts = cls.bank(
+            at=(0.0, 0.0, 0.0),
+            facing=SidePanelFacing.X_POS,
+            panel_thickness=panel_thickness,
+            count=count,
+            growing_toward=SidePanelFacing.Y_POS,
+            **kwargs,
+        )
+        span = (
+            count * mounts[0].CHANNEL_WIDTH + (count + 1) * mounts[0].sidewall_thickness
+        )
+        center = mounts[-1]._placement.position.Y / 2
+
+        bodies, cutouts = Part(), Part()
+        ceiling = cls.CHANNEL_HEIGHT
+        for mount in mounts:
+            offset = mount._placement.position.Y - center
+            cutout = mount._cutout_solid()
+            cutouts += Pos(0.0, offset, 0.0) * cutout
+            bodies += Pos(0.0, offset, 0.0) * (
+                mount._sidewalls() + mount._locating_features()
+            )
+            ceiling = max(ceiling, cutout.bounding_box().max.Z + mount.SAMPLE_CEILING)
+
+        floor, panel = _floor_and_panel(
+            span, panel_thickness, cls.CHANNEL_LENGTH, floor_thickness, ceiling
+        )
+        return as_part(floor + panel + bodies - cutouts)
 
     @abstractmethod
     def _retention_ribs(self) -> Part:
@@ -161,24 +244,17 @@ class SidePanelMount(ABC):
         including the panel and floor, for visualization and testing purposes.
         """
         span = self.CHANNEL_WIDTH + 2 * self.sidewall_thickness
-        base = Pos(-self.panel_thickness, -span / 2, -floor_thickness)
-
-        floor = base * Box(
-            self.panel_thickness + self.CHANNEL_LENGTH,
-            span,
-            floor_thickness,
-            align=(Align.MIN, Align.MIN, Align.MIN),
-        )
         cutout = self._cutout_solid()
         panel_height = max(
             self.CHANNEL_HEIGHT,
-            cutout.bounding_box().max.Z + SAMPLE_CEILING,
+            cutout.bounding_box().max.Z + self.SAMPLE_CEILING,
         )
-        panel = base * Box(
-            self.panel_thickness,
+        floor, panel = _floor_and_panel(
             span,
-            floor_thickness + panel_height,
-            align=(Align.MIN, Align.MIN, Align.MIN),
+            self.panel_thickness,
+            self.CHANNEL_LENGTH,
+            floor_thickness,
+            panel_height,
         )
         body = self._sidewalls() + self._locating_features()
         return as_part(floor + panel + body - cutout)
