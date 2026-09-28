@@ -50,7 +50,7 @@ class HeatInsert:
         self.spec = spec
         self.mouth_radius = (spec.mouth_diameter + clearance) / 2
         self.end_radius = (spec.end_diameter + clearance) / 2
-        self.bore_radius = spec.clearance_hole / 2
+        self.bore_radius = spec.thread.clearance_bore / 2
         self.pocket_depth = spec.height + BOTTOM_RELIEF
         self._placement = Pos(*at) * Rot(
             180.0 if facing is InsertFacing.UP else 0.0, 0.0, 0.0
