@@ -29,9 +29,11 @@ RACE_SHOULDER_WIDTH = (
 MINIMUM_WALL_THICKNESS = 2.5  # to ensure strong structure
 
 # How much clearance to add to the pocket diameter against the bearing OD
-SEAT_CLEARANCE = 0.3  # Radial
+SEAT_CLEARANCE = 0.2  # Radial
 RIM_CLEARANCE = 0.2  # Axial
 LEAD_IN = 0.5  # Mouth of the chamfered funnel-like pocket profile
+
+WELL_OVERSIZE = 4.0
 
 # boolean-cut robustness
 CUT_OVERSHOOT = 0.5
@@ -59,6 +61,20 @@ class BearingSeat:
     def boss_radius(self) -> float:
         """Minimum solid radius needed to enclose the pocket and its wall."""
         return self.seat_radius + self.minimum_wall_thickness
+
+    @property
+    def well_radius(self) -> float:
+        return self.seat_radius + WELL_OVERSIZE / 2
+
+    def well(self, depth: float) -> Part:
+        """Solid to subtract so nothing printed touches the bearing's OD.
+
+        Wider than the seat, so parts that touch different races don't collide
+        and create friction or weird behaviors.
+        """
+        return Cylinder(
+            self.well_radius, depth, align=(Align.CENTER, Align.CENTER, Align.MIN)
+        )
 
     def check_radius(self, radius: float) -> None:
         """Raise if `radius` would leave the seat's wall thinner than minimum_wall_thickness."""
