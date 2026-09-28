@@ -1,3 +1,5 @@
+# Needs refactor, too large. For now it stays as is.
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -25,7 +27,8 @@ from rollers.gauges import FilmRollerGauge
 
 OUTERMOST_FLANGE_WIDTH = 5.0  # floored by seat_depth, see _flange_width
 INNER_FLANGE_WIDTH_RATIO = 0.12  # of the gauge's own film width
-LIMIT_FLANGE_MARGIN = 2.0  # above track radius
+LIMIT_FLANGE_MARGIN = 2.0  # above track radius, inner gauges
+OUTERMOST_FLANGE_MARGIN = 4.0  # above track radius, the roller's end flanges
 WAIST_SAGITTA_RATIO = 0.015  # of the narrower gauge's track diameter
 BAND_PROTRUSION_DEPTH = 1.0  # above bare track radius
 JOINT_RIB_COUNT = 6
@@ -95,8 +98,16 @@ class GaugeProfile:
     exclusion_zone: RollerPolarRegion
 
 
-def _flange_radius(gauge: FilmRollerGauge) -> float:
-    return gauge.track_diameter / 2 + LIMIT_FLANGE_MARGIN
+def _flange_radius(gauge: FilmRollerGauge, is_outermost: bool) -> float:
+    """How far out a gauge's limit flange stands, measured from the axis.
+
+    The outermost flange is the one the film runs into, so it is given its own
+    margin. An inner flange only has to stop the film crossing the step to the
+    next gauge, and cannot grow far anyway: `_validate_profiles` holds it under
+    the next gauge's track radius.
+    """
+    margin = OUTERMOST_FLANGE_MARGIN if is_outermost else LIMIT_FLANGE_MARGIN
+    return gauge.track_diameter / 2 + margin
 
 
 def _flange_width(
@@ -118,7 +129,7 @@ def _gauge_profile(
     """Build gauge's regions: a limit flange and a contact band on each side, plus its exclusion zone."""
     fmt = gauge.effective_format
     track_radius = gauge.track_diameter / 2
-    flange_radius = _flange_radius(gauge)
+    flange_radius = _flange_radius(gauge, is_outermost)
     flange_width = _flange_width(gauge, is_outermost, seat_depth)
 
     # Make use of the fact that the roller is symmetric about z=0, so we can build one side and mirror it.
@@ -262,7 +273,7 @@ class FilmRoller:
             for index, gauge in enumerate(self.gauges)
         ]
         _validate_profiles(self.profiles)
-        self.core.seat.check_radius(_flange_radius(self.gauges[-1]))
+        self.core.seat.check_radius(_flange_radius(self.gauges[-1], True))
         expected = total_length(self.gauges, self.core.seat.depth)
         if self.core.length != expected:
             raise ValueError(
@@ -320,7 +331,7 @@ class FilmRoller:
         """(bottom_shoulder, contact_z, band_radius, upper, band) shared by the male and female sides of the split."""
         half_length = self._half_length()
         bottom_shoulder = -(half_length - self.core.seat.depth)
-        upper_radius = _flange_radius(self.gauges[-1])
+        upper_radius = _flange_radius(self.gauges[-1], True)
         opposite_band = self.profiles[0].contact_bands[0]
         band_radius = opposite_band.radius
         split_z = _near(opposite_band, -1.0)[1]
