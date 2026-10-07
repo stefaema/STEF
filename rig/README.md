@@ -53,6 +53,7 @@ python -m rig.build mounts                # only src/mounts
 python -m rig.build mounts --format stl   # comma-separated: stl, 3mf
 python -m rig.build mounts --material petg
 python -m rig.build clean                 # empty out/, nothing rebuilt
+python -m rig.build check                 # build every part, report invalid solids, export nothing
 ```
 
 ## Material

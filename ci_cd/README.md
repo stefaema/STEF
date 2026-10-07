@@ -94,11 +94,13 @@ modules a level below. What a module contains decides how it is checked:
   module ships, built before any module is tested
 - `pyproject.toml` → a Python package, run with `pytest`
 - any `.py` file → type-checked
+- `[tool.stef] build` in `pyproject.toml` → a command that builds the module,
+  run by `build` in the module's own shell
 - `[tool.stef] generated` in `pyproject.toml` → a command that regenerates a
   committed file and fails if it moved, run by `integration`
 
-- A module with none of these, `boards`, `ci_cd` and `gui` today, is listed as
-  empty and skipped. Its name is still a valid commit scope.
+- A module with none of these, `boards` and `ci_cd` today, is listed as empty
+  and skipped. Its name is still a valid commit scope.
 
 - Nothing declares which module depends on which. Every module is built before
   any module is tested, which is enough.

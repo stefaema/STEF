@@ -1,0 +1,2 @@
+[tool.stef]
+build = "python -m rig.build check"

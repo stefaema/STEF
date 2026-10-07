@@ -24,17 +24,21 @@ class Module:
     python_files: bool
     python_tests: bool
     generated: str | None
+    build_command: str | None
 
     @property
     def empty(self) -> bool:
         """Whether the module has no buildable target."""
         return not (
-            self.idf_project or self.ctest_dirs or self.native_lib or self.python_pkg
+            self.idf_project or self.ctest_dirs or self.native_lib or self.build_command
         )
 
 
-def authored(path: Path, pattern: str) -> list[Path]:
-    """Return the pattern's matches under path, skipping build output."""
+def source_files(path: Path, pattern: str) -> list[Path]:
+    """Return the files under path matching pattern that someone wrote, sorted.
+
+    Anything inside build output, caches or .git (DERIVED_DIRS) is left out.
+    """
     return [
         p
         for p in sorted(path.rglob(pattern))
@@ -42,7 +46,7 @@ def authored(path: Path, pattern: str) -> list[Path]:
     ]
 
 
-def module_roots() -> list[Path]:
+def module_root_paths() -> list[Path]:
     """Return every module directory, which this nix-based repo marks with a module.nix.
 
     A directory that carries no module.nix of its own only groups modules, so the
@@ -105,37 +109,41 @@ def is_python_package(module: Path) -> bool:
 
 def has_py_files(module: Path) -> bool:
     """Whether the module holds any authored Python for the linters to check."""
-    return bool(authored(module, "*.py"))
+    return bool(source_files(module, "*.py"))
 
 
 def has_py_tests(module: Path) -> bool:
     """Whether the module holds files pytest would collect."""
-    return bool(authored(module, "test_*.py") or authored(module, "*_test.py"))
+    return bool(source_files(module, "test_*.py") or source_files(module, "*_test.py"))
 
 
-def regen_command(module: Path) -> str | None:
-    """Return the command the module declares for regenerating its checked-in files."""
+def ci_declarations(module: Path) -> dict[str, str]:
+    """Return what the module's pyproject.toml declares under [tool.stef], empty if nothing."""
     pyproject = module / "pyproject.toml"
     if not pyproject.exists():
-        return None
+        return {}
     with pyproject.open("rb") as f:
         tools = tomllib.load(f).get("tool", {})
-    return tools.get("stef", {}).get("generated")
+    return tools.get("stef", {})
 
 
 def discover() -> list[Module]:
     """Return every module in the repo with its CI capabilities filled in."""
-    return [
-        Module(
-            name=module.name,
-            path=module,
-            idf_project=esp_idf_dir(module),
-            ctest_dirs=c_test_dirs(module),
-            native_lib=native_lib_dir(module),
-            python_pkg=is_python_package(module),
-            python_files=has_py_files(module),
-            python_tests=has_py_tests(module),
-            generated=regen_command(module),
-        )
-        for module in module_roots()
-    ]
+    return [module_at(path) for path in module_root_paths()]
+
+
+def module_at(path: Path) -> Module:
+    """Return one module with its CI capabilities filled in."""
+    declared = ci_declarations(path)
+    return Module(
+        name=path.name,
+        path=path,
+        idf_project=esp_idf_dir(path),
+        ctest_dirs=c_test_dirs(path),
+        native_lib=native_lib_dir(path),
+        python_pkg=is_python_package(path),
+        python_files=has_py_files(path),
+        python_tests=has_py_tests(path),
+        generated=declared.get("generated"),
+        build_command=declared.get("build"),
+    )

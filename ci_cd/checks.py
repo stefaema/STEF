@@ -159,7 +159,10 @@ def check_commit_msg(path: Path) -> bool:
 def check_build(m: Module) -> bool:
     """Build every target the module declares, reporting each one."""
     if m.empty:
-        return skip(f"build {m.name}", "nothing to build yet")
+        return skip(f"build {m.name}", "nothing to build")
+    here = shells_on_this_system()
+    if here is not None and m.name not in here:
+        return skip(f"build {m.name}", "no shell on this system")
     ok = True
     if m.idf_project:
         ok &= report(
@@ -174,11 +177,11 @@ def check_build(m: Module) -> bool:
         )
     if m.native_lib:
         ok &= report(f"build {m.name}", cmake(m, m.native_lib) == 0, "cmake")
-    if m.python_pkg:
+    if m.build_command:
         ok &= report(
             f"build {m.name}",
-            run_in_module_shell(m, "python -c 'import sys'") == 0,
-            "python",
+            run_in_module_shell(m, f"cd {m.path} && {m.build_command}") == 0,
+            m.build_command,
         )
     return ok
 
@@ -197,6 +200,9 @@ def check_test(m: Module) -> bool:
     """Run the module's ctest and pytest suites, reporting each."""
     if not m.ctest_dirs and not m.python_tests:
         return skip(f"test {m.name}", "no tests found")
+    here = shells_on_this_system()
+    if here is not None and m.name not in here:
+        return skip(f"test {m.name}", "no shell on this system")
     ok = True
     for d in m.ctest_dirs:
         out = CICD_BUILD / m.name / d.name

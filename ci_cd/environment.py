@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import subprocess
@@ -78,6 +79,7 @@ def repo_shell() -> str:
     return f"{ROOT}#default"
 
 
+@functools.cache
 def shells_on_this_system() -> set[str] | None:
     """Return the names of the shells the flake defines for this system, None if nix fails."""
     p = subprocess.run(

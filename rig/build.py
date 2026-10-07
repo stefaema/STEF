@@ -30,6 +30,7 @@ DEFAULT_FORMATS = ("3mf",)
 def main() -> None:
     """Export every part under src/, or one category, to out/
     in the given --format (default 3mf) and --material (default PLA).
+    With check, build them and report any that is not a valid solid, exporting nothing.
     """
 
     args = sys.argv[1:]
@@ -38,6 +39,10 @@ def main() -> None:
         shutil.rmtree(BUILDS, ignore_errors=True)
         print(f"removed {BUILDS.relative_to(BUILDS.parent.parent)}")
         return
+
+    checking = bool(args) and args[0] == "check"
+    if checking:
+        args.pop(0)
 
     formats = DEFAULT_FORMATS
     if "--format" in args:
@@ -69,6 +74,13 @@ def main() -> None:
         where = f"src/{category}" if category else "src/"
         print(f"no module under {where} defines build() or sample()")
         return
+
+    if checking:
+        invalid = [name for name, part in parts.items() if not part.is_valid]
+        for name in invalid:
+            print(f"not a valid solid: {name}")
+        print(f"{len(parts) - len(invalid)} of {len(parts)} valid")
+        sys.exit(1 if invalid else 0)
 
     for name, part in parts.items():
         for fmt in formats:

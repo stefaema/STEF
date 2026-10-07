@@ -28,6 +28,8 @@ def list_modules(mods: list[Module]) -> int:
         bits += [f"ctest:{d.relative_to(m.path)}" for d in m.ctest_dirs]
         if m.python_pkg:
             bits.append("python")
+        if m.build_command:
+            bits.append("build")
         print(f"  {m.name:<14} {' '.join(bits) or DIM + 'empty' + OFF}")
     return 0
 
