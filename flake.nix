@@ -106,11 +106,11 @@
                 shellHook = commonHook;
               };
 
-          # The editor shell: every import in the repository resolvable by one
-          # language server, and the linters CI will judge with. KiCad and the
+          # The repository shell: every import in the repository resolvable by one
+          # language server, and the linters CI judges with. KiCad and the
           # ESP-IDF toolchain are deliberately absent, being weight no language
           # server reads; `nix develop .#boards` and `.#firmware` carry those.
-          editor = pkgs.mkShell {
+          repo = pkgs.mkShell {
             name = "stef";
             buildInputs = [
               (python.withPackages
@@ -129,7 +129,7 @@
             shellHook = commonHook;
           };
         in
-        { default = editor; } // lib.listToAttrs
+        { default = repo; } // lib.listToAttrs
           (map (d: lib.nameValuePair d.name (shellFor d)) here);
     in
     {

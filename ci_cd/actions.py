@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from ci_cd.checks import (
     check_build,
     check_fmt,
@@ -7,12 +9,15 @@ from ci_cd.checks import (
     check_types,
 )
 from ci_cd.discovery import Module, discover
-from ci_cd.environment import get_staged_files, get_tracked_files
+from ci_cd.git import get_staged_files, get_tracked_files
 from ci_cd.ui import heading, skip
 
 ORDER = ("lint", "test", "integration")
 
 BRANCH_ACTION = {"main": "integration", "develop": "test"}
+
+TYPED_SUFFIXES = (".py", ".pyi", ".nix")
+TYPED_NAMES = ("flake.lock", "pyrightconfig.json")
 
 
 def lint(staged: bool = False) -> bool:
@@ -22,7 +27,20 @@ def lint(staged: bool = False) -> bool:
     heading(f"lint: {len(files)} {where} files")
     if not files:
         return skip("lint", f"no {where} files")
-    return check_fmt(files) & check_lint(files) & check_types(discover())
+    return (
+        check_fmt(files)
+        & check_lint(files)
+        & (
+            check_types(discover())
+            if any(can_change_types(f) for f in files)
+            else skip("types", f"no {where} file can change a type")
+        )
+    )
+
+
+def can_change_types(file: Path) -> bool:
+    """Whether the file can change what basedpyright reports."""
+    return file.suffix in TYPED_SUFFIXES or file.name in TYPED_NAMES
 
 
 def test(mods: list[Module]) -> bool:

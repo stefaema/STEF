@@ -30,7 +30,12 @@ The three correspond to the points where work moves.
 
 - `lint` from `pre-commit` takes the staged files. From `test` it takes every
   tracked file. `types` ignores that distinction: a type error is not local to
-  the file that causes it, so it always asks about whole modules.
+  the file that causes it, so it checks every module holding Python, in one
+  `basedpyright` run against the repository shell's interpreter. A module with no
+  shell on this system, `rig` off x86_64, is left out.
+
+- `types` is skipped when nothing staged can change its verdict: no `.py`,
+  `.pyi` or `.nix` file, no `flake.lock`, no `pyrightconfig.json`.
 
 - Which action applies is decided by where the work is going. `BRANCH_ACTION` in `actions.py` holds that table.
 
@@ -40,8 +45,9 @@ The three correspond to the points where work moves.
 |------|------------------------|-----------|
 | `paths.py` | where is everything | `ROOT`, `CICD_BUILD`, `CICD_RUNNER`, `HOOKS_PATH` |
 | `ui.py` | how does a result get printed | `heading`, `report`, `skip`, `hint` |
+| `git.py` | what git knows about the repository | `get_git_output`, `get_current_branch`, `get_staged_files`, `get_tracked_files` |
 | `discovery.py` | what counts as a module, and what is in it | `Module`, `discover` |
-| `environment.py` | python to command line, and the shell each command needs | `run_command`, `run_in_module_shell`, `get_module_shell_output`, `get_git_output`, `ensure_ci_shell`, `ensure_git_hooks`, `get_current_branch`, `get_staged_files`, `get_tracked_files` |
+| `environment.py` | python to command line, and the shell each command needs | `run_command`, `run_in_module_shell`, `repo_shell`, `shells_on_this_system`, `ensure_ci_shell`, `ensure_git_hooks` |
 | `tidy_db.py` | how is the firmware compile database made readable to clang | `rewritten_for_clang` |
 | `checks.py` | what does one check do to one thing | `check_fmt`, `apply_fmt`, `check_lint`, `check_types`, `check_build`, `cmake`, `check_test`, `check_generated`, `check_commit_msg` |
 | `actions.py` | which checks make up an action, and which branch demands which action | `lint`, `test`, `integration`, `BRANCH_ACTION`, `required_for` |
@@ -102,14 +108,16 @@ modules a level below. What a module contains decides how it is checked:
 
 ## Tools
 
-- Each check runs inside its own module's shell, `nix develop .#<module>`, so a
-  module declares what it needs and this runner only chains them. The root
-  `flake.nix` builds those shells from what each `module.nix` declares, and it
-  is the only flake in the repository, so one nixpkgs revision builds all of it.
+- Each build and test runs inside its own module's shell, `nix develop
+  .#<module>`, so a module declares what it needs and this runner only chains
+  them. The root `flake.nix` builds those shells from what each `module.nix`
+  declares, and it is the only flake in the repository, so one nixpkgs revision
+  builds all of it.
 
-- `ci_cd` is one of those modules: `ci_cd/module.nix` declares `ruff`,
-  `basedpyright`, `clang-tools` and the rest, and `run.py` re-execs itself into
-  that shell when they are not already on `PATH`.
+- `run.py` itself runs in the repository shell, the flake's default, and re-execs
+  into it when started outside. That shell carries `ruff`, `basedpyright` and
+  `clang-tools`, and its interpreter is the one `types` checks against, so the
+  editor and the pipeline judge with the same tools.
 
 - `basedpyright` and `ruff` read `pyrightconfig.json` and `ruff.toml` at the
   repository root.

@@ -13,12 +13,8 @@ from pathlib import Path
 from ci_cd import actions
 from ci_cd.checks import apply_fmt, check_build, check_commit_msg, check_fmt, check_test
 from ci_cd.discovery import Module, discover
-from ci_cd.environment import (
-    ensure_ci_shell,
-    ensure_git_hooks,
-    get_staged_files,
-    get_tracked_files,
-)
+from ci_cd.environment import ensure_ci_shell, ensure_git_hooks
+from ci_cd.git import get_staged_files, get_tracked_files
 from ci_cd.paths import ROOT
 from ci_cd.ui import DIM, OFF
 

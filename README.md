@@ -8,11 +8,11 @@ it needs in its own `module.nix`, as data rather than as an assembled shell, and
 the root flake turns those declarations into shells:
 
 ```bash
-nix develop            # the editor shell
+nix develop            # the repository shell
 nix develop .#gui      # one module
 ```
 
-The editor shell is the union: one interpreter carrying every Python import in
+The repository shell is the union: one interpreter carrying every Python import in
 the tree, plus `ruff`, `basedpyright` and `clangd`.
 
 A `module.nix` returns an attribute set, every field optional:

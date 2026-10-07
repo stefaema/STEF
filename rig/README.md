@@ -40,7 +40,7 @@ python src/<part>.py
 Entirely Nix, so there is no venv and no `pip install`. A new package goes in
 `module.nix`'s `python` list, or in `nix/overlay.nix` if nixpkgs does not carry
 it. That overlay extends the whole repository's interpreter, which is why the
-editor shell resolves `build123d` too.
+repository shell resolves `build123d` too.
 
 `rig` is a package rooted at the repository root, so `-m` resolves it
 regardless of whether the shell's `cwd` is the repository root or `rig/` itself.

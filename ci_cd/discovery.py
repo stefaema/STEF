@@ -2,6 +2,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from ci_cd.git import get_tracked_files
 from ci_cd.paths import ROOT
 
 DERIVED_DIRS = {"build", ".ci-build", "__pycache__", ".git"}
@@ -47,11 +48,12 @@ def module_roots() -> list[Path]:
     A directory that carries no module.nix of its own only groups modules, so the
     search descends one level into it.
     """
-    top = [marker.parent for marker in ROOT.glob(f"*/{MODULE_MARKER}")]
+    markers = get_tracked_files(f"*{MODULE_MARKER}")
+    top = [ROOT / m.parent for m in markers if len(m.parts) == 2]
     grouped = [
-        marker.parent
-        for marker in ROOT.glob(f"*/*/{MODULE_MARKER}")
-        if marker.parent.parent not in top
+        ROOT / m.parent
+        for m in markers
+        if len(m.parts) == 3 and ROOT / m.parent.parent not in top
     ]
     return sorted(top + grouped)
 

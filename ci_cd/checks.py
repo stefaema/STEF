@@ -1,12 +1,13 @@
 import re
+import sys
 from pathlib import Path
 
 from ci_cd import tidy_db
 from ci_cd.discovery import Module, discover
 from ci_cd.environment import (
-    get_module_shell_output,
     run_command,
     run_in_module_shell,
+    shells_on_this_system,
 )
 from ci_cd.paths import CICD_BUILD, ROOT
 from ci_cd.ui import hint, report, skip
@@ -64,20 +65,28 @@ def apply_fmt(files: list[Path]) -> bool:
 
 
 def check_types(mods: list[Module]) -> bool:
-    """Report basedpyright's verdict for each module holding Python."""
-    ok = True
-    checked = 0
-    for m in mods:
-        if not m.python_files:
-            continue
-        checked += 1
-        interpreter = get_module_shell_output(m, "command -v python")
-        if interpreter is None:
-            ok &= skip(f"types {m.name}", "no python in this module's shell")
-            continue
-        rc = run_command(["basedpyright", "--pythonpath", interpreter, str(m.path)])
-        ok &= report(f"types {m.name}", rc == 0, "basedpyright")
-    return ok if checked else skip("types", "no python files")
+    """Report basedpyright's verdict on every module holding Python, in one run."""
+    with_python = [m for m in mods if m.python_files]
+    if not with_python:
+        return skip("types", "no python files")
+
+    here = shells_on_this_system()
+    if here is None:
+        return report("types", False, "could not list this system's shells")
+    for m in with_python:
+        if m.name not in here:
+            skip(f"types {m.name}", "no shell on this system")
+    checked = [m for m in with_python if m.name in here]
+
+    rc = run_command(
+        [
+            "basedpyright",
+            "--pythonpath",
+            sys.executable,
+            *[str(m.path) for m in checked],
+        ]
+    )
+    return report("types", rc == 0, f"basedpyright, {len(checked)} modules")
 
 
 def check_lint(files: list[Path]) -> bool:

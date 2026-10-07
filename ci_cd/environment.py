@@ -1,15 +1,17 @@
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 from ci_cd.discovery import Module
+from ci_cd.git import get_git_output
 from ci_cd.paths import CICD_RUNNER, HOOKS_PATH, ROOT
 from ci_cd.ui import DIM, OFF, RED
 
 
 def ensure_ci_shell() -> None:
-    """Make sure CI tools are on PATH. If not, enter nix devshell that holds them."""
+    """Make sure this runs inside the repository shell, re-executing into it if not."""
     if os.environ.get("STEF_CI_SHELL"):
         return
     os.environ["STEF_CI_SHELL"] = "1"
@@ -18,9 +20,9 @@ def ensure_ci_shell() -> None:
         [
             "nix",
             "develop",
-            f"{ROOT}#ci_cd",
+            repo_shell(),
             "--command",
-            sys.executable,
+            "python",
             "-m",
             CICD_RUNNER,
             *sys.argv[1:],
@@ -39,14 +41,6 @@ def ensure_git_hooks() -> None:
     if changed:
         settings = ", ".join(f"{k}={wanted[k]}" for k in changed)
         print(f"{DIM}changed git config, CI needs {settings}{OFF}", file=sys.stderr)
-
-
-def get_git_output(*args: str) -> str:
-    """Return the git command's stdout, empty if it failed."""
-    p = subprocess.run(
-        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=False
-    )
-    return p.stdout.strip()
 
 
 def run_command(
@@ -79,30 +73,26 @@ def run_in_module_shell(
     )
 
 
-def get_module_shell_output(module: Module, script: str) -> str | None:
-    """Return what the script printed in the module's nix shell, None unless it succeeded."""
+def repo_shell() -> str:
+    """Return the flake reference for the repository shell."""
+    return f"{ROOT}#default"
+
+
+def shells_on_this_system() -> set[str] | None:
+    """Return the names of the shells the flake defines for this system, None if nix fails."""
     p = subprocess.run(
-        ["nix", "develop", module_shell(module), "--command", "bash", "-c", script],
+        [
+            "nix",
+            "eval",
+            "--impure",
+            "--json",
+            f"{ROOT}#devShells",
+            "--apply",
+            "shells: builtins.attrNames shells.${builtins.currentSystem}",
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
-    return p.stdout.strip() or None if p.returncode == 0 else None
-
-
-def get_current_branch() -> str:
-    """Return the checked-out branch name."""
-    return get_git_output("rev-parse", "--abbrev-ref", "HEAD")
-
-
-def get_staged_files() -> list[Path]:
-    """Return the repo-relative paths staged for commit that still exist on disk."""
-    out = get_git_output("diff", "--cached", "--name-only", "--diff-filter=ACMR")
-    return [Path(p) for p in out.split() if (ROOT / p).exists()]
-
-
-def get_tracked_files() -> list[Path]:
-    """Return the repo-relative paths git tracks that still exist on disk."""
-    out = get_git_output("ls-files")
-    return [Path(p) for p in out.split() if (ROOT / p).exists()]
+    return set(json.loads(p.stdout)) if p.returncode == 0 else None
