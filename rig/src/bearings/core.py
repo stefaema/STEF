@@ -8,6 +8,7 @@ from build123d import (
     Pos,
     Rot,
 )
+from cores.axial import AxialCore
 
 from bearings.seat import BearingSeat
 from rig.materials import Material
@@ -23,7 +24,7 @@ class BearingPlacement(Enum):
     BOTTOM_SIDE = "bottom_side"
 
 
-class BearingCore:
+class BearingCore(AxialCore):
     """A cylinder with a bearing seat cut into one or both ends."""
 
     def __init__(
@@ -47,6 +48,15 @@ class BearingCore:
     @property
     def min_shell_diameter(self) -> float:
         return 2 * self.seat.boss_radius
+
+    @property
+    def end_depth(self) -> float:
+        """A seat's depth, so the outermost flange is never thinner than the bearing it holds."""
+        return self.seat.depth
+
+    def check_radius(self, radius: float) -> None:
+        """Raise if `radius` would leave the seat's wall thinner than its minimum."""
+        self.seat.check_radius(radius)
 
     @property
     def shoulder_heights(self) -> tuple[float, float]:

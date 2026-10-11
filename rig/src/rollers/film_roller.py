@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
 
-from bearings.core import BearingCore
 from build123d import (
     Align,
     Axis,
@@ -22,10 +21,11 @@ from build123d import (
     make_face,
     revolve,
 )
+from cores.axial import AxialCore
 
 from rollers.gauges import FilmRollerGauge
 
-OUTERMOST_FLANGE_WIDTH = 5.0  # floored by seat_depth, see _flange_width
+OUTERMOST_FLANGE_WIDTH = 5.0  # floored by end_depth, see _flange_width
 INNER_FLANGE_WIDTH_RATIO = 0.12  # of the gauge's own film width
 LIMIT_FLANGE_MARGIN = 2.0  # above track radius, inner gauges
 OUTERMOST_FLANGE_MARGIN = 4.0  # above track radius, the roller's end flanges
@@ -111,11 +111,11 @@ def _flange_radius(gauge: FilmRollerGauge, is_outermost: bool) -> float:
 
 
 def _flange_width(
-    gauge: FilmRollerGauge, is_outermost: bool, seat_depth: float
+    gauge: FilmRollerGauge, is_outermost: bool, end_depth: float
 ) -> float:
     """How far a gauge's limit flange extends in z, its flat land beyond the film edge."""
     if is_outermost:
-        return max(OUTERMOST_FLANGE_WIDTH, seat_depth)
+        return max(OUTERMOST_FLANGE_WIDTH, end_depth)
     return gauge.effective_format.width * INNER_FLANGE_WIDTH_RATIO
 
 
@@ -124,13 +124,13 @@ def _waist_sagitta(gauge: FilmRollerGauge) -> float:
 
 
 def _gauge_profile(
-    gauge: FilmRollerGauge, is_outermost: bool, seat_depth: float
+    gauge: FilmRollerGauge, is_outermost: bool, end_depth: float
 ) -> GaugeProfile:
     """Build gauge's regions: a limit flange and a contact band on each side, plus its exclusion zone."""
     fmt = gauge.effective_format
     track_radius = gauge.track_diameter / 2
     flange_radius = _flange_radius(gauge, is_outermost)
-    flange_width = _flange_width(gauge, is_outermost, seat_depth)
+    flange_width = _flange_width(gauge, is_outermost, end_depth)
 
     # Make use of the fact that the roller is symmetric about z=0, so we can build one side and mirror it.
     def side(sign: float) -> tuple[RollerPolarRegion, RollerPolarRegion]:
@@ -208,12 +208,12 @@ def _validate_profiles(profiles: Sequence[GaugeProfile]) -> None:
                 )
 
 
-def total_length(gauges: Sequence[FilmRollerGauge], seat_depth: float) -> float:
+def total_length(gauges: Sequence[FilmRollerGauge], end_depth: float) -> float:
     """The roller's own total axial length, from one outermost flange's outer face to the other's."""
     ordered = _validated(gauges)
     widest = ordered[-1]
     contact = widest.effective_format.width / 2
-    flange_width = _flange_width(widest, True, seat_depth)
+    flange_width = _flange_width(widest, True, end_depth)
     return 2 * (contact + flange_width)
 
 
@@ -264,17 +264,17 @@ class FilmRoller:
     """
 
     gauges: Sequence[FilmRollerGauge]
-    core: BearingCore
+    core: AxialCore
 
     def __post_init__(self) -> None:
         self.gauges = _validated(self.gauges)
         self.profiles = [
-            _gauge_profile(gauge, index == len(self.gauges) - 1, self.core.seat.depth)
+            _gauge_profile(gauge, index == len(self.gauges) - 1, self.core.end_depth)
             for index, gauge in enumerate(self.gauges)
         ]
         _validate_profiles(self.profiles)
-        self.core.seat.check_radius(_flange_radius(self.gauges[-1], True))
-        expected = total_length(self.gauges, self.core.seat.depth)
+        self.core.check_radius(_flange_radius(self.gauges[-1], True))
+        expected = total_length(self.gauges, self.core.end_depth)
         if self.core.length != expected:
             raise ValueError(
                 f"core.length {self.core.length} doesn't match this roller's "
@@ -282,7 +282,7 @@ class FilmRoller:
             )
 
     def _half_length(self) -> float:
-        return total_length(self.gauges, self.core.seat.depth) / 2
+        return total_length(self.gauges, self.core.end_depth) / 2
 
     def _body(self) -> Part:
         """Revolve the whole roller's limiting-stage profile in one pass."""
@@ -330,7 +330,7 @@ class FilmRoller:
     ) -> tuple[float, float, float, RollerPolarRegion, RollerPolarRegion]:
         """(bottom_shoulder, contact_z, band_radius, upper, band) shared by the male and female sides of the split."""
         half_length = self._half_length()
-        bottom_shoulder = -(half_length - self.core.seat.depth)
+        bottom_shoulder = -(half_length - self.core.end_depth)
         upper_radius = _flange_radius(self.gauges[-1], True)
         opposite_band = self.profiles[0].contact_bands[0]
         band_radius = opposite_band.radius
