@@ -9,4 +9,12 @@
     {{ M.icon(TOOL_ICON[one], "size-4") }}<span>{{ _(TOOL_LABEL[one]) }}</span>
   </button>
   {%- endfor %}
+  {%- if seen and seen.safe_state and up %}
+  <span class="flex-1"></span>
+  <button type="button" class="{{ S.btnDanger }} self-center mb-1" title="{{ seen.safe_state }}"
+          hx-post="/diagnostics/{{ sub.id }}/stop" hx-target="#main" hx-swap="innerHTML"
+          hx-indicator="this" hx-disabled-elt="this">
+    {{ M.icon("power_settings_new") }}<span>{{ _("Stop") }}</span>
+  </button>
+  {%- endif %}
 </div>

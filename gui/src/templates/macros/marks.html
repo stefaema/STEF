@@ -8,9 +8,9 @@
 {{ icon("progress_activity", "size-[18px] animate-spin") if spinning else icon(name) }}
 {%- endmacro -%}
 
-{%- macro outcome_mark(status, labelled=True) -%}
+{%- macro outcome_mark(status, labelled=True, id=None, oob=False) -%}
 {%- set glyph, tone = OUTCOME.get(status, OUTCOME["idle"]) -%}
-<span class="inline-flex items-center gap-1.5 text-xs {{ tone }}">
+<span class="inline-flex items-center gap-1.5 text-xs {{ tone }}"{% if id %} id="{{ id }}"{% endif %}{{ ' hx-swap-oob="true"'|safe if oob }}>
   {{ icon(glyph, "size-4 animate-spin" if status == "running" else "size-4") }}
   {%- if labelled %}<span>{{ _(STATUS_LABEL.get(status, status)) }}</span>{% endif -%}
 </span>

@@ -2,9 +2,9 @@
 {%- import "macros/controls.html" as C -%}
 {%- set asked = test.last.prompt -%}
 {%- set spec = field_of(asked.question, sub.id, test.key) -%}
-<div id="prompt-{{ uid }}" class="flex flex-col gap-2 px-3 py-3 border-t border-yellow-400 bg-yellow-50 dark:bg-yellow-950">
+<div id="prompt-{{ uid }}" class="flex flex-col gap-2 px-3 py-3 border-b border-yellow-400 bg-yellow-50 dark:bg-yellow-950">
   <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ asked.question.hint or asked.question.name }}</div>
-  <div class="{{ S.hint }}">{{ _("Asked during") }} {{ asked.step }}</div>
+  <div class="{{ S.hint }}">{{ _("Asked during the “%(step)s” step", step=asked.step) }}</div>
   <form class="flex flex-wrap items-end gap-2"
         hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/answer"
         hx-target="#prompt-{{ uid }}" hx-swap="outerHTML">

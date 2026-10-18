@@ -69,8 +69,15 @@
     });
   }
 
+  function unfold(marked) {
+    var box = marked.closest("details");
+    if (box && !box.open) box.open = true;
+  }
+
   function hydrate(root) {
     var scope = root && root.querySelectorAll ? root : document;
+    if (root && root.matches && root.matches("[data-unfold]")) unfold(root);
+    scope.querySelectorAll("[data-unfold]").forEach(unfold);
     scope.querySelectorAll("[data-glyph]").forEach(glyph);
     scope.querySelectorAll("[data-icon]").forEach(railIcon);
     scope.querySelectorAll("[data-more]").forEach(measureMore);

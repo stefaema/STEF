@@ -23,6 +23,7 @@ TOOLS = ("link", "tests", "commands")
 OUTCOME = {
     "idle": ("radio_button_unchecked", "text-gray-400"),
     "running": ("progress_activity", "text-gray-500"),
+    "waiting": ("help", "text-yellow-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
@@ -41,6 +42,7 @@ LINK_MARK = {
 STATUS_LABEL = {
     "idle": mark("Not run"),
     "running": mark("Running"),
+    "waiting": mark("Waiting for you"),
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
@@ -158,7 +160,7 @@ def status_of(test: TestView) -> str:
     if last is None:
         return "idle"
     if last.running:
-        return "running"
+        return "waiting" if last.prompt is not None else "running"
     return last.verdict.value if last.verdict else "idle"
 
 
@@ -171,6 +173,14 @@ def worst_status(tests: list[TestView]) -> str:
         if one.last is not None and one.last.verdict is not None
     ]
     return verdict(settled).value if settled else "idle"
+
+
+def end_errored(test: TestView) -> bool:
+    last = test.last
+    return bool(
+        last
+        and any(one.end and one.status is StepStatus.ERROR for one in last.outcomes)
+    )
 
 
 def rows_of(test: TestView) -> list[Row]:
@@ -238,6 +248,7 @@ __all__ = [
     "Tab",
     "clock",
     "command_groups",
+    "end_errored",
     "fields_of",
     "first_available",
     "group_label",

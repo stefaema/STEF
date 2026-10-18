@@ -1,16 +1,28 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
 {%- import "macros/result.html" as R -%}
-<div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
+{%- set status = status_of(test) -%}
+<div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}
+     {{- " data-unfold" if status in ("running", "waiting") }}>
   <div class="flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700">
     <div class="flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ _("Steps") }}</div>
     {%- if test.last and test.last.outcomes %}{{ M.copy_button(test|as_run(sub.id)) }}{% endif %}
   </div>
+  {%- if test.last and test.last.prompt %}{% include "diagnostics/tests/prompt.html" %}{% endif %}
+  {%- if end_errored(test) %}
+  <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-red-600 bg-red-600 text-white">
+    {{ M.icon("error", "size-5") }}
+    <div class="flex-1 min-w-0 text-sm font-semibold">{{ _("Could not confirm the hardware was left safe. Check it, or press Stop.") }}</div>
+    <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-50"
+            hx-post="/diagnostics/{{ sub.id }}/stop" hx-target="#main" hx-swap="innerHTML" hx-disabled-elt="this">
+      {{ M.icon("power_settings_new", "size-4") }}<span>{{ _("Stop") }}</span>
+    </button>
+  </div>
+  {%- endif %}
   {%- for row in rows_of(test) %}
   {%- if row.end %}
-  <div class="px-3 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 border-t border-gray-300 dark:border-gray-700">{{ _("How it left the hardware") }}</div>
+  <div class="px-3 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 border-t border-gray-300 dark:border-gray-700">{{ _("End step") }}</div>
   {%- endif %}
   {{ R.step_row(row) }}
   {%- endfor %}
-  {%- if test.last and test.last.prompt %}{% include "diagnostics/tests/prompt.html" %}{% endif %}
 </div>

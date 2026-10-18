@@ -21,7 +21,14 @@ from gui.src.render import OPTIONS
 from gui.src.runner import Record, Stream, call_off_loop, start_run
 from machine import AREAS, Activity, Area, Busy, Machine
 from shared import logs
-from shared.diagnostics import LINK_KEY, Diagnosable, Prompt, StepOutcome, as_json
+from shared.diagnostics import (
+    LINK_KEY,
+    Diagnosable,
+    Needs,
+    Prompt,
+    StepOutcome,
+    as_json,
+)
 from shared.diagnostics.views import view_of_test
 from shared.subsystem import (
     Input,
@@ -195,13 +202,17 @@ def _begin(name: str, key: str, submitted: dict[str, Any]) -> None:
         time.sleep(0.01)
 
 
-def _answer(sub: Any, form: Any) -> None:
+def _answer(sub: Any, key: str, form: Any) -> None:
     run = sub.running()
     asked = run.prompt if run is not None else None
-    if asked is None:
+    if run is None or asked is None:
         raise HTTPException(409, gettext("Nothing is being asked"))
     taken = values_from((asked.question,), form)
     sub.answer(taken.get(asked.question.name, ""))
+    deadline = time.monotonic() + STARTING
+    while run.prompt is asked and time.monotonic() < deadline:
+        time.sleep(0.01)
+    runs.say(sub.id, "ok", "answered", asked.question.name, {"key": key})
 
 
 def _stopped(sub: Any) -> None:
@@ -314,7 +325,7 @@ async def answer(name: str, values: dict[str, Any]) -> dict[str, Any]:
     asked = run.prompt if run is not None else None
     if asked is None:
         raise HTTPException(409, gettext("Nothing is being asked"))
-    sub.answer(values.get(asked.question.name, values.get("value", "")))
+    await asyncio.to_thread(_answer, sub, asked.test, values)
     return {"ok": True}
 
 
@@ -474,7 +485,7 @@ async def log_stream() -> StreamingResponse:
 
 @app.get("/diagnostics/stream/runs")
 async def run_stream() -> StreamingResponse:
-    return _served(runs, "run", _run_html)
+    return _served(runs, "run", _run_html())
 
 
 @app.get("/diagnostics", response_class=HTMLResponse)
@@ -652,11 +663,25 @@ async def tests_run(request: Request, name: str, key: str) -> Any:
     return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
 
 
+@app.post("/diagnostics/{name}/tests/{key}/stop", response_class=HTMLResponse)
+async def tests_stop(request: Request, name: str, key: str) -> Any:
+    sub = subsystem_of(name)
+    _test_of(sub, key)
+    stream.say(name, "warn", "command", f"stop({key})")
+    try:
+        await asyncio.to_thread(_stopped, sub)
+        stream.say(name, "ok", "result", gettext("Stopped"))
+    except Exception as exc:  # noqa: BLE001
+        _failed(name, exc)
+    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
+
+
 @app.post("/diagnostics/{name}/tests/{key}/answer", response_class=HTMLResponse)
 async def tests_answer(request: Request, name: str, key: str) -> Any:
     sub = subsystem_of(name)
     _test_of(sub, key)
-    _answer(sub, await request.form())
+    form = await request.form()
+    await asyncio.to_thread(_answer, sub, key, form)
     return HTMLResponse("")
 
 
@@ -692,18 +717,40 @@ def _log_html(record: Record) -> str:
     return _sse_html("record", _render("log/record.html", {"record": record}))
 
 
-def _run_html(record: Record) -> str:
-    key = (record.data or {}).get("key")
-    sub = diagnosed(record.source)
-    if not key or sub is None:
-        return ": keep-alive\n\n"
-    if not any(one.key == key for one in sub.tests):
-        return ": keep-alive\n\n"
-    held = _test_context(record.source, key, oob=True)
-    body = _render("diagnostics/tests/head.html", held) + _render(
-        "diagnostics/tests/steps.html", held
+def _run_html() -> Callable[[Record], str]:
+    shown: dict[tuple[str, str], tuple[Any, ...]] = {}
+
+    def shape(record: Record) -> str:
+        key = (record.data or {}).get("key")
+        sub = diagnosed(record.source)
+        if not key or sub is None or not any(one.key == key for one in sub.tests):
+            return ": keep-alive\n\n"
+        held = _test_context(record.source, key, oob=True)
+        test = held["test"]
+        head = (view.status_of(test), test.readiness.reason, bool(test.readiness))
+        body = _render("diagnostics/tests/steps.html", held)
+        if shown.get((sub.id, key)) != head:
+            shown[(sub.id, key)] = head
+            body = _render("diagnostics/tests/head.html", held) + body
+        if record.kind == "done":
+            body += _group_mark(sub, test.group)
+        return _sse_html("run", body)
+
+    return shape
+
+
+def _group_mark(sub: Diagnosable, group: str) -> str:
+    grouped = [
+        view_of_test(sub, one, True)
+        for one in sub.tests
+        if one.group == group and one.needs is not Needs.DOWN
+    ]
+    if not grouped:
+        return ""
+    return _render(
+        "diagnostics/tests/mark.html",
+        {"items": grouped, "mark": render.slug(f"mark-{sub.id}-{group}")},
     )
-    return _sse_html("run", body)
 
 
 def _served(

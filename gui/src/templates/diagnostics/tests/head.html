@@ -1,7 +1,7 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
 {%- set status = status_of(test) -%}
-{%- set running = status == "running" -%}
+{%- set running = status in ("running", "waiting") -%}
 <summary class="check-grid px-4 py-2.5" id="head-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
   <span class="flex items-center gap-2 min-w-0 text-left font-semibold text-gray-900 dark:text-white">
     <span class="caret inline-block shrink-0 text-gray-500 transition-transform">&#9656;</span>
@@ -9,16 +9,26 @@
     {%- if test.hazardous %}{{ M.hazard_mark() }}{% endif %}
   </span>
   <span class="font-mono text-xs text-gray-500">{{ (test.last.started if test.last else none)|clock }}</span>
+  {%- if running %}
+  <button type="button" data-nofold class="{{ S.btnRunDanger }}"
+          title="{{ _("Cancel this test, let its end step run, then stop the hardware") }}"
+          hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/stop"
+          hx-target="#steps-{{ uid }}" hx-swap="outerHTML" hx-disabled-elt="this">
+    {{ M.icon("power_settings_new") }}<span>{{ _("Stop") }}</span>
+    {{ M.outcome_cage(status) }}
+  </button>
+  {%- else %}
   <button type="button" data-nofold
           class="{{ S.btnRunDanger if test.hazardous else S.btnRun }}"
-          {{ " disabled" if not test.readiness or running }}
+          {{ " disabled" if not test.readiness }}
           {%- if not test.readiness %} title="{{ test.readiness.reason or _("Connect first") }}"{% endif %}
-          {%- if test.readiness and not running %}
+          {%- if test.readiness %}
           hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/run"
           hx-include="#form-{{ uid }}" hx-target="#steps-{{ uid }}" hx-swap="outerHTML"
           {%- if test.hazardous %} hx-confirm="{{ _("Confirm") }}"{% endif %}
           {%- endif %}>
-    {{ M.spinner(running) }}<span>{{ _("Running") if running else (_("Re-run") if test.last else _("Run")) }}</span>
+    {{ M.icon("play_arrow") }}<span>{{ _("Re-run") if test.last else _("Run") }}</span>
     {{ M.outcome_cage(status) }}
   </button>
+  {%- endif %}
 </summary>

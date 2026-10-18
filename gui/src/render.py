@@ -205,6 +205,7 @@ GLOBALS = {
     "TOOL_ICON": view.TOOL_ICON,
     "field_of": field_of,
     "group_label": view.group_label,
+    "end_errored": view.end_errored,
     "rows_of": view.rows_of,
     "status_of": view.status_of,
     "worst_status": view.worst_status,
