@@ -122,7 +122,7 @@ class Diagnosable(Subsystem):
         operator: bool = False,
     ) -> "RunView":
         test = self.test(key)
-        values = coerced_values(test.inputs, submitted)
+        values = coerced_values(test.inputs, submitted, self)
         with self._run_lock:
             if self._running is not None:
                 raise NotReady("a test is running")
@@ -147,7 +147,7 @@ class Diagnosable(Subsystem):
         said = self.readiness(key)
         if not said:
             raise NotReady(said.reason)
-        values = coerced_values(item.inputs, submitted)
+        values = coerced_values(item.inputs, submitted, self)
         run_log.write_command(f"{self.id}.{key}", values)
         try:
             reply = item.call(self, values)

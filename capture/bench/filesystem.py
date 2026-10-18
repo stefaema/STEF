@@ -3,25 +3,16 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from capture import capture
 from capture.bench.shots import landed, swept
 from portable.ccapi import ContentKind, PollWait, Setting
 from portable.ccapi.vocabulary import NO_FILE
-from shared import bench_api
-from shared.bench_api import (
-    FAILED,
-    PASSED,
-    SETUP,
-    WARNED,
-    Abandoned,
-    Level,
-    Result,
-    StepOutcome,
-    Table,
-)
+from shared.diagnostics import Failed, Test, end, step
+from shared.subsystem import Level, Result, Table
+
+if TYPE_CHECKING:
+    from capture.subsystem import Capture
 
 FRAME_BYTES = 8_000_000
 REEL = 16_000
@@ -33,19 +24,7 @@ def megabytes(count: int) -> str:
     return f"{count / 1_000_000:.1f} MB"
 
 
-@bench_api.routine(
-    category=SETUP,
-    hazardous=True,
-    steps=[
-        "Cards",
-        "Contents",
-        "Write a frame",
-        "Find it without the event",
-        "Download it",
-        "Delete it",
-    ],
-)
-def files(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class Files(Test[Any]):
     """Follow one frame onto the card, off it, and back off again.
 
     Everything the scan does with storage in the order it does it, so a break
@@ -58,70 +37,85 @@ def files(values: dict[str, Any]) -> Iterator[StepOutcome]:
     all; and the jpeg gives something showable, so the download step can put
     the frame on screen rather than assert a byte count at you.
     """
-    found = capture.camera()
 
-    mounted = found.filesystem.storages()
-    if not mounted:
-        raise Abandoned("no media is mounted", FAILED)
-    yield StepOutcome(
-        PASSED,
-        f"{len(mounted)} mounted",
-        Result(
-            level=Level.OK,
-            summary=f"{len(mounted)} card(s) mounted",
-            note=f"'holds a reel' is {REEL} frames at {megabytes(FRAME_BYTES)} each",
-            table=Table(
-                head=("Card", "Access", "Capacity", "Free", "Files", "Holds a reel"),
-                rows=tuple(
-                    (
-                        one.name,
-                        one.access.value,
-                        megabytes(one.capacity),
-                        megabytes(one.free),
-                        str(one.file_count),
-                        "yes" if one.holds(REEL, FRAME_BYTES) else "no",
-                    )
-                    for one in mounted
+    sub: Capture
+
+    @step("Cards")
+    def cards(self) -> None:
+        mounted = self.sub.camera().filesystem.storages()
+        if not mounted:
+            raise Failed("no media is mounted")
+        self.report(
+            f"{len(mounted)} mounted",
+            Result(
+                level=Level.OK,
+                summary=f"{len(mounted)} card(s) mounted",
+                note=f"'holds a reel' is {REEL} frames at {megabytes(FRAME_BYTES)} each",
+                table=Table(
+                    head=(
+                        "Card",
+                        "Access",
+                        "Capacity",
+                        "Free",
+                        "Files",
+                        "Holds a reel",
+                    ),
+                    rows=tuple(
+                        (
+                            one.name,
+                            one.access.value,
+                            megabytes(one.capacity),
+                            megabytes(one.free),
+                            str(one.file_count),
+                            "yes" if one.holds(REEL, FRAME_BYTES) else "no",
+                        )
+                        for one in mounted
+                    ),
                 ),
             ),
-        ),
-    )
-
-    volumes = found.filesystem.volumes()
-    directories = found.filesystem.directories(volumes[0]) if volumes else ()
-    if not directories:
-        raise Abandoned("this card has no directories to write into", FAILED)
-    before = found.filesystem.file_count
-    yield StepOutcome(
-        PASSED,
-        f"{len(directories)} directory/ies, {before} file(s)",
-        Result(
-            level=Level.OK,
-            summary=f"{len(volumes)} volume(s), {len(directories)} directory/ies",
-            fields=(("files on the current card", str(before)),),
-            table=Table(
-                head=("Directory",),
-                rows=tuple((one,) for one in directories),
-            ),
-        ),
-    )
-
-    offered = found.settings.offers(Setting.STILLIMAGEQUALITY)
-    was = found.settings.image_quality() if offered else None
-    both = was is not None and was.offers_two
-    if both and was is not None:
-        found.settings.set_image_quality(
-            next(one for one in was.raw_allowed if one != NO_FILE),
-            next(one for one in was.jpeg_allowed if one != NO_FILE),
         )
-    try:
+
+    @step("Contents")
+    def contents(self) -> None:
+        found = self.sub.camera()
+        volumes = found.filesystem.volumes()
+        directories: tuple[str, ...] = tuple(
+            found.filesystem.directories(volumes[0]) if volumes else ()
+        )
+        self.directories = directories
+        if not directories:
+            raise Failed("this card has no directories to write into")
+        self.before = before = found.filesystem.file_count
+        self.report(
+            f"{len(directories)} directory/ies, {before} file(s)",
+            Result(
+                level=Level.OK,
+                summary=f"{len(volumes)} volume(s), {len(directories)} directory/ies",
+                fields=(("files on the current card", str(before)),),
+                table=Table(
+                    head=("Directory",),
+                    rows=tuple((one,) for one in directories),
+                ),
+            ),
+        )
+
+    @step("Write a frame", hazard="changes the image quality and releases the shutter")
+    def write_a_frame(self) -> None:
+        found = self.sub.camera()
+        offered = found.settings.offers(Setting.STILLIMAGEQUALITY)
+        self.was = was = found.settings.image_quality() if offered else None
+        self.both = both = was is not None and was.offers_two
+        if both and was is not None:
+            found.settings.set_image_quality(
+                next(one for one in was.raw_allowed if one != NO_FILE),
+                next(one for one in was.jpeg_allowed if one != NO_FILE),
+            )
         found.events.poll(PollWait.IMMEDIATELY)
         found.shooting.capture(af=False)
-        announced = landed(found)
+        self.announced = announced = landed(found)
         if not announced:
-            raise Abandoned("nothing was announced after the release", FAILED)
-        yield StepOutcome(
-            PASSED,
+            raise Failed("nothing was announced after the release")
+        self.report(
             f"{len(announced)} file(s) announced",
             Result(
                 level=Level.OK,
@@ -138,32 +132,40 @@ def files(values: dict[str, Any]) -> Iterator[StepOutcome]:
             ),
         )
 
-        walked = found.filesystem.files_in(directories[-1])
+    @step("Find it without the event")
+    def find_it_without_the_event(self) -> None:
+        found = self.sub.camera()
+        announced, before = self.announced, self.before
+        walked = found.filesystem.files_in(self.directories[-1])
         after = found.filesystem.file_count
         agrees = all(one in walked for one in announced)
         grew = after - before
-        yield StepOutcome(
-            PASSED if agrees else FAILED,
-            f"{len(walked)} file(s) listed, count went {before} to {after}",
-            Result(
-                level=Level.OK if agrees else Level.ERROR,
-                summary=(
-                    "the walk and the event agree on what is on the card"
-                    if agrees
-                    else "the event announced a file the walk cannot find"
-                ),
-                fields=(
-                    ("announced", str(len(announced))),
-                    ("count grew by", str(grew)),
-                    ("listed in directory", str(len(walked))),
-                ),
-                table=Table(
-                    head=("File",),
-                    rows=tuple((one.rsplit("/", 1)[-1],) for one in walked[-LISTED:]),
-                ),
+        shown = Result(
+            level=Level.OK if agrees else Level.ERROR,
+            summary=(
+                "the walk and the event agree on what is on the card"
+                if agrees
+                else "the event announced a file the walk cannot find"
+            ),
+            fields=(
+                ("announced", str(len(announced))),
+                ("count grew by", str(grew)),
+                ("listed in directory", str(len(walked))),
+            ),
+            table=Table(
+                head=("File",),
+                rows=tuple((one.rsplit("/", 1)[-1],) for one in walked[-LISTED:]),
             ),
         )
+        said = f"{len(walked)} file(s) listed, count went {before} to {after}"
+        if not agrees:
+            raise Failed(said, shown)
+        self.report(said, shown)
 
+    @step("Download it")
+    def download_it(self) -> None:
+        found = self.sub.camera()
+        announced = self.announced
         showable = _showable(found, announced)
         pulled = announced[0]
         started = time.monotonic()
@@ -171,8 +173,8 @@ def files(values: dict[str, Any]) -> Iterator[StepOutcome]:
         took = time.monotonic() - started
         rate = len(whole) / took / 1_000_000 if took else 0.0
         hours = (REEL * len(whole) / (rate * 1_000_000) / 3600) if rate else 0.0
-        yield StepOutcome(
-            PASSED,
+        self.measure("throughput", round(rate, 1), unit="MB/s")
+        self.report(
             f"{megabytes(len(whole))} at {rate:.1f} MB/s",
             Result(
                 level=Level.OK,
@@ -191,30 +193,38 @@ def files(values: dict[str, Any]) -> Iterator[StepOutcome]:
                 ),
             ),
         )
-    finally:
-        if both and was is not None:
-            found.settings.set_image_quality(was.raw, was.jpeg)
 
-    removed = swept(found, announced)
-    settled = found.filesystem.file_count
-    back = settled == before
-    yield StepOutcome(
-        PASSED if back and removed == len(announced) else WARNED,
-        f"{removed} removed, count back to {settled}",
-        Result(
-            level=Level.OK if back else Level.WARN,
-            summary=(
-                "the card is as this found it"
-                if back
-                else f"the card holds {settled - before} more file(s) than it did"
+    @end("Delete it")
+    def delete_it(self) -> None:
+        found = self.sub.camera()
+        was = getattr(self, "was", None)
+        if getattr(self, "both", False) and was is not None:
+            found.settings.set_image_quality(was.raw, was.jpeg)
+        announced = getattr(self, "announced", ())
+        if not hasattr(self, "before"):
+            self.report("nothing was written")
+            return
+        before = self.before
+        removed = swept(found, announced)
+        settled = found.filesystem.file_count
+        back = settled == before
+        said = self.report if back and removed == len(announced) else self.warn
+        said(
+            f"{removed} removed, count back to {settled}",
+            Result(
+                level=Level.OK if back else Level.WARN,
+                summary=(
+                    "the card is as this found it"
+                    if back
+                    else f"the card holds {settled - before} more file(s) than it did"
+                ),
+                fields=(
+                    ("before", str(before)),
+                    ("after", str(settled)),
+                    ("removed", f"{removed} of {len(announced)}"),
+                ),
             ),
-            fields=(
-                ("before", str(before)),
-                ("after", str(settled)),
-                ("removed", f"{removed} of {len(announced)}"),
-            ),
-        ),
-    )
+        )
 
 
 def _showable(found: Any, announced: tuple[str, ...]) -> bytes | None:

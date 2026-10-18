@@ -6,22 +6,15 @@ import json
 import shutil
 import tempfile
 import time
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from capture import capture
 from portable.ccapi import STREAMED, Endpoint, Methods, Setting
-from shared import bench_api
-from shared.bench_api import (
-    PASSED,
-    SETUP,
-    WARNED,
-    Level,
-    Result,
-    StepOutcome,
-    Table,
-)
+from shared.diagnostics import Test, end, step
+from shared.subsystem import Level, Result, Table, boolean, integer
+
+if TYPE_CHECKING:
+    from capture.subsystem import Capture
 
 PREFIX = "stef-survey-"
 RESPONSES = "responses.json"
@@ -44,128 +37,157 @@ def written(where: Path, name: str, body: Any) -> int:
     return target.stat().st_size
 
 
-@bench_api.routine(
-    category=SETUP,
-    steps=["About", "Manifest", "Read everything", "Settings", "Unnamed"],
-    inputs=[
-        bench_api.boolean(
-            "keep",
-            hint="Leave the files on disk. Off deletes them once you have looked.",
-        )
-    ],
-)
-def everything(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class Everything(Test[Any]):
     """Ask this camera every question it will answer and write the answers down.
 
     Verbatim, never parsed: the point is to have something our own reading can
     be checked against, and a stored interpretation would carry the same
     misunderstanding as the code that made it.
     """
-    found = capture.camera()
-    where = somewhere()
-    keep = bool(values.get("keep"))
-    total = 0
 
-    device = found.status.device()
-    about = {
-        "model": device.product_name,
-        "serial": device.serial_number,
-        "firmware": device.firmware_version,
-        "versions": list(found.link.registry.versions),
-        "declined": list(found.link.registry.offered_beyond_accepted),
-        "taken": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    total += written(where, ABOUT, about)
-    yield StepOutcome(PASSED, f"{device.product_name} {device.serial_number}")
-
-    responses: dict[str, Any] = {"/ccapi": found.link.manifest}
-    yield StepOutcome(PASSED, f"{len(found.link.registry.features)} endpoints")
-
-    refused: list[tuple[str, ...]] = []
-    for feature in found.link.registry.features:
-        if Methods.GET not in found.link.registry.methods_for(feature):
-            continue
-        if feature in STREAMED:
-            refused.append((feature, "a stream, which a plain GET would hold open"))
-            continue
-        try:
-            responses[feature] = found.link.json("GET", feature)
-        except Exception as exc:  # noqa: BLE001
-            refused.append((feature, f"{type(exc).__name__}: {exc}"))
-    total += written(where, RESPONSES, responses)
-    yield StepOutcome(PASSED, f"{len(responses)} answered, {len(refused)} refused")
-
-    said: dict[str, Any] = {}
-    for setting in Setting:
-        if not found.settings.offers(setting):
-            continue
-        try:
-            value = found.settings.get(setting)
-            said[str(setting)] = {"value": value.value, "allowed": list(value.allowed)}
-        except Exception as exc:  # noqa: BLE001
-            refused.append((str(setting), f"{type(exc).__name__}: {exc}"))
-    total += written(where, SETTINGS, said)
-    yield StepOutcome(PASSED, f"{len(said)} settings read")
-
-    unnamed = found.link.registry.unnamed(NAMED)
-    total += written(where, UNNAMED, list(unnamed))
-    summary = (
-        f"{len(unnamed)} endpoint(s) this build has no name for"
-        if unnamed
-        else "every endpoint offered has a name here"
-    )
-    yield StepOutcome(
-        WARNED if unnamed else PASSED,
-        summary,
-        Result(
-            level=Level.WARN if unnamed else Level.OK,
-            summary=summary,
-            note=(
-                f"written to {where}"
-                if keep
-                else "deleted; tick 'keep' to hold on to it"
-            ),
-            fields=(("bytes", str(total)), ("refused", str(len(refused)))),
-            table=Table(head=("Endpoint",), rows=tuple((one,) for one in unnamed))
-            if unnamed
-            else None,
+    sub: Capture
+    inputs = (
+        boolean(
+            "keep",
+            hint="Leave the files on disk. Off deletes them once you have looked.",
         ),
     )
-    if not keep:
+
+    @step("About")
+    def about(self) -> None:
+        found = self.sub.camera()
+        self.where = somewhere()
+        self.total = 0
+        self.refused: list[tuple[str, ...]] = []
+        device = found.status.device()
+        about = {
+            "model": device.product_name,
+            "serial": device.serial_number,
+            "firmware": device.firmware_version,
+            "versions": list(found.link.registry.versions),
+            "declined": list(found.link.registry.offered_beyond_accepted),
+            "taken": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        self.total += written(self.where, ABOUT, about)
+        self.report(f"{device.product_name} {device.serial_number}")
+
+    @step("Manifest")
+    def manifest(self) -> None:
+        found = self.sub.camera()
+        self.responses: dict[str, Any] = {"/ccapi": found.link.manifest}
+        self.report(f"{len(found.link.registry.features)} endpoints")
+
+    @step("Read everything")
+    def read_everything(self) -> None:
+        found = self.sub.camera()
+        for feature in found.link.registry.features:
+            self.checkpoint()
+            if Methods.GET not in found.link.registry.methods_for(feature):
+                continue
+            if feature in STREAMED:
+                self.refused.append(
+                    (feature, "a stream, which a plain GET would hold open")
+                )
+                continue
+            try:
+                self.responses[feature] = found.link.json("GET", feature)
+            except Exception as exc:  # noqa: BLE001
+                self.refused.append((feature, f"{type(exc).__name__}: {exc}"))
+        self.total += written(self.where, RESPONSES, self.responses)
+        self.report(f"{len(self.responses)} answered, {len(self.refused)} refused")
+
+    @step("Settings")
+    def settings(self) -> None:
+        found = self.sub.camera()
+        said: dict[str, Any] = {}
+        for setting in Setting:
+            if not found.settings.offers(setting):
+                continue
+            try:
+                value = found.settings.get(setting)
+                said[str(setting)] = {
+                    "value": value.value,
+                    "allowed": list(value.allowed),
+                }
+            except Exception as exc:  # noqa: BLE001
+                self.refused.append((str(setting), f"{type(exc).__name__}: {exc}"))
+        self.total += written(self.where, SETTINGS, said)
+        self.report(f"{len(said)} settings read")
+
+    @step("Unnamed")
+    def unnamed(self) -> None:
+        found = self.sub.camera()
+        keep = bool(self.values.get("keep"))
+        unnamed = found.link.registry.unnamed(NAMED)
+        self.total += written(self.where, UNNAMED, list(unnamed))
+        summary = (
+            f"{len(unnamed)} endpoint(s) this build has no name for"
+            if unnamed
+            else "every endpoint offered has a name here"
+        )
+        said = self.warn if unnamed else self.report
+        said(
+            summary,
+            Result(
+                level=Level.WARN if unnamed else Level.OK,
+                summary=summary,
+                note=(
+                    f"written to {self.where}"
+                    if keep
+                    else "deleted; tick 'keep' to hold on to it"
+                ),
+                fields=(
+                    ("bytes", str(self.total)),
+                    ("refused", str(len(self.refused))),
+                ),
+                table=Table(head=("Endpoint",), rows=tuple((one,) for one in unnamed))
+                if unnamed
+                else None,
+            ),
+        )
+
+    @end("Tidy up")
+    def tidy_up(self) -> None:
+        where = getattr(self, "where", None)
+        if where is None or self.values.get("keep"):
+            self.report(f"kept in {where}" if where else "nothing was written")
+            return
         shutil.rmtree(where, ignore_errors=True)
+        self.report("deleted")
 
 
-@bench_api.routine(
-    category=SETUP,
-    steps=["Time it"],
-    inputs=[bench_api.integer("samples", min=3, max=500)],
-)
-def round_trip_floor(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class RoundTripFloor(Test[Any]):
     """Time the cheapest call there is, repeatedly.
 
     Every other number this bench reports is measured against this one. A fetch
     that takes 400ms means nothing until you know whether an empty round trip
     takes 4ms or 200.
     """
-    found = capture.camera()
-    samples = int(values.get("samples", 50))
-    taken: list[float] = []
-    for _ in range(samples):
-        started = time.monotonic()
-        found.status.battery()
-        taken.append((time.monotonic() - started) * 1000)
-    taken.sort()
-    middle = taken[len(taken) // 2]
-    yield StepOutcome(
-        PASSED,
-        f"{middle:.0f} ms median",
-        Result(
-            level=Level.OK,
-            summary=f"{samples} round trips, {middle:.0f} ms median",
-            fields=(
-                ("fastest", f"{taken[0]:.0f} ms"),
-                ("median", f"{middle:.0f} ms"),
-                ("slowest", f"{taken[-1]:.0f} ms"),
+
+    sub: Capture
+    inputs = (integer("samples", min=3, max=500),)
+
+    @step("Time it")
+    def time_it(self) -> None:
+        found = self.sub.camera()
+        samples = int(self.values.get("samples", 50))
+        taken: list[float] = []
+        for _ in range(samples):
+            started = time.monotonic()
+            found.status.battery()
+            taken.append((time.monotonic() - started) * 1000)
+        taken.sort()
+        middle = taken[len(taken) // 2]
+        self.measure("median", round(middle), unit="ms")
+        self.report(
+            f"{middle:.0f} ms median",
+            Result(
+                level=Level.OK,
+                summary=f"{samples} round trips, {middle:.0f} ms median",
+                fields=(
+                    ("fastest", f"{taken[0]:.0f} ms"),
+                    ("median", f"{middle:.0f} ms"),
+                    ("slowest", f"{taken[-1]:.0f} ms"),
+                ),
             ),
-        ),
-    )
+        )

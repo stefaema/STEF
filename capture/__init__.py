@@ -4,6 +4,8 @@ One Canon body reached by the CCAPI protocol it serves over HTTP, which is the
 only proprietary part of this machine and the one part nobody here wrote.
 """
 
-from capture.capture import camera, link_state
+from capture.subsystem import Capture
 
-__all__ = ["camera", "link_state"]
+SUBSYSTEM = Capture
+
+__all__ = ["SUBSYSTEM", "Capture"]

@@ -210,3 +210,13 @@ def test_a_confirmation_offers_only_continue():
     assert asked.hint == "Thread the film."
     assert subsystem.labelled_options(asked) == ({"value": True, "label": "Continue"},)
     assert subsystem.coerced(asked, "True") is True
+
+
+def test_a_choice_sent_as_text_comes_back_as_the_option_it_names():
+    item = subsystem.choice("iso", lambda sub: ("400", "800"))
+
+    assert subsystem.coerced(item, "800", object()) == "800"
+
+
+def test_a_choice_of_numbers_sent_as_text_comes_back_as_a_number():
+    assert subsystem.coerced(subsystem.choice("element", Element), "1") == 1

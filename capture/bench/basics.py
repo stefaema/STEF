@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from capture import capture
 from portable.ccapi import Setting, ThermalRestriction
-from shared import bench_api
-from shared.bench_api import (
-    FAILED,
-    PASSED,
-    SETUP,
-    WARNED,
-    Abandoned,
-    Level,
-    Result,
-    StepOutcome,
-    Table,
-)
+from shared.diagnostics import Failed, Test, end, step
+from shared.subsystem import Level, Result, Table
+
+if TYPE_CHECKING:
+    from capture.subsystem import Capture
 
 # The thermal states that stop a scan rather than slow one down.
 REFUSING = frozenset(
@@ -33,22 +24,21 @@ REFUSING = frozenset(
 EXERCISED = (Setting.ISO, Setting.TV)
 
 
-@bench_api.routine(category=SETUP, steps=["Battery", "Heat"])
-def health(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class Health(Test[Any]):
     """Ask the two questions that decide whether a reel can be started at all.
 
     Both are cheap reads and neither moves anything, so this is what to run
     first and what to run again when something later behaves strangely. A body
     that is hot or nearly flat fails in ways that look like network faults.
     """
-    found = capture.camera()
 
-    battery = found.status.battery()
-    flat = not battery.present
-    yield StepOutcome(
-        FAILED if flat else PASSED,
-        f"{battery.source.value}, {battery.power.value}",
-        Result(
+    sub: Capture
+
+    @step("Battery", continue_on_failure=True)
+    def battery(self) -> None:
+        battery = self.sub.camera().status.battery()
+        flat = not battery.present
+        shown = Result(
             level=Level.ERROR if flat else Level.OK,
             summary=f"power is {battery.source.value}",
             fields=(
@@ -56,36 +46,38 @@ def health(values: dict[str, Any]) -> Iterator[StepOutcome]:
                 ("source", battery.source.value),
                 ("charge", battery.power.value),
             ),
-        ),
-    )
+        )
+        said = f"{battery.source.value}, {battery.power.value}"
+        if flat:
+            raise Failed(said, shown)
+        self.report(said, shown)
 
-    heat = found.status.thermal()
-    refusing = heat in REFUSING
-    warm = heat is not ThermalRestriction.NORMAL
-    summary = (
-        "the body is refusing to shoot until it cools"
-        if refusing
-        else f"the body is warm: {heat.name}"
-        if warm
-        else "the body is at normal temperature"
-    )
-    yield StepOutcome(
-        FAILED if refusing else WARNED if warm else PASSED,
-        heat.name,
-        Result(
+    @step("Heat")
+    def heat(self) -> None:
+        heat = self.sub.camera().status.thermal()
+        refusing = heat in REFUSING
+        warm = heat is not ThermalRestriction.NORMAL
+        summary = (
+            "the body is refusing to shoot until it cools"
+            if refusing
+            else f"the body is warm: {heat.name}"
+            if warm
+            else "the body is at normal temperature"
+        )
+        shown = Result(
             level=Level.ERROR if refusing else Level.WARN if warm else Level.OK,
             summary=summary,
             note="nothing else here will behave until this clears"
             if refusing
             else None,
-        ),
-    )
+        )
+        if refusing:
+            raise Failed(heat.name, shown)
+        said = self.warn if warm else self.report
+        said(heat.name, shown)
 
 
-@bench_api.routine(
-    category=SETUP, hazardous=True, steps=["Read", "Write", "Put it back"]
-)
-def read_and_write(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class ReadAndWrite(Test[Any]):
     """Move ISO and shutter speed one notch and put them back where they were.
 
     A scan does nothing to a camera but read settings and write them, so the
@@ -93,66 +85,75 @@ def read_and_write(values: dict[str, Any]) -> Iterator[StepOutcome]:
     exactly that and leave no trace. One notch, because the point is that the
     write took, not what it was set to.
     """
-    found = capture.camera()
 
-    started: dict[Setting, str] = {}
-    choices: dict[Setting, tuple[str, ...]] = {}
-    for setting in EXERCISED:
-        if not found.settings.offers(setting):
-            continue
-        reading = found.settings.get(setting)
-        started[setting] = str(reading.value)
-        choices[setting] = tuple(str(one) for one in reading.allowed)
-    if not started:
-        raise Abandoned("this body offers neither ISO nor shutter speed", FAILED)
-    yield StepOutcome(
-        PASSED, ", ".join(f"{one.name} {started[one]}" for one in started)
-    )
+    sub: Capture
 
-    rows: list[tuple[str, ...]] = []
-    refused = 0
-    for setting, was in started.items():
-        wanted = _next_to(was, choices[setting])
-        if wanted is None:
-            rows.append((setting.name, was, "--", was, "nothing to move to"))
-            continue
-        found.settings.set(setting, wanted)
-        now = str(found.settings.get(setting).value)
-        took = now == wanted
-        refused += not took
-        rows.append((setting.name, was, wanted, now, "took" if took else "refused"))
-    yield StepOutcome(
-        WARNED if refused else PASSED,
-        f"{len(rows) - refused} of {len(rows)} took",
-        Result(
-            level=Level.WARN if refused else Level.OK,
-            summary=f"{len(rows) - refused} of {len(rows)} write(s) took",
-            table=Table(
-                head=("Setting", "Was", "Asked", "Read back", "Verdict"),
-                rows=tuple(rows),
-            ),
-        ),
-    )
+    @step("Read")
+    def read(self) -> None:
+        found = self.sub.camera()
+        self.started: dict[Setting, str] = {}
+        self.choices: dict[Setting, tuple[str, ...]] = {}
+        for setting in EXERCISED:
+            if not found.settings.offers(setting):
+                continue
+            reading = found.settings.get(setting)
+            self.started[setting] = str(reading.value)
+            self.choices[setting] = tuple(str(one) for one in reading.allowed)
+        if not self.started:
+            raise Failed("this body offers neither ISO nor shutter speed")
+        self.report(
+            ", ".join(f"{one.name} {self.started[one]}" for one in self.started)
+        )
 
-    stuck = []
-    for setting, was in started.items():
-        found.settings.set(setting, was)
-        if str(found.settings.get(setting).value) != was:
-            stuck.append(setting.name)
-    yield StepOutcome(
-        FAILED if stuck else PASSED,
-        f"{', '.join(stuck)} did not go back" if stuck else "back as it was",
-        Result(
-            level=Level.ERROR if stuck else Level.OK,
-            summary=(
-                f"{', '.join(stuck)} is not where this found it"
-                if stuck
-                else "every setting is back where this found it"
+    @step("Write", hazard="moves ISO and shutter speed one notch")
+    def write(self) -> None:
+        found = self.sub.camera()
+        rows: list[tuple[str, ...]] = []
+        refused = 0
+        for setting, was in self.started.items():
+            wanted = _next_to(was, self.choices[setting])
+            if wanted is None:
+                rows.append((setting.name, was, "--", was, "nothing to move to"))
+                continue
+            found.settings.set(setting, wanted)
+            now = str(found.settings.get(setting).value)
+            took = now == wanted
+            refused += not took
+            rows.append((setting.name, was, wanted, now, "took" if took else "refused"))
+        said = self.warn if refused else self.report
+        said(
+            f"{len(rows) - refused} of {len(rows)} took",
+            Result(
+                level=Level.WARN if refused else Level.OK,
+                summary=f"{len(rows) - refused} of {len(rows)} write(s) took",
+                table=Table(
+                    head=("Setting", "Was", "Asked", "Read back", "Verdict"),
+                    rows=tuple(rows),
+                ),
             ),
         )
-        if stuck
-        else None,
-    )
+
+    @end("Put it back")
+    def put_it_back(self) -> None:
+        started = getattr(self, "started", {})
+        if not started:
+            self.report("nothing was read, so nothing to put back")
+            return
+        found = self.sub.camera()
+        stuck = []
+        for setting, was in started.items():
+            found.settings.set(setting, was)
+            if str(found.settings.get(setting).value) != was:
+                stuck.append(setting.name)
+        if stuck:
+            raise Failed(
+                f"{', '.join(stuck)} did not go back",
+                Result(
+                    level=Level.ERROR,
+                    summary=f"{', '.join(stuck)} is not where this found it",
+                ),
+            )
+        self.report("back as it was")
 
 
 def _next_to(value: str, allowed: tuple[str, ...]) -> str | None:

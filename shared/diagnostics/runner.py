@@ -109,7 +109,7 @@ class Run:
         finally:
             with self._lock:
                 self.prompt = None
-        value = coerced(question, self._answer)
+        value = coerced(question, self._answer, self.sub)
         self._pending.answers.append((question.name, value))
         return value
 

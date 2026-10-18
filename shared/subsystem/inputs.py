@@ -86,7 +86,7 @@ def confirmation(text: str) -> Input:
 class Kind:
     check: Callable[[Input], None]
     blank: Callable[[Input], Any]
-    coerce: Callable[[Input, Any], Any]
+    coerce: Callable[[Input, Any, Any], Any]
 
 
 def _needs_nothing(item: Input) -> None:
@@ -118,7 +118,17 @@ def truthy(value: Any) -> bool:
     return bool(value)
 
 
-def _coerced_choice(item: Input, value: Any) -> Any:
+def _coerced_choice(item: Input, value: Any, sub: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            offered = current_options(item, sub)
+        except Exception:
+            offered = ()
+        for one in offered:
+            sent = one.value if isinstance(one, Option) else one
+            sent = sent.value if isinstance(sent, enum.Enum) else sent
+            if str(sent) == value:
+                return sent
     if isinstance(value, str) and value.lstrip("-").isdigit():
         return int(value)
     if isinstance(value, str) and value in ("True", "False"):
@@ -126,21 +136,23 @@ def _coerced_choice(item: Input, value: Any) -> Any:
     return value
 
 
-def _coerced_rows(item: Input, value: Any) -> list[dict[str, Any]]:
+def _coerced_rows(item: Input, value: Any, sub: Any) -> list[dict[str, Any]]:
     return [
-        {c.name: KINDS[c.kind].coerce(c, row.get(c.name, 0)) for c in item.columns}
+        {c.name: KINDS[c.kind].coerce(c, row.get(c.name, 0), sub) for c in item.columns}
         for row in value or []
     ]
 
 
 KINDS: dict[str, Kind] = {
     "choice": Kind(_needs_options, _blank_choice, _coerced_choice),
-    "boolean": Kind(_needs_nothing, lambda item: False, lambda item, v: truthy(v)),
+    "boolean": Kind(_needs_nothing, lambda item: False, lambda item, v, sub: truthy(v)),
     "integer": Kind(
-        _needs_nothing, lambda item: item.min or 0, lambda item, v: int(v or 0)
+        _needs_nothing, lambda item: item.min or 0, lambda item, v, sub: int(v or 0)
     ),
-    "bitmask": Kind(_needs_options, lambda item: 0, lambda item, v: int(v or 0)),
-    "raw_bytes": Kind(_needs_nothing, lambda item: "", lambda item, v: as_bytes(v)),
+    "bitmask": Kind(_needs_options, lambda item: 0, lambda item, v, sub: int(v or 0)),
+    "raw_bytes": Kind(
+        _needs_nothing, lambda item: "", lambda item, v, sub: as_bytes(v)
+    ),
     "group": Kind(_needs_columns, lambda item: [], _coerced_rows),
 }
 
@@ -279,18 +291,18 @@ def blank_values(inputs: Sequence[Input]) -> dict[str, Any]:
 
 
 def coerced_values(
-    inputs: Sequence[Input], submitted: Mapping[str, Any]
+    inputs: Sequence[Input], submitted: Mapping[str, Any], sub: Any = None
 ) -> dict[str, Any]:
     """Return submitted values as the Python each input promises."""
     return {
-        item.name: coerced(item, submitted[item.name])
+        item.name: coerced(item, submitted[item.name], sub)
         for item in inputs
         if item.name in submitted
     }
 
 
-def coerced(item: Input, value: Any) -> Any:
-    return KINDS[item.kind].coerce(item, value)
+def coerced(item: Input, value: Any, sub: Any = None) -> Any:
+    return KINDS[item.kind].coerce(item, value, sub)
 
 
 def as_bytes(value: Any) -> bytes:

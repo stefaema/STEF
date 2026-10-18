@@ -8,23 +8,20 @@ between them, which is what makes a loop the way to declare them.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
-from capture import capture
 from portable.ccapi import Setting
-from shared import bench_api
-from shared.bench_api import (
-    CALL,
-    PASSED,
+from shared.diagnostics import Command
+from shared.subsystem import (
     READY,
-    WARNED,
     Level,
+    LinkState,
     Option,
     Readiness,
     Result,
-    StepOutcome,
     blocked,
+    choice,
 )
 
 GROUP = "calls"
@@ -43,20 +40,19 @@ HAZARDOUS = {
 }
 
 
-def allowed_for(setting: Setting) -> Callable[[], tuple[Option, ...]]:
+def allowed_for(setting: Setting) -> Callable[[Any], tuple[Option, ...]]:
     """Return what fills this setting's value control, asked when it is drawn.
 
     Asked and not declared: what a body accepts depends on the mode it is in,
     and a list captured at import would be the list some other camera had.
     """
 
-    def options() -> tuple[Option, ...]:
-        if capture.link_state() is not bench_api.SubsystemLinkState.UP:
+    def options(sub: Any) -> tuple[Option, ...]:
+        if sub is None or sub.link_state() is not LinkState.UP:
             return ()
         try:
             return tuple(
-                Option(one, str(one))
-                for one in capture.camera().settings.allowed(setting)
+                Option(one, str(one)) for one in sub.camera().settings.allowed(setting)
             )
         except Exception:  # noqa: BLE001
             return ()
@@ -64,106 +60,77 @@ def allowed_for(setting: Setting) -> Callable[[], tuple[Option, ...]]:
     return options
 
 
-def offered(setting: Setting) -> Callable[[], Readiness]:
-    """Return the gate that hides a setting this body does not have."""
-
-    def can_run() -> Readiness:
-        if capture.link_state() is not bench_api.SubsystemLinkState.UP:
-            return blocked("not connected")
-        if not capture.camera().settings.offers(setting):
+def offered(setting: Setting) -> Callable[[Any], Readiness]:
+    def can_run(sub: Any) -> Readiness:
+        if not sub.camera().settings.offers(setting):
             return blocked("this camera does not offer it")
         return READY
 
     return can_run
 
 
-def reader(setting: Setting) -> Callable[[dict[str, Any]], Iterator[StepOutcome]]:
+def reader(setting: Setting) -> Callable[[Any, dict[str, Any]], Result]:
     """Return the routine that reads one setting and says what it will accept."""
 
-    def run(values: dict[str, Any]) -> Iterator[StepOutcome]:
-        found = capture.camera().settings.get(setting)
-        yield StepOutcome(
-            PASSED,
-            str(found.value),
-            Result(
-                level=Level.OK,
-                summary=f"{setting} is {found.value!r}",
-                fields=(
-                    ("value", str(found.value)),
-                    ("writable", "yes" if found.writable else "no"),
-                    ("allowed", ", ".join(str(one) for one in found.allowed) or "-"),
-                ),
+    def run(sub: Any, values: dict[str, Any]) -> Result:
+        found = sub.camera().settings.get(setting)
+        return Result(
+            level=Level.OK,
+            summary=f"{setting} is {found.value!r}",
+            fields=(
+                ("value", str(found.value)),
+                ("writable", "yes" if found.writable else "no"),
+                ("allowed", ", ".join(str(one) for one in found.allowed) or "-"),
             ),
         )
 
     return run
 
 
-def writer(setting: Setting) -> Callable[[dict[str, Any]], Iterator[StepOutcome]]:
-    """Return the routine that writes one setting, checks it, and puts it back."""
-
-    def run(values: dict[str, Any]) -> Iterator[StepOutcome]:
-        settings = capture.camera().settings
-        was = settings.get(setting)
+def writer(setting: Setting) -> Callable[[Any, dict[str, Any]], Result]:
+    def run(sub: Any, values: dict[str, Any]) -> Result:
+        settings = sub.camera().settings
         asked = values.get("value")
-        yield StepOutcome(PASSED, f"was {was.value!r}")
-
         settings.set(setting, asked)
         now = settings.get(setting).value
         took = now == asked
-        yield StepOutcome(
-            PASSED if took else WARNED,
-            f"now {now!r}",
-            Result(
-                level=Level.OK if took else Level.WARN,
-                summary=f"asked {asked!r}, got {now!r}",
-                note=None if took else "the camera did not take it, and said nothing",
-            ),
-        )
-
-        settings.set(setting, was.value)
-        back = settings.get(setting).value
-        yield StepOutcome(
-            PASSED if back == was.value else WARNED,
-            f"back to {back!r}",
+        return Result(
+            level=Level.OK if took else Level.WARN,
+            summary=f"asked {asked!r}, got {now!r}",
+            note=None if took else "the camera did not take it, and said nothing",
         )
 
     return run
 
 
-def declare() -> int:
-    """Declare a read and a write routine for every setting the protocol names."""
-    made = 0
+def declared() -> tuple[Command, ...]:
+    """Declare a read and a write command for every setting the protocol names."""
+    made = []
     for setting in Setting:
         name = setting.name.lower()
-        bench_api.register_routine(
-            declared_in=__name__,
-            group=GROUP,
-            name=f"read_{name}",
-            title=f"Read {name}",
-            description=f"Read {setting} and what this body will accept for it.",
-            category=CALL,
-            run=reader(setting),
-            can_run=offered(setting),
+        made.append(
+            Command(
+                group=GROUP,
+                name=f"read_{name}",
+                title=f"Read {name}",
+                description=f"Read {setting} and what this body will accept for it.",
+                call=reader(setting),
+                can_run=offered(setting),
+            )
         )
-        bench_api.register_routine(
-            declared_in=__name__,
-            group=GROUP,
-            name=f"write_{name}",
-            title=f"Write {name}",
-            description=(
-                f"Write {setting}, read it back, and put the previous value "
-                "back however it goes."
-            ),
-            category=CALL,
-            hazardous=setting in HAZARDOUS,
-            steps=["Read", "Write", "Restore"],
-            inputs=[bench_api.choice("value", allowed_for(setting))],
-            run=writer(setting),
-            can_run=offered(setting),
+        made.append(
+            Command(
+                group=GROUP,
+                name=f"write_{name}",
+                title=f"Write {name}",
+                description=f"Write {setting} and read back what the body took.",
+                call=writer(setting),
+                inputs=(choice("value", allowed_for(setting)),),
+                hazard=f"changes {setting}" if setting in HAZARDOUS else None,
+                can_run=offered(setting),
+            )
         )
-        made += 2
-    return made
+    return tuple(made)
 
 
-DECLARED = declare()
+COMMANDS = declared()
