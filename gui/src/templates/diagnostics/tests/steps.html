@@ -30,13 +30,14 @@
   {%- endif %}
   {%- if test.last and test.last.prompt %}{% include "diagnostics/tests/prompt.html" %}{% endif %}
   {%- if end_errored(test) %}
-  <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-red-600 bg-red-600 text-white">
-    {{ M.icon("error", "size-5") }}
-    <div class="flex-1 min-w-0 text-sm font-semibold">{{ _("Could not confirm the hardware was left safe. Check it, or press Stop.") }}</div>
-    <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-50"
-            hx-post="/diagnostics/{{ sub.id }}/stop" hx-target="#main" hx-swap="innerHTML" hx-disabled-elt="this">
-      {{ M.icon("power_settings_new", "size-4") }}<span>{{ _("Stop") }}</span>
-    </button>
+  <div class="flex flex-col gap-1 px-3 py-3 border-b border-red-600 bg-red-600 text-white">
+    <div class="flex items-center gap-3 text-sm font-semibold">
+      {{ M.icon("error", "size-5") }}
+      <span>{{ _("Could not confirm the hardware was left safe. Check it before running anything else.") }}</span>
+    </div>
+    {%- if test.hazardous %}
+    <div class="pl-8 text-sm">{{ _("This test has hazardous steps. If the hardware is still moving or powered, cut its power.") }}</div>
+    {%- endif %}
   </div>
   {%- endif %}
   {%- for row in rows_of(test) %}

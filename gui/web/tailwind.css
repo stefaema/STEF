@@ -603,9 +603,6 @@
   .bg-transparent {
     background-color: transparent;
   }
-  .bg-white {
-    background-color: var(--color-white);
-  }
   .bg-yellow-50 {
     background-color: var(--color-yellow-50);
   }
@@ -777,9 +774,6 @@
   .text-red-600 {
     color: var(--color-red-600);
   }
-  .text-red-700 {
-    color: var(--color-red-700);
-  }
   .text-white {
     color: var(--color-white);
   }
@@ -871,9 +865,6 @@
       .hover\:bg-gray-200\/40:hover {
         background-color: color-mix(in oklab, var(--color-gray-200) 40%, transparent);
       }
-    }
-    .hover\:bg-red-50:hover {
-      background-color: var(--color-red-50);
     }
     .hover\:bg-red-100:hover {
       background-color: var(--color-red-100);
