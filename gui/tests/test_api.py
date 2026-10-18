@@ -264,3 +264,9 @@ def test_a_readiness_crosses_as_its_verdict_and_its_reason():
 
     assert as_json(READY) == {"ok": True, "reason": None}
     assert as_json(blocked("no")) == {"ok": False, "reason": "no"}
+
+
+def test_a_tool_that_needs_the_link_sends_you_back_to_link_while_it_is_down(client):
+    page = client.get("/diagnostics/transport/tests", follow_redirects=False)
+    assert page.status_code == 307
+    assert page.headers["location"] == "/diagnostics/transport"

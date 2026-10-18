@@ -698,8 +698,10 @@ def diagnostics_for(request: Request, name: str) -> Any:
 
 @app.get("/diagnostics/{name}/{tool}", response_class=HTMLResponse)
 def diagnostics_tool(request: Request, name: str, tool: str) -> Any:
-    subsystem_of(name)
-    return _page(request, name, tool if tool in view.TOOLS else "link")
+    sub = subsystem_of(name)
+    if tool not in view.TOOLS or (tool != "link" and not view.is_up(sub)):
+        return RedirectResponse(f"/diagnostics/{name}")
+    return _page(request, name, tool)
 
 
 # ── The stream everything reports on ─────────────────────────────────────────
