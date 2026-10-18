@@ -33,7 +33,9 @@ tier lives under `bench/` and nothing on the connect path reaches it.
 because each has a different remedy: our firmware answering, something the PC
 cannot talk to, silence, and a port that is gone or will not open. `can_connect` runs the same call and blocks with the same
 sentence, so a disabled Connect button names what it found rather than asking
-the operator to go and run something first.
+the operator to go and run something first. `Transport.probe` is `can_connect`,
+and `connect` refuses whatever it blocks. Opening the link asks `sys.version`
+once more and closes the port again if `fw_api.compatible()` refuses the board.
 
 ## Which firmware is the right one
 
@@ -62,34 +64,34 @@ firmware compiles and the PC imports, so neither can drift.
 | `fw/link.py` | a firmware on the other end of a port, and the calls it serves |
 | `fw/probe.py` | who is on a port, without disturbing them |
 | `fw/image.py` | what is installed here, and which of it this machine runs |
-| `transport.py` | the subsystem the bench sees, and the link it is reached through |
+| `subsystem.py` | the `Transport` subsystem: its link, its tests and commands, and `stop` |
+| `transport.py` | what a port is called, and how a link to it is opened |
 | `device_profile.py` | which registers a driver is given, and what it is called |
 | `bench/rom.py` | what the bootloader answers, and how an image gets written |
 
 ## What an operator runs
 
-Everything the screen offers is a `bench_api` routine, and `bench/` holds one
-module per stage of the link's life. A module's name is the group its routines
-answer to, so where a routine lives is what it is called:
+`Transport` is a `shared/diagnostics` subsystem. `bench/` holds the tests and
+commands that it lists, one module per stage of the link's life. A module's name
+is the group its tests answer to:
 
-| module | category | what it holds |
-| --- | --- | --- |
-| `bench/link.py` | `LINK` | connect and disconnect, and what blocks each |
-| `bench/prelink.py` | `PRELINK` | the ladder, and flashing, while nothing holds the port |
-| `bench/setup.py` | `SETUP` | bringing a driver up to its baseline, once the link is open |
-| `bench/calls.py` | `CALL` | one routine per firmware method, declared in a loop |
+| module | what it holds |
+| --- | --- |
+| `bench/link.py` | the port the connect form offers, and `can_connect` |
+| `bench/prelink.py` | the ladder, and flashing, with `needs=DOWN` because both need the port to themselves |
+| `bench/setup.py` | bringing a driver up to its baseline |
+| `bench/spin.py` | one turn from a pulse train, and one from VACTUAL, both ending at rest |
+| `bench/spin_measure.py` | what the two turns measure, and the constants they measure against |
+| `bench/calls.py` | one command per firmware method, built in a loop |
 
-`prelink` runs only while the link is down, since both the probe ladder and a
-flash need the port to themselves. `setup` and `calls` run only while it is up.
-The category carries that rule, so neither module states it again.
+`calls.py` writes none of its commands out. `fw_api` already generates one
+annotated dataclass per firmware method, which is what a form derives from, so
+the commands are built in a loop over the ABI and a header change moves them
+without an edit here.
 
-`calls.py` writes none of its twenty-six routines out. `fw_api` already
-generates one annotated dataclass per firmware method, which is what a form
-derives from, so the declarations are made in a loop over the ABI and a header
-change moves them without an edit here.
-
-A declaration module must not look like a test module, or pytest collects it,
-imports it a second time, and every routine in it registers twice.
+`stop` halts every drive (ramped, then immediately if the ramp is refused), sets
+VACTUAL to zero and switches the power stage off. It tries every drive before it
+raises, and names each one that it could not confirm.
 
 ## Tests
 

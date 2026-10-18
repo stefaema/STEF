@@ -5,7 +5,7 @@ Loguru configured once. Every line names the module that wrote it.
 ## A line
 
 ```
-[INFO    ] 2026-08-22 08:22:18.719 [bench_api           ] [transport.prelink.verify_port] open load
+[INFO    ] 2026-08-22 08:22:18.719 [diagnostics         ] [transport.prelink.VerifyPort] open load
 [INFO    ] 2026-08-22 08:22:18.719 [capture.probe       ] no camera answered
 ```
 
