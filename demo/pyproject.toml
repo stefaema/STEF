@@ -1,0 +1,10 @@
+[project]
+name = "stef-demo"
+version = "0.1.0"
+description = "A subsystem with no hardware behind it"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+pythonpath = [".."]
+testpaths = ["tests"]
+cache_dir = "build/pytest"
