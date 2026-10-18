@@ -70,7 +70,6 @@ class Demo(Linked[str], Diagnosable):
             level=Level.OK,
             summary="a demo board, with nothing behind it",
             fields=(
-                ("open for", f"{time.monotonic() - board.opened:.0f} s"),
                 ("drives", ", ".join(board.drives)),
                 ("temperature", f"{board.temperature()} C"),
             ),
