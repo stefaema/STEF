@@ -355,10 +355,11 @@ def test_stopping_now_does_not_wait_for_the_end_step(oven, monkeypatch):
 
     assert oven.stopped == 1
     assert oven.running() is not None
+    assert oven.running().stopped is not None
+    assert oven.running().stopped.summary.startswith("stopped now")
     release.set()
     worker.join(5)
     assert oven.stopped == 1
-    assert done["run"].stopped is None
 
 
 def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):

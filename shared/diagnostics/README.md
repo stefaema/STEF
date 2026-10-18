@@ -236,7 +236,8 @@ and then the run calls `stop` itself. What `stop` did is reported through
 `report` as a `Result`, and kept on the run as `stopped`.
 
 `stop_now` calls `stop` at once, even while a cancelled test's end step is
-still running, and logs that it did. The run then does not call `stop` again.
+still running, and logs that it did. Its result is reported and kept on the run
+as `stopped` straight away, and the run does not call `stop` again.
 
 `cancel` is for callers that have no operator to decide, such as `disconnect`.
 

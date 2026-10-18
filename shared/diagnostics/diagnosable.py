@@ -179,13 +179,15 @@ class Diagnosable(Subsystem):
     def stop_now(self) -> None:
         with self._run_lock:
             run = self._running
-        if run is not None:
-            run.stop_forced = True
-            run.cancelled.set()
-            run_log.log.warning(
-                "{}: stopping now, while the run is still finishing", run.name
-            )
-        self.stop()
+        if run is None:
+            self.stop()
+            return
+        run.stop_forced = True
+        run.cancelled.set()
+        run_log.log.warning(
+            "{}: stopping now, while the run is still finishing", run.name
+        )
+        run.stopped_now(self.stop)
 
     def cancel(self) -> None:
         with self._run_lock:
