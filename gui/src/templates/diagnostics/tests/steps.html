@@ -3,12 +3,17 @@
 {%- import "macros/result.html" as R -%}
 {%- set status = status_of(test) -%}
 <div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}
-     {{- " data-unfold" if status in ("running", "waiting", "stopping") }}>
+     {{- " data-unfold" if status in ("running", "waiting", "stopping", "finishing") }}>
   <div class="flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700">
     <div class="flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ _("Steps") }}</div>
     {%- if test.last and test.last.outcomes %}{{ M.copy_button(test|as_run(sub.id)) }}{% endif %}
   </div>
-  {%- if status == "stopping" %}
+  {%- if status == "finishing" %}
+  <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-orange-500 bg-orange-100 text-orange-600">
+    {{ M.icon("power_settings_new", "size-5") }}
+    <div class="flex-1 min-w-0 text-sm font-semibold">{{ _("Stopped the hardware. Waiting for the end step to finish.") }}</div>
+  </div>
+  {%- elif status == "stopping" %}
   {%- set waited = stop_waited(test) %}
   {%- set late = waited >= STOP_PATIENCE_S %}
   <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b {{ "border-red-600 bg-red-600 text-white" if late else "border-orange-500 bg-orange-100 text-orange-600" }}">

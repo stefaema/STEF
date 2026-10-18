@@ -26,6 +26,7 @@ OUTCOME = {
     "waiting": ("help", "text-yellow-500"),
     "cancelled": ("block", "text-orange-500"),
     "stopping": ("power_settings_new", "text-orange-500"),
+    "finishing": ("progress_activity", "text-orange-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
@@ -47,6 +48,7 @@ STATUS_LABEL = {
     "waiting": mark("Waiting for you"),
     "cancelled": mark("Cancelled"),
     "stopping": mark("Stopping"),
+    "finishing": mark("Finishing up"),
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
@@ -171,6 +173,8 @@ def status_of(test: TestView) -> str:
     if last is None:
         return "idle"
     if last.running:
+        if last.stopped is not None:
+            return "finishing"
         if last.stop_requested is not None:
             return "stopping"
         return "waiting" if last.prompt is not None else "running"
