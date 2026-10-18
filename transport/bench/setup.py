@@ -2,27 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from shared import bench_api, fw_api
-from shared.bench_api import (
-    FAILED,
-    PASSED,
-    WARNED,
-    Abandoned,
-    Level,
-    Result,
-    StepOutcome,
-    Table,
-)
-from transport import device_profile, transport
+from shared import fw_api
+from shared.diagnostics import Failed, Test, step
+from shared.subsystem import Level, Result, Table, choice
+from transport import device_profile
 from transport.bench.calls import DEVICE, devices
+
+if TYPE_CHECKING:
+    from transport.subsystem import Transport
 
 PROFILE = "Profile"
 BRING_UP = "Bring-up"
 READ_BACK = "Read-back"
 HEALTH = "Health"
+CACHED_REGISTERS = "Cached registers"
 
 CACHED = (fw_api.TMC2209_GCONF, fw_api.TMC2209_CHOPCONF)
 
@@ -71,19 +66,7 @@ def _written(ops: tuple[Any, ...]) -> Table:
 # ── Bringing one driver up ───────────────────────────────────────────────────
 
 
-@bench_api.routine(
-    hazardous=True,
-    steps=[PROFILE, BRING_UP, READ_BACK, HEALTH],
-    inputs=[
-        bench_api.choice("idx", devices, hint=DEVICE),
-        bench_api.choice(
-            "profile",
-            device_profile.names,
-            hint="Which profile to write, out of the ones installed here.",
-        ),
-    ],
-)
-def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
+class BaselineBringup(Test[Any]):
     """Bring a driver up to its baseline.
 
     Writes one configuration profile onto a driver and asks what it made of it.
@@ -94,93 +77,116 @@ def baseline_bringup(values: dict[str, Any]) -> Iterator[StepOutcome]:
     the wiring and the link work, and it is where a profile for a real load
     starts.
     """
-    raw = transport.firmware().raw
-    idx = values["idx"]
-    name = values["profile"]
 
-    try:
-        ops = device_profile.ops(device_profile.load(name))
-    except Exception as exc:
-        raise Abandoned(
-            f"{name} is not a configuration this driver can be given: {exc}", FAILED
-        ) from exc
-    yield StepOutcome(
-        PASSED,
-        f"{name} covers all {len(ops)} owned registers",
-        Result(
-            level=Level.OK,
-            summary=f"{name}, as the firmware's own codecs encode it",
-            fields=(("profile", name),),
-            table=_written(ops),
+    sub: Transport
+    inputs = (
+        choice("idx", devices, hint=DEVICE),
+        choice(
+            "profile",
+            lambda sub: device_profile.names(),
+            hint="Which profile to write, out of the ones installed here.",
         ),
-        step=PROFILE,
     )
 
-    found = raw.bringup(idx=idx, ops=list(ops)).gstat_at_bringup
-    yield StepOutcome(
-        PASSED,
-        f"the driver holds {name}, and GSTAT was {hex_word(found)} when it was claimed",
-        Result(
-            level=Level.OK,
-            summary=f"GSTAT as found, {hex_word(found)}",
-            note="What the driver went through before this firmware owned it. "
-            "Cleared by the bring-up that reported it.",
-            fields=flag_rows(fw_api.tmc2209_gstat_decode(found)),
-        ),
-        step=BRING_UP,
-    )
-
-    agreed = raw.verify_config(idx=idx)
-    if not agreed.agrees:
-        differing = ", ".join(device_profile.slot_names(agreed.mismatched))
-        raise Abandoned(
-            f"the driver disagrees with what was written: {differing or 'no register named'}",
-            FAILED,
+    @step(PROFILE)
+    def profile(self) -> None:
+        self.raw = self.sub.firmware().raw
+        self.idx = self.values["idx"]
+        name = self.values["profile"]
+        try:
+            self.ops = device_profile.ops(device_profile.load(name))
+        except Exception as exc:
+            raise Failed(
+                f"{name} is not a configuration this driver can be given: {exc}"
+            ) from exc
+        self.report(
+            f"{name} covers all {len(self.ops)} owned registers",
             Result(
-                level=Level.ERROR,
-                summary="the driver holds something else",
-                note="Only GCONF and CHOPCONF read back; the other eight owned "
-                "registers are write-only.",
+                level=Level.OK,
+                summary=f"{name}, as the firmware's own codecs encode it",
+                fields=(("profile", name),),
+                table=_written(self.ops),
+            ),
+        )
+
+    @step(BRING_UP, hazard="rewrites every owned register")
+    def bring_up(self) -> None:
+        name = self.values["profile"]
+        found = self.raw.bringup(idx=self.idx, ops=list(self.ops)).gstat_at_bringup
+        self.report(
+            f"the driver holds {name}, and GSTAT was {hex_word(found)} when it was claimed",
+            Result(
+                level=Level.OK,
+                summary=f"GSTAT as found, {hex_word(found)}",
+                note="What the driver went through before this firmware owned it. "
+                "Cleared by the bring-up that reported it.",
+                fields=flag_rows(fw_api.tmc2209_gstat_decode(found)),
+            ),
+        )
+
+    @step(READ_BACK)
+    def read_back(self) -> None:
+        agreed = self.raw.verify_config(idx=self.idx)
+        if not agreed.agrees:
+            differing = ", ".join(device_profile.slot_names(agreed.mismatched))
+            raise Failed(
+                f"the driver disagrees with what was written: {differing or 'no register named'}",
+                Result(
+                    level=Level.ERROR,
+                    summary="the driver holds something else",
+                    note="Only GCONF and CHOPCONF read back; the other eight owned "
+                    "registers are write-only.",
+                    fields=(("mismatched", hex_word(agreed.mismatched)),),
+                ),
+            )
+        self.report(
+            "the two registers that read back agree with what was written",
+            Result(
+                level=Level.OK,
+                summary="GCONF and CHOPCONF agree",
                 fields=(("mismatched", hex_word(agreed.mismatched)),),
             ),
         )
-    yield StepOutcome(
-        PASSED,
-        "the two registers that read back agree with what was written",
-        Result(
-            level=Level.OK,
-            summary="GCONF and CHOPCONF agree",
-            fields=(("mismatched", hex_word(agreed.mismatched)),),
-        ),
-        step=READ_BACK,
-    )
 
-    conditions = fw_api.Tmc2209Condition(raw.poll_health(idx=idx).conditions)
-    unexpected = conditions & ~EXPECTED
-    if unexpected:
-        summary = named_conditions(unexpected)
-    elif conditions:
-        summary = (
-            f"{named_conditions(conditions)}, which is what a driver at rest reports"
+    @step(HEALTH)
+    def health(self) -> None:
+        conditions = fw_api.Tmc2209Condition(
+            self.raw.poll_health(idx=self.idx).conditions
         )
-    else:
-        summary = "nothing reported"
-    yield StepOutcome(
-        WARNED if unexpected else PASSED,
-        f"health: {named_conditions(conditions) or 'nothing reported'}",
-        Result(
-            level=Level.WARN if unexpected else Level.OK,
-            summary=summary,
-            note="Reported, not judged. Latched conditions survive until "
-            "clear_faults acknowledges them. Standstill and open load are what "
-            "a stopped driver reports, so neither is held against it here.",
-            fields=(("conditions", hex_word(int(conditions))),),
-        ),
-        step=HEALTH,
-    )
+        unexpected = conditions & ~EXPECTED
+        if unexpected:
+            summary = named_conditions(unexpected)
+        elif conditions:
+            summary = f"{named_conditions(conditions)}, which is what a driver at rest reports"
+        else:
+            summary = "nothing reported"
+        said = self.warn if unexpected else self.report
+        said(
+            f"health: {named_conditions(conditions) or 'nothing reported'}",
+            Result(
+                level=Level.WARN if unexpected else Level.OK,
+                summary=summary,
+                note="Reported, not judged. Latched conditions survive until "
+                "clear_faults acknowledges them. Standstill and open load are what "
+                "a stopped driver reports, so neither is held against it here.",
+                fields=(("conditions", hex_word(int(conditions))),),
+            ),
+        )
 
-    for reg in CACHED:
-        held = raw.read(idx=idx, reg=int(reg)).value
-        yield StepOutcome(
-            PASSED, f"{device_profile.register_name(int(reg))} holds {hex_word(held)}"
+    @step(CACHED_REGISTERS)
+    def cached_registers(self) -> None:
+        rows = tuple(
+            (
+                device_profile.register_name(int(reg)),
+                hex_word(self.raw.read(idx=self.idx, reg=int(reg)).value),
+            )
+            for reg in CACHED
+        )
+        self.report(
+            ", ".join(f"{name} holds {value}" for name, value in rows),
+            Result(
+                level=Level.OK,
+                summary="what the firmware caches for the registers that read back",
+                table=Table(head=("register", "value"), rows=rows),
+            ),
         )

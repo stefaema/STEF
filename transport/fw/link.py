@@ -54,6 +54,10 @@ class FrameReader:
         """Return how many runs exceeded the bound, so delimiters had gone missing."""
         return self._splitter.dropped
 
+    @property
+    def alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
     def start(self) -> None:
         """Start the one thread that owns reading."""
         if self._thread is not None:
@@ -354,6 +358,10 @@ class FirmwareLink:
     def dropped(self) -> int:
         """Return how much was discarded: oversized runs, and logs nobody took."""
         return self._reader.dropped + self._logs.dropped
+
+    @property
+    def alive(self) -> bool:
+        return self._reader.alive
 
     def close(self) -> None:
         """Stop every thread, drop the port, and release anyone still waiting."""

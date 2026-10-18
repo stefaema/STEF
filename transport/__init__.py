@@ -4,6 +4,8 @@ One board carrying the stepper drivers, reached by the RPC protocol the firmware
 serves.
 """
 
-from transport.transport import firmware, link_state
+from transport.subsystem import Transport
 
-__all__ = ["firmware", "link_state"]
+SUBSYSTEM = Transport
+
+__all__ = ["SUBSYSTEM", "Transport"]

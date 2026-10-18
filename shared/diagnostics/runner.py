@@ -13,6 +13,7 @@ from shared.diagnostics.records import (
     SKIPPED,
     WARNED,
     Cancelled,
+    Failed,
     Measurement,
     NoAnswer,
     Prompt,
@@ -165,13 +166,21 @@ class Run:
             status, detail = done.status, done.detail
             if done.result is not None:
                 pending.result = done.result
-            stop = SkipReason.NOT_NEEDED
+            stop = (
+                SkipReason.NOT_REACHED
+                if done.status in (FAILED, ERROR)
+                else SkipReason.NOT_NEEDED
+            )
         except Skip as skip:
             status, detail, skipped = SKIPPED, skip.detail, SkipReason.NOT_NEEDED
         except Cancelled:
             status, detail, stop = WARNED, "cancelled", SkipReason.CANCELLED
         except NoAnswer as exc:
             status, detail = FAILED, str(exc)
+        except Failed as failed:
+            status, detail = FAILED, failed.detail
+            if failed.result is not None:
+                pending.result = failed.result
         except Exception as exc:
             status, detail = FAILED, f"{type(exc).__name__}: {exc}"
 

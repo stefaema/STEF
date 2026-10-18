@@ -94,5 +94,12 @@ class Cancelled(Exception):
     pass
 
 
+class Failed(Exception):
+    def __init__(self, detail: str, result: Result | None = None) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.result = result
+
+
 class NoAnswer(Exception):
     pass

@@ -2,10 +2,11 @@
 
 import pytest
 
-from shared import bench_api, fw_api
-from shared.bench_api import FAILED, PASSED, SKIPPED, WARNED
-from transport import device_profile, transport
+from shared import fw_api
+from shared.diagnostics import FAILED, PASSED, SKIPPED, WARNED
+from transport import device_profile
 from transport.bench import setup
+from transport.tests.conftest import Board
 
 BASELINE = "capstan_base"
 
@@ -45,20 +46,21 @@ class Raw:
 
 
 @pytest.fixture
-def raw(monkeypatch):
-    """Answer every call this routine makes, with the link reporting itself up."""
-    answering = Raw()
-    monkeypatch.setattr(
-        transport, "firmware", lambda: type("Link", (), {"raw": answering})()
-    )
-    return answering
+def raw():
+    """Answer every call this routine makes."""
+    return Raw()
+
+
+@pytest.fixture
+def declared(linked_to, raw):
+    """Return the subsystem, linked to a board that answers through `raw`."""
+    return linked_to(Board(raw))
 
 
 def outcomes(declared, raw, **values):
     """Return every outcome the bring-up yields, in order."""
-    return list(
-        bench_api.run_routine(declared.routines["setup.baseline_bringup"], values)
-    )
+    found = declared.run_test("setup.BaselineBringup", values, lambda said: None)
+    return list(found.outcomes)
 
 
 def payload_of(raw, name):
@@ -81,10 +83,13 @@ def test_every_step_settles_and_the_driver_ends_configured(declared, raw):
     ]
 
 
-def test_the_registers_read_back_after_the_named_steps_number_themselves(declared, raw):
+def test_the_cached_registers_are_read_back_as_one_table(declared, raw):
     settled = outcomes(declared, raw, idx=0, profile=BASELINE)
 
-    assert [step.step for step in settled[4:]] == ["#5", "#6"]
+    assert settled[4].step == setup.CACHED_REGISTERS
+    assert settled[4].result is not None
+    assert settled[4].result.table is not None
+    assert [row[0] for row in settled[4].result.table.rows] == ["GCONF", "CHOPCONF"]
 
 
 def test_the_bringup_carries_the_profile_as_the_firmware_frames_it(declared, raw):
@@ -103,13 +108,11 @@ def test_a_profile_that_does_not_load_stops_the_run_before_the_wire(declared, ra
     settled = outcomes(declared, raw, idx=0, profile="nothing_installed")
 
     assert settled[0].status is FAILED
-    assert [step.status for step in settled[1:]] == [SKIPPED] * 3
+    assert [step.status for step in settled[1:]] == [SKIPPED] * 4
     assert raw.sent == []
 
 
-def test_a_driver_holding_something_else_fails_the_read_back(
-    declared, raw, monkeypatch
-):
+def test_a_driver_holding_something_else_fails_the_read_back(declared, raw):
     raw.agrees = False
     raw.mismatched = 1 << fw_api.tmc2209_reg_slot(fw_api.TMC2209_GCONF)
 
@@ -128,3 +131,67 @@ def test_a_condition_is_reported_and_never_fails_the_run(declared, raw):
     assert settled[3].status is WARNED
     assert "OVERTEMP_WARNING" in settled[3].detail
     assert len(settled) > 4
+
+
+# ── Stopping everything ──────────────────────────────────────────────────────
+
+
+class Stoppable:
+    def __init__(self, refuses=()):
+        self.sent = []
+        self.refuses = refuses
+        self.on = {}
+
+    def halt(self, idx, immediate):
+        self.sent.append(("halt", idx, immediate))
+        if ("halt", idx, immediate) in self.refuses:
+            raise TimeoutError("no reply")
+
+    def set_velocity(self, idx, velocity):
+        self.sent.append(("set_velocity", idx, velocity))
+
+    def enable(self, idx, on):
+        self.sent.append(("enable", idx, on))
+        self.on[idx] = on and ("stuck", idx) not in self.refuses
+        if ("stuck", idx) in self.refuses:
+            self.on[idx] = True
+
+    def is_enabled(self, idx):
+        return type("Enabled", (), {"on": self.on.get(idx, False)})()
+
+
+def test_stopping_halts_zeroes_and_releases_every_drive(linked_to):
+    raw = Stoppable()
+    sub = linked_to(Board(raw, names=("capstan", "takeup")))
+
+    sub.stop()
+
+    assert raw.sent == [
+        ("halt", 0, False),
+        ("set_velocity", 0, 0),
+        ("enable", 0, False),
+        ("halt", 1, False),
+        ("set_velocity", 1, 0),
+        ("enable", 1, False),
+    ]
+
+
+def test_a_ramp_that_is_refused_falls_back_to_an_immediate_halt(linked_to):
+    raw = Stoppable(refuses=(("halt", 0, False),))
+    sub = linked_to(Board(raw))
+
+    sub.stop()
+
+    assert ("halt", 0, True) in raw.sent
+
+
+def test_a_drive_that_will_not_release_is_named_after_every_drive_was_tried(
+    linked_to,
+):
+    raw = Stoppable(refuses=(("stuck", 0),))
+    sub = linked_to(Board(raw, names=("capstan", "takeup")))
+
+    with pytest.raises(RuntimeError, match="capstan: RuntimeError"):
+        sub.stop()
+
+    assert ("enable", 1, False) in raw.sent

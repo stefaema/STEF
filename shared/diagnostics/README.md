@@ -205,6 +205,7 @@ a step's title is written only once.
 | --- | --- |
 | return normally | the step passes |
 | raise | the step fails, with the exception as the detail |
+| `raise Failed(detail, result=None)` | the step fails with this detail and `Result` |
 | `self.report(detail, result=None)` | sets the step's detail and attaches a `Result` |
 | `self.warn(detail, result=None)` | the same, and the step passes with a warning |
 | `self.measure(name, value, unit=, low=, high=, expected=)` | records a value and its limits |
@@ -312,7 +313,7 @@ Prompt(test, step, question, timeout)
 | reason | when |
 | --- | --- |
 | `NOT_NEEDED` | the test called `finish` or `skip` |
-| `NOT_REACHED` | an earlier step failed |
+| `NOT_REACHED` | an earlier step failed, or finished as failed |
 | `CANCELLED` | the run was cancelled |
 
 The run's verdict is its worst status, in the order error, failed, warned,

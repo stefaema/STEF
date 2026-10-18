@@ -14,12 +14,25 @@ from __future__ import annotations
 import ctypes
 import dataclasses
 import enum
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
-from shared import bench_api, fw_api
-from shared.bench_api import CALL, PASSED, Level, Option, Result, StepOutcome, Table
-from transport import transport
+from shared import fw_api
+from shared.diagnostics import Command
+from shared.subsystem import (
+    Level,
+    LinkState,
+    Option,
+    Result,
+    Table,
+    choice,
+    group,
+    inputs_for,
+    integer,
+    overridden,
+    summary_and_body,
+    titled,
+)
 
 SUMMARY = 140
 DEVICE = "Which driver, by the name the board declares for it."
@@ -56,30 +69,30 @@ ANSWERS_WHAT_WAS_ASKED = {"raw.read", "raw.poll_raw"}
 UNDECLARED = ("relay",)
 
 HAZARDOUS = {
-    "raw.move",
-    "raw.retarget",
-    "raw.set_velocity",
-    "raw.set_current",
-    "raw.enable",
-    "raw.line_write",
-    "raw.write",
-    "raw.clear_faults",
-    "raw.invalidate_owned",
-    "raw.bringup",
+    "raw.move": "turns the shaft",
+    "raw.retarget": "changes how far a running move goes",
+    "raw.set_velocity": "turns the shaft from VACTUAL",
+    "raw.set_current": "changes the coil current",
+    "raw.enable": "energises or releases the coils",
+    "raw.line_write": "drives a driver pin directly",
+    "raw.write": "overwrites driver registers",
+    "raw.clear_faults": "acknowledges latched driver faults",
+    "raw.invalidate_owned": "forgets the registers the firmware owns",
+    "raw.bringup": "rewrites every owned register",
 }
 
 
-def devices() -> tuple[Option, ...]:
+def devices(sub: Any) -> tuple[Option, ...]:
     """Return the board's driver table, as the names each index stands for.
 
     Asked rather than declared. The firmware's table carries the names, growing
     the machine is growing that table, and a copy kept here would disagree with
     the board the first time one is added.
     """
-    if transport.link_state() is not bench_api.SubsystemLinkState.UP:
+    if sub is None or sub.link_state() is not LinkState.UP:
         return ()
     try:
-        reply = transport.firmware().sys.devices()
+        reply = sub.firmware().sys.devices()
     except Exception:  # noqa: BLE001
         return ()
     return tuple(
@@ -285,17 +298,16 @@ def _render(value: Any) -> str:
 
 def _caller(
     spec: fw_api.MethodSpec,
-) -> Callable[[dict[str, Any]], Iterator[StepOutcome]]:
+) -> Callable[[Any, dict[str, Any]], Result]:
     """Return the routine that makes one method's call and reports what came back."""
     namespace, _, method = spec.name.partition(".")
 
-    def call(values: dict[str, Any]) -> Iterator[StepOutcome]:
-        bound = getattr(getattr(transport.firmware(), namespace), method)
+    def call(sub: Any, values: dict[str, Any]) -> Result:
+        bound = getattr(getattr(sub.firmware(), namespace), method)
         reply = bound(**values)
-        found = as_result(
+        return as_result(
             spec.name, reply, spec.ret_layout, asked_register(spec.name, values)
         )
-        yield StepOutcome(PASSED, found.summary, found)
 
     return call
 
@@ -307,42 +319,41 @@ def _inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
     batch element names a register out of a set narrower than the type allows.
     """
     override = {
-        "idx": bench_api.choice("idx", devices, hint=DEVICE),
-        "ops": bench_api.group(
+        "idx": choice("idx", devices, hint=DEVICE),
+        "ops": group(
             "ops",
             columns=(
-                bench_api.integer("value"),
-                bench_api.choice("reg", owned_registers(), hint=REGISTER),
+                integer("value"),
+                choice("reg", owned_registers(), hint=REGISTER),
             ),
         ),
     }
-    derived = bench_api.inputs_for(spec.args)
+    derived = inputs_for(spec.args)
     named = {name: item for name, item in override.items() if name in spec.fields}
-    return bench_api.overridden(derived, named)
+    return overridden(derived, named)
 
 
-def declare() -> tuple[str, ...]:
-    """Register one routine per generated method, and return what was registered."""
-    declared = []
+def declared() -> tuple[Command, ...]:
+    """Return one command per generated method."""
+    made = []
     for namespace, methods in fw_api.namespaces().items():
         if namespace in UNDECLARED:
             continue
         for spec in methods.values():
-            group, _, name = spec.name.partition(".")
-            summary, body = bench_api.summary_and_body(spec.doc or "")
-            bench_api.register_routine(
-                declared_in=__name__,
-                group=group,
-                name=name,
-                title=bench_api.titled(summary) or spec.name,
-                description=body,
-                category=CALL,
-                hazardous=spec.name in HAZARDOUS,
-                inputs=_inputs(spec),
-                run=_caller(spec),
+            group_name, _, name = spec.name.partition(".")
+            summary, body = summary_and_body(spec.doc or "")
+            made.append(
+                Command(
+                    group=group_name,
+                    name=name,
+                    title=titled(summary) or spec.name,
+                    description=body,
+                    call=_caller(spec),
+                    inputs=_inputs(spec),
+                    hazard=HAZARDOUS.get(spec.name),
+                )
             )
-            declared.append(spec.name)
-    return tuple(declared)
+    return tuple(made)
 
 
-NAMES = declare()
+COMMANDS = declared()

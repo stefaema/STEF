@@ -1,27 +1,15 @@
-"""Opening and closing the link, which is the one thing everything else waits on."""
+"""The port the link opens, and whether our firmware is answering on it."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
-from shared import bench_api
-from shared.bench_api import (
-    LINK,
-    PASSED,
-    READY,
-    Level,
-    Option,
-    Readiness,
-    Result,
-    StepOutcome,
-    blocked,
-)
-from transport import fw, transport
+from shared.subsystem import READY, Option, Readiness, blocked, choice
+from transport import fw
 from transport.transport import AUTO, named_port
 
 
-def serial_ports() -> tuple[Option, ...]:
+def serial_ports(sub: Any = None) -> tuple[Option, ...]:
     """Return every attached port, each with a label saying what it looks like.
 
     Every port, not only the shortlist. What the descriptor settles is what
@@ -41,28 +29,14 @@ def _label(candidate: fw.probe.Candidate) -> str:
     return f"{candidate.device} ({candidate.description or candidate.vidpid})"
 
 
-PORT = bench_api.choice(
+PORT = choice(
     "port",
     serial_ports,
     hint="Which port the board is on. 'auto' when it is the only one.",
 )
 
 
-# ── Whether there is anything to open or close ───────────────────────────────
-
-
-def link_is_down() -> Readiness:
-    """Say whether there is no link yet, which is what connecting needs."""
-    if transport.link_state() is bench_api.SubsystemLinkState.UP:
-        return blocked("already connected")
-    return READY
-
-
-def link_is_up() -> Readiness:
-    """Say whether there is a link to close."""
-    if transport.link_state() is bench_api.SubsystemLinkState.UP:
-        return READY
-    return blocked("not connected")
+# ── Whether there is anything to open ────────────────────────────────────────
 
 
 def can_connect(port: str = AUTO) -> Readiness:
@@ -78,33 +52,3 @@ def can_connect(port: str = AUTO) -> Readiness:
         return blocked(str(exc))
     verdict = fw.probe.identify(chosen)
     return READY if verdict else blocked(verdict.sentence)
-
-
-# ── The two routines ─────────────────────────────────────────────────────────
-
-
-@bench_api.routine(
-    category=LINK, inputs=[PORT], can_run=link_is_down, can_run_with=can_connect
-)
-def connect(values: dict[str, Any]) -> Iterator[StepOutcome]:
-    """Connect.
-
-    Opens the port and puts nothing on the wire beyond the question of who is
-    answering on it.
-    """
-    chosen = transport.open_link(values.get("port", AUTO))
-    yield StepOutcome(
-        PASSED,
-        f"connected on {chosen}",
-        Result(level=Level.OK, summary=f"the link is open on {chosen}"),
-    )
-
-
-@bench_api.routine(category=LINK, can_run=link_is_up)
-def disconnect(values: dict[str, Any]) -> Iterator[StepOutcome]:
-    """Disconnect.
-
-    Closes the link and every thread it started, whatever state it was in.
-    """
-    transport.close_link()
-    yield StepOutcome(PASSED, "disconnected")

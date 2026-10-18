@@ -254,3 +254,10 @@ def test_a_run_s_outcomes_are_steps_and_prompts_only(oven):
     _, heard = run(oven, "heat.Breaks")
 
     assert all(isinstance(one, StepOutcome | Prompt) for one in heard)
+
+
+def test_finishing_as_failed_leaves_the_rest_not_reached(oven):
+    found, _ = run(oven, "heat.Holds")
+
+    assert found.outcomes[2].detail == "held"
+    assert found.outcomes[-1].end

@@ -1,16 +1,13 @@
-"""The link this package owns, and what it is doing right now."""
+"""What the transport's port is called, and how a link to it is opened."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from shared.subsystem import SubsystemLinkState
+from shared import fw_api
 from transport import fw
 
 AUTO = "auto"
-
-_link: Any = None
-_failure: str | None = None
 
 
 # ── What is on the far end ───────────────────────────────────────────────────
@@ -21,41 +18,27 @@ def named_port(port: str) -> str | None:
     return None if port == AUTO else port
 
 
+def text(raw: Any) -> str:
+    if isinstance(raw, bytes):
+        return raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+    return str(raw)
+
+
 # ── The link ─────────────────────────────────────────────────────────────────
 
 
-def link_state() -> SubsystemLinkState:
-    """Return whether the board is reachable, which is what having a link says."""
-    if _link is not None:
-        return SubsystemLinkState.UP
-    return SubsystemLinkState.ERROR if _failure else SubsystemLinkState.DOWN
-
-
-def firmware() -> Any:
-    """Return the open link, or say there is nothing to call through."""
-    if _link is None:
-        raise fw.link.LinkError("the transport is not connected")
-    return _link
-
-
-def open_link(port: str) -> str:
-    """Open the link, atomically, so a half-open one is not representable."""
-    global _link, _failure
+def opened(port: str) -> fw.link.FirmwareLink:
     chosen = fw.probe.find_port(named_port(port))
+    link = fw.link.FirmwareLink(chosen, on_log=fw.logs.forward)
     try:
-        opened = fw.link.FirmwareLink(chosen, on_log=fw.logs.forward)
-    except Exception as exc:
-        _failure = f"{type(exc).__name__}: {exc}"
+        reply = link.sys.version()
+        backend, version = text(reply.backend), text(reply.version)
+        if not fw_api.compatible(backend, version):
+            raise fw.link.LinkError(
+                f"the board is {backend} {version} and this build speaks "
+                f"{fw_api.FW_API_BACKEND} {fw_api.FW_API_VERSION}. Flash it"
+            )
+    except Exception:
+        link.close()
         raise
-    _failure = None
-    _link = opened
-    return chosen
-
-
-def close_link() -> None:
-    """Close the link and everything it started, whatever state it was in."""
-    global _link, _failure
-    open_now, _link = _link, None
-    _failure = None
-    if open_now is not None:
-        open_now.close()
+    return link

@@ -2,16 +2,22 @@
 
 import pytest
 
-from shared import bench_api
-from shared.bench_api import StepStatus
+from shared.diagnostics import SkipReason, StepStatus
 from transport import fw, transport
 from transport.bench import link
 
 
 @pytest.fixture
-def verify(declared):
-    """Return the routine under test."""
-    return declared.routines["prelink.verify_port"]
+def verify(unlinked):
+    """Return a way to run the routine under test, handing back every outcome."""
+
+    def run(port):
+        found = unlinked.run_test(
+            "prelink.VerifyPort", {"port": port}, lambda said: None
+        )
+        return list(found.outcomes)
+
+    return run
 
 
 def candidate(device, vid, description=""):
@@ -48,7 +54,7 @@ def only(monkeypatch):
 
 def descriptor_step(verify, one):
     """Return how the first rung settled for this port."""
-    return next(iter(bench_api.run_routine(verify, {"port": one.device})))
+    return verify(one.device)[0]
 
 
 def test_espressif_silicon_is_the_one_thing_a_descriptor_settles(verify, only):
@@ -64,8 +70,8 @@ def test_a_bridge_passes_without_claiming_anything_about_what_is_behind_it(
     one = only(candidate("/dev/ttyUSB0", 0x10C4, "CP2102 UART Bridge"))
     settled = descriptor_step(verify, one)
     assert settled.status is StepStatus.PASSED
-    assert settled.value is not None
-    assert "never what is behind it" in (settled.value.note or "")
+    assert settled.result is not None
+    assert "never what is behind it" in (settled.result.note or "")
 
 
 def test_a_port_the_descriptor_does_not_recognise_is_not_a_pass(verify, only):
@@ -77,7 +83,7 @@ def test_a_port_the_descriptor_does_not_recognise_is_not_a_pass(verify, only):
 
 def test_an_unrecognised_port_is_still_asked_rather_than_refused(verify, only):
     one = only(candidate("/dev/ttyS1", None, "n/a"))
-    reached = [o.status for o in bench_api.run_routine(verify, {"port": one.device})]
+    reached = [o.status for o in verify(one.device)]
     assert len(reached) == 3
     assert reached[0] is StepStatus.WARNED
 
@@ -86,9 +92,10 @@ def test_a_port_that_is_not_attached_stops_the_run_before_anything_is_opened(
     verify, monkeypatch
 ):
     monkeypatch.setattr(fw.probe, "candidates", lambda: ())
-    settled = list(bench_api.run_routine(verify, {"port": "/dev/ttyNOPE"}))
+    settled = verify("/dev/ttyNOPE")
     assert settled[0].status is StepStatus.FAILED
     assert [o.status for o in settled[1:]] == [StepStatus.SKIPPED, StepStatus.SKIPPED]
+    assert settled[1].skipped is SkipReason.NOT_REACHED
 
 
 # ── What an operator may choose ──────────────────────────────────────────────
@@ -119,3 +126,28 @@ def test_a_port_worth_trying_says_what_it_looks_like(attached):
 def test_a_port_that_is_probably_something_else_is_offered_without_a_claim(attached):
     attached(candidate("/dev/ttyS0", None, "16550A"))
     assert dict(link.serial_ports())["/dev/ttyS0"] == "/dev/ttyS0"
+
+
+# ── The link itself ──────────────────────────────────────────────────────────
+
+
+def test_verifying_a_port_is_refused_while_the_link_holds_it(linked_to):
+    from transport.tests.conftest import Board
+
+    sub = linked_to(Board(raw=None))
+
+    assert sub.readiness("prelink.VerifyPort").reason == (
+        "the link holds the port; disconnect first"
+    )
+
+
+def test_a_link_whose_reader_died_is_an_error(linked_to):
+    from shared.subsystem import LinkState
+    from transport.tests.conftest import Board
+
+    board = Board(raw=None)
+    sub = linked_to(board)
+
+    board.alive = False
+
+    assert sub.link_state() is LinkState.ERROR
