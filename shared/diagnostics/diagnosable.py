@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from shared.diagnostics.views import RunView, SubsystemView
 
 LINK_KEY = "link"
-CANCEL_WAIT = 15.0
+CANCEL_WAIT = 30.0
 
 
 class Diagnosable(Subsystem):
@@ -170,7 +170,13 @@ class Diagnosable(Subsystem):
         if run is None:
             return
         run.cancelled.set()
-        run.done.wait(CANCEL_WAIT)
+        if not run.done.wait(CANCEL_WAIT):
+            run_log.log.warning(
+                "{} did not finish within {:.0f} s of being cancelled; carrying on "
+                "while it still runs",
+                run.name,
+                CANCEL_WAIT,
+            )
 
     # ── What was last seen ───────────────────────────────────────────────────
 

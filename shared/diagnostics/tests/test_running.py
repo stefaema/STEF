@@ -286,3 +286,27 @@ def test_a_cancel_during_the_end_step_cuts_nothing_short(oven, monkeypatch):
     assert [one.status for one in found.outcomes] == [PASSED, PASSED, PASSED]
     assert not found.cancelled
     assert found.verdict is PASSED
+
+
+def test_a_run_that_ignores_the_cancel_is_given_up_on_and_said_so(oven, monkeypatch):
+    from shared.diagnostics import diagnosable
+
+    monkeypatch.setattr(diagnosable, "CANCEL_WAIT", 0.1)
+    said = []
+    monkeypatch.setattr(
+        diagnosable.run_log.log, "warning", lambda text, *args: said.append(args)
+    )
+    release = threading.Event()
+
+    def deaf(self) -> None:
+        release.wait(5)
+
+    monkeypatch.setattr(heat.Breaks, "first", deaf)
+    worker, _, _ = in_background(oven, "heat.Breaks")
+    wait_for(lambda: oven.running() is not None)
+
+    oven.cancel()
+
+    assert said and said[0][0] == "fixture.heat.Breaks"
+    release.set()
+    worker.join(5)

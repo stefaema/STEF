@@ -60,8 +60,9 @@ raises, and the exception names each device that it could not confirm. It can
 be called at any time. Calling it on hardware that is already safe does nothing
 harmful. The default does nothing.
 
-`cancel` ends whatever the subsystem is running and returns when it has ended.
-The default does nothing.
+`cancel` ends whatever the subsystem is running and returns when it has ended,
+or after 30 s, whichever comes first. If the run is still going after 30 s, the
+log says so and `cancel` returns anyway. The default does nothing.
 
 The GUI's stop action calls `cancel`, then `stop`. Tests never call `stop`
 automatically.
