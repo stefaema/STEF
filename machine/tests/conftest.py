@@ -1,22 +1,17 @@
 import pytest
 
 from machine import assembled
-from machine.tests import fixture
-from shared import bench_api
-from shared.subsystem import SubsystemLinkState
 
 FIXTURE = "machine.tests.fixture"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def hotplate():
-    bench_api.REGISTRY.clear()
-    yield assembled(FIXTURE)
-    bench_api.REGISTRY.clear()
+    return assembled(FIXTURE)
 
 
 @pytest.fixture
 def plugged_in(hotplate):
-    fixture.set_link_state(SubsystemLinkState.UP)
+    hotplate.connect("low")
     yield hotplate
-    fixture.set_link_state(SubsystemLinkState.DOWN)
+    hotplate.disconnect()

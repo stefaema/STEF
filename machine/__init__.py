@@ -2,7 +2,6 @@
 
 from machine.activity import AREAS, Activity, Area
 from machine.machine import ROSTER, Busy, Machine, assembled
-from machine.subsystem_assembly import Subsystem, subsystem_json
 
 __all__ = [
     "AREAS",
@@ -11,7 +10,5 @@ __all__ = [
     "Area",
     "Busy",
     "Machine",
-    "Subsystem",
     "assembled",
-    "subsystem_json",
 ]

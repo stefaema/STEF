@@ -2,29 +2,23 @@ import importlib
 import threading
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
-from typing import Any
 
 from machine.activity import Activity
-from machine.subsystem_assembly import Subsystem
-from shared import bench_api, config, logs
-from shared.subsystem import SubsystemLinkState, SubsystemSpec
+from shared import logs
+from shared.subsystem import LinkState, Subsystem
 
 ROSTER = ("transport", "capture", "detect")
 
 log = logs.as_component("machine")
 
 
-def assembled(package_name: str) -> Subsystem[None]:
-    """Assemble a subsystem from a package name."""
+def assembled(package_name: str) -> Subsystem:
+    """Build the one instance of the subsystem a package exports as SUBSYSTEM."""
     module = importlib.import_module(package_name)
-    spec = SubsystemSpec.of(module)
-    return Subsystem(
-        spec=spec,
-        config=config.SubsystemConfig(package=spec.package),
-        bench=bench_api.derive(spec),
-        scan=None,
-        module=module,
-    )
+    made = getattr(module, "SUBSYSTEM", None)
+    if made is None:
+        raise ImportError(f"{package_name} exports no SUBSYSTEM")
+    return made(module)
 
 
 class Busy(Exception):
@@ -39,7 +33,7 @@ class Machine:
     def __init__(self, roster: Sequence[str] = ROSTER) -> None:
         """A machine is a collection of subsystems, with a focus on one activity at a time."""
         self.roster = tuple(roster)
-        self.subsystems: dict[str, Subsystem[Any]] = {}
+        self.subsystems: dict[str, Subsystem] = {}
         self._lock = threading.Lock()
         self._activity: Activity | None = None
 
@@ -50,17 +44,17 @@ class Machine:
                 continue
             try:
                 self.subsystems[name] = assembled(name)
-            except (ImportError, KeyError) as exc:
+            except (ImportError, KeyError, OSError) as exc:
                 log.debug("no subsystem {}: {}", name, exc)
 
-    def subsystem(self, name: str) -> Subsystem[Any]:
+    def subsystem(self, name: str) -> Subsystem:
         """Return the subsystem with the given name, or raise KeyError if not found."""
         return self.subsystems[name]
 
-    def link_state_of(self, name: str) -> SubsystemLinkState:
+    def link_state_of(self, name: str) -> LinkState:
         """Return the link state of the subsystem with the given name, or DOWN if not found."""
         found = self.subsystems.get(name)
-        return found.link_state if found is not None else SubsystemLinkState.DOWN
+        return found.link_state() if found is not None else LinkState.DOWN
 
     @property
     def activity(self) -> Activity | None:

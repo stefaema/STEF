@@ -3,18 +3,22 @@
 One element, one dial, and nothing to plug in.
 """
 
-from shared.subsystem import SubsystemLinkState
+from typing import Any
 
-_link_state = SubsystemLinkState.DOWN
-
-
-def link_state() -> SubsystemLinkState:
-    return _link_state
+from machine.tests.fixture import routines
+from shared.diagnostics import Diagnosable
+from shared.subsystem import Linked, choice
 
 
-def set_link_state(reported: SubsystemLinkState) -> None:
-    global _link_state
-    _link_state = reported
+class Hotplate(Linked[str], Diagnosable):
+    target = choice("dial", ("low", "high"))
+    tests = (routines.Warm,)
+
+    def _open(self, target: str) -> Any:
+        return target
+
+    def _close(self, handle: Any) -> None:
+        pass
 
 
-__all__ = ["link_state", "set_link_state"]
+SUBSYSTEM = Hotplate

@@ -1,10 +1,13 @@
-from collections.abc import Iterator
+from typing import Any
 
-from shared import bench_api
-from shared.bench_api import PASSED, StepOutcome
+from shared.diagnostics import Needs, Test, step
 
 
-@bench_api.routine(category=bench_api.PRELINK, steps=("Warming",))
-def warm(values: dict) -> Iterator[StepOutcome]:
+class Warm(Test[Any]):
     """Warm the element."""
-    yield StepOutcome(PASSED, "warm")
+
+    needs = Needs.DOWN
+
+    @step("Warming")
+    def warming(self) -> None:
+        self.report("warm")
