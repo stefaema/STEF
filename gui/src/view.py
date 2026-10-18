@@ -24,7 +24,7 @@ OUTCOME = {
     "idle": ("radio_button_unchecked", "text-gray-400"),
     "running": ("progress_activity", "text-gray-500"),
     "waiting": ("help", "text-yellow-500"),
-    "cancelled": ("close", "text-orange-500"),
+    "cancelled": ("block", "text-orange-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
