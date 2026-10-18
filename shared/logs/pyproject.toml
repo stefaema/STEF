@@ -2,7 +2,7 @@
 name = "stef-logs"
 version = "0.1.0"
 description = "Log system of the STEF project"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = ["loguru>=0.7,<1"]
 
 [tool.pytest.ini_options]

@@ -3,7 +3,7 @@
 # editor sorts imports on save and the pipeline would otherwise not care.
 
 line-length = 88
-target-version = "py311"
+target-version = "py313"
 
 extend-exclude = [".ci-build", "build", "meta"]
 force-exclude = true

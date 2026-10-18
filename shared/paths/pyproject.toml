@@ -2,7 +2,7 @@
 name = "stef-paths"
 version = "0.1.0"
 description = "File path aggregator. Centralizes physical file addresses by facading the sources"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 
 [tool.pytest.ini_options]
 pythonpath = ["../.."]

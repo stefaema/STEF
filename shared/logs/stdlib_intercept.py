@@ -17,11 +17,8 @@ from loguru import logger
 __all__ = ["intercept_stdlib"]
 
 
-# Every attribute the standard library puts on a record itself. `taskName` joined
-# them in 3.12, and this package supports 3.11.
-_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {
-    "taskName"
-}
+# Every attribute the standard library puts on a record itself.
+_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__)
 
 
 def _attached(record: logging.LogRecord) -> dict[str, Any]:

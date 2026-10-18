@@ -2,7 +2,7 @@
 name = "stef-fw-api"
 version = "0.1.0"
 description = "The wire contract both ends compile, as C and as ctypes"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 
 [tool.stef]
 generated = "python tools/abi_gen.py --check"
