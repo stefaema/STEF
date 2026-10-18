@@ -24,6 +24,7 @@ OUTCOME = {
     "idle": ("radio_button_unchecked", "text-gray-400"),
     "running": ("progress_activity", "text-gray-500"),
     "waiting": ("help", "text-yellow-500"),
+    "stopped": ("power_settings_new", "text-yellow-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
@@ -43,12 +44,19 @@ STATUS_LABEL = {
     "idle": mark("Not run"),
     "running": mark("Running"),
     "waiting": mark("Waiting for you"),
+    "stopped": mark("Stopped"),
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
     "error": mark("Error"),
     "skipped": mark("Skipped"),
     "unreached": mark("Not reached"),
+}
+
+SKIPPED_BECAUSE = {
+    "not_needed": mark("not needed"),
+    "not_reached": mark("not reached, after an earlier step failed"),
+    "cancelled": mark("stopped before it ran"),
 }
 
 LINK_LABEL = {
@@ -161,7 +169,11 @@ def status_of(test: TestView) -> str:
         return "idle"
     if last.running:
         return "waiting" if last.prompt is not None else "running"
-    return last.verdict.value if last.verdict else "idle"
+    if last.verdict is None:
+        return "idle"
+    if last.cancelled and last.verdict not in (StepStatus.FAILED, StepStatus.ERROR):
+        return "stopped"
+    return last.verdict.value
 
 
 def worst_status(tests: list[TestView]) -> str:

@@ -73,6 +73,8 @@
     </div>
     {%- if settled and settled.detail %}
     <div class="mt-0.5 font-mono text-xs {{ DETAIL_TONE.get(settled.status.value, "text-gray-500") }}">{{ settled.detail }}</div>
+    {%- elif settled and settled.skipped %}
+    <div class="mt-0.5 text-xs text-gray-500">{{ _(SKIPPED_BECAUSE.get(settled.skipped.value, settled.skipped.value)) }}</div>
     {%- endif %}
     {%- if settled and settled.answers %}
     <div class="mt-0.5 text-xs text-gray-500">{% for name, said in settled.answers %}{{ _("Operator answered") }} {{ name }}: {{ said }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
