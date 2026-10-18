@@ -25,6 +25,7 @@ class Demo(Linked[str], Diagnosable):
         asking.Asks,
         running.RunsLong,
         running.Hazardous,
+        running.EndsSlowly,
     )
     commands = calls.COMMANDS
 

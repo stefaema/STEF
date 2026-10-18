@@ -24,9 +24,9 @@ from shared.diagnostics.records import (
     verdict,
 )
 from shared.diagnostics.steps import Finish, Skip, StepSpec, Test
-from shared.subsystem import DeclarationError, Input, NotReady, Result, coerced
+from shared.subsystem import DeclarationError, Input, Level, NotReady, Result, coerced
 
-Report = Callable[[StepOutcome | Prompt], None]
+Report = Callable[[StepOutcome | Prompt | Result], None]
 
 POLL = 0.1
 
@@ -56,6 +56,9 @@ class Run:
         self.started = time.time()
         self.cancelled = threading.Event()
         self.done = threading.Event()
+        self.stop_requested: float | None = None
+        self.stop_forced = False
+        self.stopped: Result | None = None
         self.outcomes: list[StepOutcome] = []
         self.prompt: Prompt | None = None
         self._lock = threading.Lock()
@@ -215,7 +218,13 @@ class Run:
         run_log.write_step(outcome)
         self._tell(outcome)
 
-    def _tell(self, said: StepOutcome | Prompt) -> None:
+    def stop_after(self, stop: Callable[[], None]) -> None:
+        if self.stop_requested is None or self.stop_forced:
+            return
+        self.stopped = stopped_by(stop, self.name)
+        self._tell(self.stopped)
+
+    def _tell(self, said: StepOutcome | Prompt | Result) -> None:
         try:
             self.report(said)
         except Exception as exc:
@@ -240,3 +249,15 @@ class Run:
             one.status is CANCELLED or one.skipped is SkipReason.CANCELLED
             for one in self.settled()
         )
+
+
+def stopped_by(stop: Callable[[], None], name: str) -> Result:
+    try:
+        stop()
+    except Exception as exc:
+        run_log.log.error("{}: stopping failed: {}: {}", name, type(exc).__name__, exc)
+        return Result(
+            level=Level.ERROR, summary=f"stopping failed: {type(exc).__name__}: {exc}"
+        )
+    run_log.log.info("{}: stopped", name)
+    return Result(level=Level.OK, summary="stopped")

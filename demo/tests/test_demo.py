@@ -193,3 +193,25 @@ def test_stopping_during_a_step_that_never_checks_is_still_not_a_pass(
     assert found.outcomes[1].skipped is SkipReason.CANCELLED
     assert found.cancelled
     assert found.verdict is CANCELLED
+
+
+def test_a_slow_end_step_is_waited_for_before_the_board_is_stopped(board, monkeypatch):
+    from demo.bench import running
+
+    monkeypatch.setattr(running, "SLOW_END_S", 0.2)
+    board.run_command("calls.enable", {"drive": "left", "on": "true"})
+    done = {}
+    worker = threading.Thread(
+        target=lambda: done.setdefault("run", run(board, "running.EndsSlowly"))
+    )
+    worker.start()
+    while board.running() is None:
+        time.sleep(0.01)
+
+    assert board.request_stop() is True
+    assert board.board().drive("left").enabled
+    worker.join(5)
+
+    assert not board.board().drive("left").enabled
+    assert done["run"].stopped is not None
+    assert done["run"].verdict is CANCELLED

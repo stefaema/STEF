@@ -64,8 +64,8 @@ harmful. The default does nothing.
 or after 30 s, whichever comes first. If the run is still going after 30 s, the
 log says so and `cancel` returns anyway. The default does nothing.
 
-The GUI's stop action calls `cancel`, then `stop`. Tests never call `stop`
-automatically.
+Tests never call `stop` automatically. `Diagnosable` adds the two ways an
+operator calls it, described under Stopping.
 
 `facts` returns what the connected device reports about itself, such as a
 version, a model or a device table. The GUI shows it under the summary. The
@@ -120,6 +120,8 @@ class Diagnosable(Subsystem):
                  operator: bool = False) -> RunView
     def run_command(self, key: str, submitted: Mapping) -> Result
     def answer(self, submitted: Any) -> None
+    def request_stop(self) -> bool
+    def stop_now(self) -> None
     def options(self, key: str, input_name: str) -> tuple[dict, ...]
     def view(self, operator: bool = True) -> SubsystemView
 ```
@@ -224,6 +226,19 @@ of the test for each run.
 
 A step whose count depends on runtime data, such as one write per binary in a
 release, is one step that reports each item as a row of its `Result` table.
+
+### Stopping
+
+`request_stop` stops the hardware as soon as nothing is using it. With no test
+running it calls `stop` at once and returns false. With a test running it
+cancels the test and returns true straight away; the run's end step finishes,
+and then the run calls `stop` itself. What `stop` did is reported through
+`report` as a `Result`, and kept on the run as `stopped`.
+
+`stop_now` calls `stop` at once, even while a cancelled test's end step is
+still running, and logs that it did. The run then does not call `stop` again.
+
+`cancel` is for callers that have no operator to decide, such as `disconnect`.
 
 ### Questions
 
@@ -426,7 +441,8 @@ TestView(key, group, title, description, inputs, needs, readiness, steps,
 StepView(title, description, hazard, skippable)
 CommandView(key, group, title, description, inputs, needs, hazard,
             readiness, last)
-RunView(key, started, values, outcomes, verdict, running, cancelled, prompt)
+RunView(key, started, values, outcomes, verdict, running, cancelled, prompt,
+        stop_requested, stopped)
 InputView(name, kind, hint, unit, min, max, options, reload, columns)
 ```
 

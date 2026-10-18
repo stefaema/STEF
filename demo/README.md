@@ -38,6 +38,7 @@ The connect form picks how the demo board behaves:
 | `asking.Asks` | a confirmation, a yes or no, a choice, and a timeout |
 | `running.RunsLong` | a loop with `checkpoint`, for trying cancel and Stop |
 | `running.Hazardous` | steps with hazards, and an end step that leaves the drive at rest |
+| `running.EndsSlowly` | an end step slower than Stop waits for, for trying Stop now |
 
 ## Commands
 

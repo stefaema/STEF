@@ -41,3 +41,4 @@ class Oven(Linked[str], Diagnosable):
     def stop(self) -> None:
         self.stopped += 1
         self.handle().set_point(0)
+        self.handle().sent.append("stop")

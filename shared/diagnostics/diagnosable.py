@@ -1,4 +1,5 @@
 import threading
+import time
 from collections.abc import Mapping
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -135,6 +136,7 @@ class Diagnosable(Subsystem):
         try:
             run.execute()
         finally:
+            run.stop_after(self.stop)
             with self._run_lock:
                 self._running = None
             run.done.set()
@@ -163,6 +165,27 @@ class Diagnosable(Subsystem):
         if run is None:
             raise NotReady("no test is running")
         run.answer(submitted)
+
+    def request_stop(self) -> bool:
+        with self._run_lock:
+            run = self._running
+            if run is not None:
+                run.stop_requested = time.time()
+                run.cancelled.set()
+                return True
+        self.stop()
+        return False
+
+    def stop_now(self) -> None:
+        with self._run_lock:
+            run = self._running
+        if run is not None:
+            run.stop_forced = True
+            run.cancelled.set()
+            run_log.log.warning(
+                "{}: stopping now, while the run is still finishing", run.name
+            )
+        self.stop()
 
     def cancel(self) -> None:
         with self._run_lock:

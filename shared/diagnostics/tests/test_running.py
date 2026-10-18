@@ -310,3 +310,68 @@ def test_a_run_that_ignores_the_cancel_is_given_up_on_and_said_so(oven, monkeypa
     assert said and said[0][0] == "fixture.heat.Breaks"
     release.set()
     worker.join(5)
+
+
+# ── Stopping ─────────────────────────────────────────────────────────────────
+
+
+def test_a_stop_requested_while_idle_stops_at_once(oven):
+    assert oven.request_stop() is False
+    assert oven.stopped == 1
+
+
+def test_a_stop_requested_during_a_run_waits_for_the_end_step(oven):
+    heat.Waits.started.clear()
+    worker, heard, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+
+    assert oven.request_stop() is True
+    worker.join(5)
+
+    assert oven.stopped == 1
+    assert oven.handle().sent[-2:] == ["set 0", "stop"]
+    assert done["run"].stopped is not None
+    assert done["run"].stopped.summary == "stopped"
+    assert done["run"].stop_requested is not None
+    assert heard[-1] == done["run"].stopped
+
+
+def test_stopping_now_does_not_wait_for_the_end_step(oven, monkeypatch):
+    release = threading.Event()
+    in_end = threading.Event()
+
+    def slow_off(self) -> None:
+        in_end.set()
+        release.wait(5)
+
+    monkeypatch.setattr(heat.Waits, "off", slow_off)
+    heat.Waits.started.clear()
+    worker, _, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+    oven.request_stop()
+    in_end.wait(5)
+
+    oven.stop_now()
+
+    assert oven.stopped == 1
+    assert oven.running() is not None
+    release.set()
+    worker.join(5)
+    assert oven.stopped == 1
+    assert done["run"].stopped is None
+
+
+def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):
+    def jammed() -> None:
+        raise RuntimeError("element 1 did not confirm")
+
+    monkeypatch.setattr(oven, "stop", jammed)
+    heat.Waits.started.clear()
+    worker, _, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+
+    oven.request_stop()
+    worker.join(5)
+
+    assert done["run"].stopped is not None
+    assert "element 1 did not confirm" in done["run"].stopped.summary
