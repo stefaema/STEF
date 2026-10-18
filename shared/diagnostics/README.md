@@ -289,7 +289,8 @@ started.
 open `self.ask`. The current step is marked cancelled, the remaining steps are
 skipped, and the end step runs. A step that does neither finishes first, and
 the next one is skipped. Either way, the run's verdict is cancelled unless a
-step failed or errored.
+step failed or errored. A cancel that arrives during the end step, after every
+step has run, cuts nothing short and leaves the verdict alone.
 
 The run is stored as the test's last result from its first step on, so the
 GUI can read it while the test is running. Last results are kept in memory.

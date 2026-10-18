@@ -154,7 +154,7 @@ def run_view(run: Run, sub_id: str) -> RunView:
         outcomes=run.settled(),
         verdict=run.verdict(),
         running=not run.done.is_set(),
-        cancelled=run.cancelled.is_set(),
+        cancelled=run.cut_short(),
         prompt=prompt_view(asked, address) if asked else None,
     )
 

@@ -272,3 +272,17 @@ def test_a_run_cancelled_between_steps_is_not_a_pass(oven):
 
     assert done["run"].cancelled
     assert done["run"].verdict is CANCELLED
+
+
+def test_a_cancel_during_the_end_step_cuts_nothing_short(oven, monkeypatch):
+    def off_then_cancelled(self) -> None:
+        self.sub.handle().set_point(0)
+        self._run.cancelled.set()
+
+    monkeypatch.setattr(heat.Preheat, "element_off", off_then_cancelled)
+
+    found, _ = run(oven, "heat.Preheat", {"celsius": "180"})
+
+    assert [one.status for one in found.outcomes] == [PASSED, PASSED, PASSED]
+    assert not found.cancelled
+    assert found.verdict is PASSED

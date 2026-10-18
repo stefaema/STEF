@@ -131,7 +131,7 @@ class Run:
                 self._steps()
             finally:
                 statuses = [one.status for one in self.outcomes]
-                if self.cancelled.is_set():
+                if self.cut_short():
                     statuses.append(CANCELLED)
                 run_log.write_end(self.name, statuses, time.monotonic() - began)
 
@@ -231,6 +231,12 @@ class Run:
         if not self.done.is_set():
             return None
         found = verdict([one.status for one in self.settled()])
-        if self.cancelled.is_set() and found in (WARNED, PASSED, SKIPPED):
+        if self.cut_short() and found in (WARNED, PASSED, SKIPPED):
             return CANCELLED
         return found
+
+    def cut_short(self) -> bool:
+        return any(
+            one.status is CANCELLED or one.skipped is SkipReason.CANCELLED
+            for one in self.settled()
+        )
