@@ -270,3 +270,9 @@ def test_a_tool_that_needs_the_link_sends_you_back_to_link_while_it_is_down(clie
     page = client.get("/diagnostics/transport/tests", follow_redirects=False)
     assert page.status_code == 307
     assert page.headers["location"] == "/diagnostics/transport"
+
+
+def test_stopping_now_a_subsystem_that_is_not_connected_says_why(client):
+    answer = client.post("/api/stop/transport/now").json()
+    assert answer["ok"] is False
+    assert "not connected" in answer["reason"]

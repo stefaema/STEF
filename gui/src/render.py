@@ -207,6 +207,8 @@ GLOBALS = {
     "field_of": field_of,
     "group_label": view.group_label,
     "end_errored": view.end_errored,
+    "stop_waited": view.stop_waited,
+    "STOP_PATIENCE_S": view.STOP_PATIENCE_S,
     "rows_of": view.rows_of,
     "status_of": view.status_of,
     "worst_status": view.worst_status,

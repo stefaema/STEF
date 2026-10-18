@@ -543,6 +543,9 @@
   .border-green-500 {
     border-color: var(--color-green-500);
   }
+  .border-orange-500 {
+    border-color: var(--color-orange-500);
+  }
   .border-red-500 {
     border-color: var(--color-red-500);
   }
@@ -865,6 +868,9 @@
       .hover\:bg-gray-200\/40:hover {
         background-color: color-mix(in oklab, var(--color-gray-200) 40%, transparent);
       }
+    }
+    .hover\:bg-orange-100:hover {
+      background-color: var(--color-orange-100);
     }
     .hover\:bg-red-50:hover {
       background-color: var(--color-red-50);

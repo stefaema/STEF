@@ -22,9 +22,13 @@ Each subsystem gets three tools:
 | Tests | every other test, grouped by the module that declares it | the test's readiness says so |
 | Commands | every command, picked by group and name | the command's readiness says so |
 
-The Implementation card shows the subsystem's prose and `facts`. While the link
-is up it also shows a Stop button, which cancels the running test and calls the
-subsystem's `stop`. The button is never disabled.
+The Implementation card shows the subsystem's prose and `facts`.
+
+While the link is up, the tool bar shows a Stop button that calls
+`request_stop`. A running test's Run button becomes Stop, which does the same.
+If a test is running, its card shows "Stopping" and waits for the end step,
+then shows what stopping did. Stop now stops the hardware without waiting. After
+30 s the card says the end step is taking longer than expected.
 
 Connect is not gated on having run anything. The form asks the subsystem's
 `probe` and shows the sentence that it refuses with.

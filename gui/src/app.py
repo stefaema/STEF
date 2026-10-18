@@ -161,6 +161,10 @@ def _reporting(name: str, key: str) -> Callable[[str, Any], None]:
         if event == "error":
             runs.say(name, "error", "error", str(item), {"key": key})
             return
+        if isinstance(item, Result):
+            level = "error" if item.level.value == "error" else "ok"
+            runs.say(name, level, "stopped", item.summary, {"key": key})
+            return
         if isinstance(item, Prompt):
             asked = item.question.hint or item.question.name
             runs.say(name, "ok", "prompt", asked, {"key": key})
@@ -220,9 +224,29 @@ def _answer(sub: Any, key: str, form: Any) -> None:
     runs.say(sub.id, "ok", "answered", asked.question.name, {"key": key})
 
 
-def _stopped(sub: Any) -> None:
-    sub.cancel()
-    sub.stop()
+def _stop_requested(name: str, sub: Any) -> str | None:
+    stream.say(name, "warn", "command", "stop()")
+    try:
+        deferred = sub.request_stop()
+    except Exception as exc:  # noqa: BLE001
+        return _failed(name, exc)
+    if deferred:
+        stream.say(
+            name, "warn", "result", gettext("Stopping once the end step is done")
+        )
+    else:
+        stream.say(name, "ok", "result", gettext("Stopped"))
+    return None
+
+
+def _stopped_now(name: str, sub: Any) -> str | None:
+    stream.say(name, "warn", "command", "stop_now()")
+    try:
+        sub.stop_now()
+    except Exception as exc:  # noqa: BLE001
+        return _failed(name, exc)
+    stream.say(name, "ok", "result", gettext("Stopped"))
+    return None
 
 
 # ── The JSON a machine reads ─────────────────────────────────────────────────
@@ -337,12 +361,16 @@ async def answer(name: str, values: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/stop/{name}")
 async def stop(name: str) -> dict[str, Any]:
     sub = subsystem_of(name)
-    stream.say(name, "warn", "command", "stop()")
-    try:
-        await asyncio.to_thread(_stopped, sub)
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc)}
-    return {"ok": True, "reason": None}
+    pending = sub.running() is not None
+    reason = await asyncio.to_thread(_stop_requested, name, sub)
+    return {"ok": reason is None, "reason": reason, "pending": pending}
+
+
+@app.post("/api/stop/{name}/now")
+async def stop_now(name: str) -> dict[str, Any]:
+    sub = subsystem_of(name)
+    reason = await asyncio.to_thread(_stopped_now, name, sub)
+    return {"ok": reason is None, "reason": reason}
 
 
 async def _opened(name: str, sub: Any, chosen: Any) -> None:
@@ -647,13 +675,16 @@ async def disconnect_html(request: Request, name: str) -> Any:
 @app.post("/diagnostics/{name}/stop", response_class=HTMLResponse)
 async def stop_html(request: Request, name: str) -> Any:
     sub = subsystem_of(name)
-    stream.say(name, "warn", "command", "stop()")
-    error = None
-    try:
-        await asyncio.to_thread(_stopped, sub)
-        stream.say(name, "ok", "result", gettext("Stopped"))
-    except Exception as exc:  # noqa: BLE001
-        error = _failed(name, exc)
+    error = await asyncio.to_thread(_stop_requested, name, sub)
+    return _fragment(
+        request, "diagnostics/main.html", _link_context(name, "link", error=error)
+    )
+
+
+@app.post("/diagnostics/{name}/stop/now", response_class=HTMLResponse)
+async def stop_now_html(request: Request, name: str) -> Any:
+    sub = subsystem_of(name)
+    error = await asyncio.to_thread(_stopped_now, name, sub)
     return _fragment(
         request, "diagnostics/main.html", _link_context(name, "link", error=error)
     )
@@ -672,12 +703,22 @@ async def tests_run(request: Request, name: str, key: str) -> Any:
 async def tests_stop(request: Request, name: str, key: str) -> Any:
     sub = subsystem_of(name)
     _test_of(sub, key)
-    stream.say(name, "warn", "command", f"stop({key})")
-    try:
-        await asyncio.to_thread(_stopped, sub)
-        stream.say(name, "ok", "result", gettext("Stopped"))
-    except Exception as exc:  # noqa: BLE001
-        _failed(name, exc)
+    await asyncio.to_thread(_stop_requested, name, sub)
+    runs.say(name, "warn", "stopping", key, {"key": key})
+    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
+
+
+@app.post("/diagnostics/{name}/tests/{key}/stop/now", response_class=HTMLResponse)
+async def tests_stop_now(request: Request, name: str, key: str) -> Any:
+    sub = subsystem_of(name)
+    _test_of(sub, key)
+    await asyncio.to_thread(_stopped_now, name, sub)
+    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
+
+
+@app.get("/diagnostics/{name}/tests/{key}/steps", response_class=HTMLResponse)
+def tests_steps(request: Request, name: str, key: str) -> Any:
+    _test_of(subsystem_of(name), key)
     return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
 
 

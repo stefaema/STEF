@@ -3,11 +3,32 @@
 {%- import "macros/result.html" as R -%}
 {%- set status = status_of(test) -%}
 <div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}
-     {{- " data-unfold" if status in ("running", "waiting") }}>
+     {{- " data-unfold" if status in ("running", "waiting", "stopping") }}>
   <div class="flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700">
     <div class="flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ _("Steps") }}</div>
     {%- if test.last and test.last.outcomes %}{{ M.copy_button(test|as_run(sub.id)) }}{% endif %}
   </div>
+  {%- if status == "stopping" %}
+  {%- set waited = stop_waited(test) %}
+  {%- set late = waited >= STOP_PATIENCE_S %}
+  <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b {{ "border-red-600 bg-red-600 text-white" if late else "border-orange-500 bg-orange-100 text-orange-600" }}">
+    {{ M.icon("power_settings_new", "size-5") }}
+    <div class="flex-1 min-w-0 text-sm font-semibold">
+      {%- if late %}{{ _("The end step is taking longer than expected. Stop now to stop the hardware without waiting.") }}
+      {%- else %}{{ _("Waiting for the end step to put things back, then stopping the hardware.") }}{% endif %}
+    </div>
+    <button type="button" class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium {{ "bg-white text-red-700 hover:bg-red-50" if late else "border border-orange-500 hover:bg-orange-100" }}"
+            hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/stop/now"
+            hx-target="#steps-{{ uid }}" hx-swap="outerHTML" hx-disabled-elt="this">
+      {{ M.icon("power_settings_new", "size-4") }}<span>{{ _("Stop now") }}</span>
+    </button>
+    {%- if not late %}
+    <span hidden hx-get="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/steps"
+          hx-trigger="load delay:{{ (STOP_PATIENCE_S - waited)|round(0, 'ceil')|int }}s"
+          hx-target="#steps-{{ uid }}" hx-swap="outerHTML"></span>
+    {%- endif %}
+  </div>
+  {%- endif %}
   {%- if test.last and test.last.prompt %}{% include "diagnostics/tests/prompt.html" %}{% endif %}
   {%- if end_errored(test) %}
   <div class="flex flex-wrap items-center gap-3 px-3 py-3 border-b border-red-600 bg-red-600 text-white">
@@ -25,4 +46,10 @@
   {%- endif %}
   {{ R.step_row(row) }}
   {%- endfor %}
+  {%- if test.last and test.last.stopped %}
+  {%- set halted = test.last.stopped %}
+  <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-300 dark:border-gray-700 text-sm {{ "text-red-600 font-semibold" if halted.level.value == "error" else "text-gray-600 dark:text-gray-300" }}">
+    {{ M.icon("power_settings_new", "size-4") }}<span>{{ _("Then stopped the hardware:") }} {{ halted.summary }}</span>
+  </div>
+  {%- endif %}
 </div>

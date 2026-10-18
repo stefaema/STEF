@@ -25,6 +25,7 @@ OUTCOME = {
     "running": ("progress_activity", "text-gray-500"),
     "waiting": ("help", "text-yellow-500"),
     "cancelled": ("block", "text-orange-500"),
+    "stopping": ("power_settings_new", "text-orange-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
@@ -45,6 +46,7 @@ STATUS_LABEL = {
     "running": mark("Running"),
     "waiting": mark("Waiting for you"),
     "cancelled": mark("Cancelled"),
+    "stopping": mark("Stopping"),
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
@@ -169,6 +171,8 @@ def status_of(test: TestView) -> str:
     if last is None:
         return "idle"
     if last.running:
+        if last.stop_requested is not None:
+            return "stopping"
         return "waiting" if last.prompt is not None else "running"
     return last.verdict.value if last.verdict else "idle"
 
@@ -182,6 +186,16 @@ def worst_status(tests: list[TestView]) -> str:
         if one.last is not None and one.last.verdict is not None
     ]
     return verdict(settled).value if settled else "idle"
+
+
+STOP_PATIENCE_S = 30
+
+
+def stop_waited(test: TestView) -> float:
+    last = test.last
+    if last is None or last.stop_requested is None:
+        return 0.0
+    return time.time() - last.stop_requested
 
 
 def end_errored(test: TestView) -> bool:
@@ -258,6 +272,7 @@ __all__ = [
     "clock",
     "command_groups",
     "end_errored",
+    "stop_waited",
     "fields_of",
     "first_available",
     "group_label",
