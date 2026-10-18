@@ -1,18 +1,40 @@
 """Every record that crosses between a subsystem and a screen."""
 
 import enum
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, NamedTuple
 
 from shared.subsystem import SubsystemSpec
-
-# ── How a declaration refuses ────────────────────────────────────────────────
-
-
-class DeclarationError(Exception):
-    """A declaration whose failure mode would otherwise be silence."""
-
+from shared.subsystem.records import (
+    READY as READY,
+)
+from shared.subsystem.records import (
+    DeclarationError as DeclarationError,
+)
+from shared.subsystem.records import (
+    Input as Input,
+)
+from shared.subsystem.records import (
+    Level as Level,
+)
+from shared.subsystem.records import (
+    Option as Option,
+)
+from shared.subsystem.records import (
+    Options as Options,
+)
+from shared.subsystem.records import (
+    Readiness as Readiness,
+)
+from shared.subsystem.records import (
+    Result as Result,
+)
+from shared.subsystem.records import (
+    Table as Table,
+)
+from shared.subsystem.records import (
+    blocked as blocked,
+)
 
 # ── What a routine says about itself as it runs ──────────────────────────────
 
@@ -30,35 +52,6 @@ PASSED = StepStatus.PASSED
 WARNED = StepStatus.WARNED
 FAILED = StepStatus.FAILED
 SKIPPED = StepStatus.SKIPPED
-
-
-class Level(enum.Enum):
-    """How much attention a result wants."""
-
-    OK = "ok"
-    WARN = "warn"
-    ERROR = "error"
-
-
-@dataclass(frozen=True, slots=True)
-class Table:
-    """A heading and its rows, for a result that is a list of things."""
-
-    head: tuple[str, ...]
-    rows: tuple[tuple[str, ...], ...]
-
-
-@dataclass(frozen=True, slots=True)
-class Result:
-    """What a step found, in the shape the screen renders."""
-
-    level: Level
-    summary: str
-    note: str | None = None
-    raw: bytes | None = None
-    image: bytes | None = None
-    fields: tuple[tuple[str, str], ...] = ()
-    table: Table | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,59 +73,6 @@ class Abandoned(Exception):
         """Take how the step that raised this settled."""
         super().__init__(detail)
         self.outcome = StepOutcome(status, detail, value)
-
-
-# ── Whether something may proceed ────────────────────────────────────────────
-
-
-@dataclass(frozen=True, slots=True)
-class Readiness:
-    """A verdict on whether a control may be used, carrying the reason when it may not."""
-
-    reason: str | None = None
-
-    def __bool__(self) -> bool:
-        """Return whether this may proceed."""
-        return self.reason is None
-
-    def __str__(self) -> str:
-        """Return the reason, empty when there is none."""
-        return self.reason or ""
-
-
-READY = Readiness()
-
-
-def blocked(reason: str) -> Readiness:
-    """Return a refusal carrying the sentence an operator reads."""
-    return Readiness(reason)
-
-
-# ── What a routine takes ─────────────────────────────────────────────────────
-
-
-class Option(NamedTuple):
-    """One choice whose sent value and read label are not the same string."""
-
-    value: Any
-    label: str
-
-
-Options = Sequence[Any] | Callable[[], Sequence[Any]]
-
-
-@dataclass(frozen=True, slots=True)
-class Input:
-    """One value a routine needs, and everything a control needs to ask for it."""
-
-    name: str
-    kind: str
-    hint: str | None = None
-    unit: str | None = None
-    min: int | None = None
-    max: int | None = None
-    options: Options | None = None
-    columns: tuple["Input", ...] = ()
 
 
 # ── What an operator runs ────────────────────────────────────────────────────

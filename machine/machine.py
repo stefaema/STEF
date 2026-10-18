@@ -20,7 +20,7 @@ def assembled(package_name: str) -> Subsystem[None]:
     spec = SubsystemSpec.of(module)
     return Subsystem(
         spec=spec,
-        config=config.derive(spec),
+        config=config.SubsystemConfig(package=spec.package),
         bench=bench_api.derive(spec),
         scan=None,
         module=module,

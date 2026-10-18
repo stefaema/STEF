@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from shared import paths
-from shared.subsystem import SubsystemSpec
 
 SUFFIX = ".toml"
 
@@ -66,11 +65,6 @@ class SubsystemConfig:
     def available(self, *parts: str) -> tuple[str, ...]:
         """Return the stem of every file this subsystem has to choose from."""
         return available(self.package, *parts)
-
-
-def derive(spec: SubsystemSpec) -> SubsystemConfig:
-    """Return the settings one subsystem reads, bound to the package they live under."""
-    return SubsystemConfig(package=spec.package)
 
 
 def _read(file: Path) -> dict[str, Any]:
