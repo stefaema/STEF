@@ -239,16 +239,6 @@ def _stop_requested(name: str, sub: Any) -> str | None:
     return None
 
 
-def _stopped_now(name: str, sub: Any) -> str | None:
-    stream.say(name, "warn", "command", "stop_now()")
-    try:
-        sub.stop_now()
-    except Exception as exc:  # noqa: BLE001
-        return _failed(name, exc)
-    stream.say(name, "ok", "result", gettext("Stopped"))
-    return None
-
-
 # ── The JSON a machine reads ─────────────────────────────────────────────────
 
 
@@ -364,13 +354,6 @@ async def stop(name: str) -> dict[str, Any]:
     pending = sub.running() is not None
     reason = await asyncio.to_thread(_stop_requested, name, sub)
     return {"ok": reason is None, "reason": reason, "pending": pending}
-
-
-@app.post("/api/stop/{name}/now")
-async def stop_now(name: str) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    reason = await asyncio.to_thread(_stopped_now, name, sub)
-    return {"ok": reason is None, "reason": reason}
 
 
 async def _opened(name: str, sub: Any, chosen: Any) -> None:
@@ -681,15 +664,6 @@ async def stop_html(request: Request, name: str) -> Any:
     )
 
 
-@app.post("/diagnostics/{name}/stop/now", response_class=HTMLResponse)
-async def stop_now_html(request: Request, name: str) -> Any:
-    sub = subsystem_of(name)
-    error = await asyncio.to_thread(_stopped_now, name, sub)
-    return _fragment(
-        request, "diagnostics/main.html", _link_context(name, "link", error=error)
-    )
-
-
 @app.post("/diagnostics/{name}/tests/{key}/run", response_class=HTMLResponse)
 async def tests_run(request: Request, name: str, key: str) -> Any:
     sub = subsystem_of(name)
@@ -705,14 +679,6 @@ async def tests_stop(request: Request, name: str, key: str) -> Any:
     _test_of(sub, key)
     await asyncio.to_thread(_stop_requested, name, sub)
     runs.say(name, "warn", "stopping", key, {"key": key})
-    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
-
-
-@app.post("/diagnostics/{name}/tests/{key}/stop/now", response_class=HTMLResponse)
-async def tests_stop_now(request: Request, name: str, key: str) -> Any:
-    sub = subsystem_of(name)
-    _test_of(sub, key)
-    await asyncio.to_thread(_stopped_now, name, sub)
     return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
 
 

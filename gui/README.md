@@ -27,8 +27,9 @@ The Implementation card shows the subsystem's prose and `facts`.
 While the link is up, the tool bar shows a Stop button that calls
 `request_stop`. A running test's Run button becomes Stop, which does the same.
 If a test is running, its card shows "Stopping" and waits for the end step,
-then shows what stopping did. Stop now stops the hardware without waiting. After
-30 s the card says the end step is taking longer than expected.
+then shows what stopping did. Once the end step is overdue (30 s, unless the
+test's `@end` says otherwise), the card says so, and for a hazardous test it
+says to cut the hardware's power if it is still moving.
 
 Connect is not gated on having run anything. The form asks the subsystem's
 `probe` and shows the sentence that it refuses with.

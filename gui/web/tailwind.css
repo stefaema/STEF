@@ -681,6 +681,9 @@
   .pl-3 {
     padding-left: calc(var(--spacing) * 3);
   }
+  .pl-8 {
+    padding-left: calc(var(--spacing) * 8);
+  }
   .text-left {
     text-align: left;
   }
@@ -868,9 +871,6 @@
       .hover\:bg-gray-200\/40:hover {
         background-color: color-mix(in oklab, var(--color-gray-200) 40%, transparent);
       }
-    }
-    .hover\:bg-orange-100:hover {
-      background-color: var(--color-orange-100);
     }
     .hover\:bg-red-50:hover {
       background-color: var(--color-red-50);

@@ -7,6 +7,7 @@ from typing import Any
 from gui.src.i18n import mark
 from machine import Machine
 from shared.diagnostics import (
+    END_EXPECTED_S,
     CommandView,
     InputView,
     Needs,
@@ -26,7 +27,6 @@ OUTCOME = {
     "waiting": ("help", "text-yellow-500"),
     "cancelled": ("block", "text-orange-500"),
     "stopping": ("power_settings_new", "text-orange-500"),
-    "finishing": ("progress_activity", "text-orange-500"),
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
@@ -48,7 +48,6 @@ STATUS_LABEL = {
     "waiting": mark("Waiting for you"),
     "cancelled": mark("Cancelled"),
     "stopping": mark("Stopping"),
-    "finishing": mark("Finishing up"),
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
@@ -173,8 +172,6 @@ def status_of(test: TestView) -> str:
     if last is None:
         return "idle"
     if last.running:
-        if last.stopped is not None:
-            return "finishing"
         if last.stop_requested is not None:
             return "stopping"
         return "waiting" if last.prompt is not None else "running"
@@ -192,7 +189,10 @@ def worst_status(tests: list[TestView]) -> str:
     return verdict(settled).value if settled else "idle"
 
 
-STOP_PATIENCE_S = 30
+def stop_patience(test: TestView) -> float:
+    if test.end is not None and test.end.expected_s is not None:
+        return test.end.expected_s
+    return END_EXPECTED_S
 
 
 def stop_waited(test: TestView) -> float:
@@ -276,6 +276,7 @@ __all__ = [
     "clock",
     "command_groups",
     "end_errored",
+    "stop_patience",
     "stop_waited",
     "fields_of",
     "first_available",
