@@ -42,15 +42,44 @@
 {%- endif -%}
 {%- endmacro -%}
 
-{%- macro step_row(title, settled, status) -%}
+{%- macro measurements(found) -%}
+<div class="overflow-x-auto">
+  <table class="{{ S.table }}">
+    <thead><tr>
+      <th class="{{ S.th }}">{{ _("measured") }}</th>
+      <th class="{{ S.th }}">{{ _("value") }}</th>
+      <th class="{{ S.th }}">{{ _("limits") }}</th>
+    </tr></thead>
+    <tbody>
+      {%- for one in found %}
+      <tr>
+        <td class="{{ S.td }} text-gray-500 dark:text-gray-400">{{ one.name }}</td>
+        <td class="{{ S.td }} font-mono tabular-nums {{ "text-gray-900 dark:text-white" if one.within else "text-red-500" }}">{{ one.value if one.value is not none else "--" }}{% if one.unit %} {{ one.unit }}{% endif %}</td>
+        <td class="{{ S.td }} font-mono text-gray-500">{{ one.limits() or "--" }}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro -%}
+
+{%- macro step_row(row) -%}
+{%- set settled = row.settled -%}
 <div class="step-grid px-3 py-2 border-t border-gray-300 first:border-t-0 dark:border-gray-700">
   <div class="min-w-0">
-    <div class="truncate text-sm text-gray-900 dark:text-white">{{ title }}</div>
+    <div class="flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+      <span class="truncate">{{ row.title }}</span>
+      {%- if row.hazard %}{{ M.hazard_mark(row.hazard, False) }}{% endif %}
+    </div>
     {%- if settled and settled.detail %}
     <div class="mt-0.5 font-mono text-xs {{ DETAIL_TONE.get(settled.status.value, "text-gray-500") }}">{{ settled.detail }}</div>
     {%- endif %}
-    {%- if settled and settled.value %}<div class="mt-2">{{ result(settled.value) }}</div>{% endif %}
+    {%- if settled and settled.answers %}
+    <div class="mt-0.5 text-xs text-gray-500">{% for name, said in settled.answers %}{{ _("Operator answered") }} {{ name }}: {{ said }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+    {%- endif %}
+    {%- if settled and settled.measurements %}<div class="mt-2">{{ measurements(settled.measurements) }}</div>{% endif %}
+    {%- if settled and settled.result %}<div class="mt-2">{{ result(settled.result) }}</div>{% endif %}
   </div>
-  {{ M.outcome_mark(status, False) }}
+  {{ M.outcome_mark(row.status, False) }}
 </div>
 {%- endmacro -%}

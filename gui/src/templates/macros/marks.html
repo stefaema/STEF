@@ -24,9 +24,9 @@
 </span>
 {%- endmacro -%}
 
-{%- macro hazard_mark() -%}
-<span class="inline-flex items-center gap-1 text-xs text-red-600" title="{{ _("Hazardous") }}">
-  {{ icon("warning", "size-4") }}<span>{{ _("Hazardous") }}</span>
+{%- macro hazard_mark(text=None, labelled=True) -%}
+<span class="inline-flex items-center gap-1 text-xs text-red-600" title="{{ text or _("Hazardous") }}">
+  {{ icon("warning", "size-4") }}{% if labelled %}<span>{{ _("Hazardous") }}</span>{% endif %}
 </span>
 {%- endmacro -%}
 

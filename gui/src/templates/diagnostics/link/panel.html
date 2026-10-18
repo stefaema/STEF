@@ -7,13 +7,13 @@
     <div class="{{ S.cardBody }}">
       {%- if connect_fields %}
       <div id="linkform"
-           {%- if not up %} hx-post="/diagnostics/{{ sub.spec.id }}/link/readiness" hx-trigger="change"
+           {%- if not up %} hx-post="/diagnostics/{{ sub.id }}/link/readiness" hx-trigger="change"
            hx-target="#linkactions" hx-swap="innerHTML" hx-sync="this:replace" hx-include="this"{% endif %}>
-        {{ C.form_grid(connect_fields, connect_values, "link-" ~ sub.spec.id) }}
+        {{ C.form_grid(connect_fields, connect_values, "link-" ~ sub.id) }}
       </div>
       {%- endif %}
       <div id="linkactions"
-           {%- if not up %} hx-post="/diagnostics/{{ sub.spec.id }}/link/readiness"
+           {%- if not up %} hx-post="/diagnostics/{{ sub.id }}/link/readiness"
            hx-trigger="load, htmx:afterSettle from:#linkform"
            hx-target="this" hx-swap="innerHTML" hx-sync="this:replace" hx-include="#linkform"{% endif %}>{% include "diagnostics/link/actions.html" %}</div>
     </div>
@@ -22,7 +22,7 @@
   {%- if prelink %}
   {{ M.section(_("Before connecting")) }}
   <div class="flex flex-col gap-2">
-    {%- for item in prelink %}{% with routine = item %}{% include "diagnostics/routines/routine.html" %}{% endwith %}{% endfor %}
+    {%- for item in prelink %}{% with test = item %}{% include "diagnostics/tests/test.html" %}{% endwith %}{% endfor %}
   </div>
   {%- endif %}
 </div>

@@ -11,10 +11,12 @@
     --color-red-600: #c9252d;
     --color-red-700: #c9252d;
     --color-red-900: #c9252d16;
+    --color-yellow-50: oklch(98.7% 0.026 102.212);
     --color-yellow-100: #8a610016;
     --color-yellow-400: #8a6100;
     --color-yellow-500: #8a6100;
     --color-yellow-600: oklch(68.1% 0.162 75.834);
+    --color-yellow-950: oklch(28.6% 0.066 53.813);
     --color-green-100: #157f3616;
     --color-green-500: #157f36;
     --color-green-600: oklch(62.7% 0.194 149.214);
@@ -212,9 +214,6 @@
   }
 }
 @layer utilities {
-  .invisible {
-    visibility: hidden;
-  }
   .fixed {
     position: fixed;
   }
@@ -345,6 +344,9 @@
   .max-h-24 {
     max-height: calc(var(--spacing) * 24);
   }
+  .max-h-64 {
+    max-height: calc(var(--spacing) * 64);
+  }
   .w-1\.5 {
     width: calc(var(--spacing) * 1.5);
   }
@@ -356,6 +358,9 @@
   }
   .w-80 {
     width: calc(var(--spacing) * 80);
+  }
+  .w-auto {
+    width: auto;
   }
   .w-full {
     width: 100%;
@@ -410,6 +415,9 @@
   }
   .items-center {
     align-items: center;
+  }
+  .items-end {
+    align-items: flex-end;
   }
   .items-start {
     align-items: flex-start;
@@ -531,6 +539,9 @@
   .border-transparent {
     border-color: transparent;
   }
+  .border-yellow-400 {
+    border-color: var(--color-yellow-400);
+  }
   .border-yellow-500 {
     border-color: var(--color-yellow-500);
   }
@@ -572,6 +583,9 @@
   }
   .bg-transparent {
     background-color: transparent;
+  }
+  .bg-yellow-50 {
+    background-color: var(--color-yellow-50);
   }
   .bg-yellow-100 {
     background-color: var(--color-yellow-100);
@@ -621,8 +635,14 @@
   .py-2\.5 {
     padding-block: calc(var(--spacing) * 2.5);
   }
+  .py-3 {
+    padding-block: calc(var(--spacing) * 3);
+  }
   .py-px {
     padding-block: 1px;
+  }
+  .pt-2 {
+    padding-top: calc(var(--spacing) * 2);
   }
   .pt-3 {
     padding-top: calc(var(--spacing) * 3);
@@ -698,6 +718,9 @@
   }
   .text-gray-50 {
     color: var(--color-gray-50);
+  }
+  .text-gray-300 {
+    color: var(--color-gray-300);
   }
   .text-gray-400 {
     color: var(--color-gray-400);
@@ -864,6 +887,9 @@
   }
   .dark\:bg-gray-800:where(.dark, .dark *) {
     background-color: var(--color-gray-800);
+  }
+  .dark\:bg-yellow-950:where(.dark, .dark *) {
+    background-color: var(--color-yellow-950);
   }
   .dark\:text-gray-200:where(.dark, .dark *) {
     color: var(--color-gray-200);

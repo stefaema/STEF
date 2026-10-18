@@ -5,12 +5,20 @@ from dataclasses import dataclass
 from typing import Any
 
 from gui.src.i18n import mark
-from machine import Machine, Subsystem
-from shared.bench_api import Category, Routine, readiness_of
-from shared.subsystem import SubsystemLinkState
+from machine import Machine
+from shared.diagnostics import (
+    CommandView,
+    InputView,
+    Needs,
+    SkipReason,
+    StepOutcome,
+    StepStatus,
+    SubsystemView,
+    TestView,
+)
+from shared.subsystem import LinkState, Subsystem
 
-HOUSED = ("link", "prelink", "call")
-TOOLS = ("link", "routines", "calls")
+TOOLS = ("link", "tests", "commands")
 
 OUTCOME = {
     "idle": ("radio_button_unchecked", "text-gray-400"),
@@ -18,7 +26,9 @@ OUTCOME = {
     "passed": ("check_circle", "text-green-500"),
     "warned": ("warning", "text-yellow-500"),
     "failed": ("error", "text-red-500"),
+    "error": ("error", "text-red-600"),
     "skipped": ("block", "text-gray-400"),
+    "unreached": ("block", "text-gray-300"),
 }
 
 LINK_MARK = {
@@ -34,7 +44,9 @@ STATUS_LABEL = {
     "passed": mark("Passed"),
     "warned": mark("Warnings"),
     "failed": mark("Failed"),
+    "error": mark("Error"),
     "skipped": mark("Skipped"),
+    "unreached": mark("Not reached"),
 }
 
 LINK_LABEL = {
@@ -44,20 +56,13 @@ LINK_LABEL = {
     "error": mark("Failed"),
 }
 
-CATEGORY_LABEL = {
-    "setup": mark("Setup"),
-    "call": mark("Calls"),
-    "link": mark("Link"),
-    "prelink": mark("Before connecting"),
-}
-
 TOOL_LABEL = {
     "link": mark("Link"),
-    "routines": mark("Routines"),
-    "calls": mark("Calls"),
+    "tests": mark("Tests"),
+    "commands": mark("Commands"),
 }
 
-TOOL_ICON = {"link": "link", "routines": "vital_signs", "calls": "data_object"}
+TOOL_ICON = {"link": "link", "tests": "vital_signs", "commands": "data_object"}
 
 LEVEL_TONE = {
     "ok": "text-green-500",
@@ -67,6 +72,7 @@ LEVEL_TONE = {
 
 DETAIL_TONE = {
     "failed": "text-red-500",
+    "error": "text-red-600",
     "warned": "text-yellow-600 dark:text-yellow-400",
 }
 
@@ -77,6 +83,30 @@ class Tab:
     label: str
     available: bool
     current: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Field:
+    name: str
+    kind: str
+    hint: str | None
+    unit: str | None
+    min: int | None
+    max: int | None
+    options: list[dict[str, Any]] | None
+    reload: str | None
+    autoload: bool
+    row_at: str | None
+    columns: tuple["Field", ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Row:
+    title: str
+    settled: StepOutcome | None
+    status: str
+    hazard: str | None
+    end: bool
 
 
 def clock(seconds: float | None) -> str:
@@ -96,140 +126,86 @@ def first_available(stef: Machine) -> str | None:
     return next((name for name in stef.roster if name in stef.subsystems), None)
 
 
-def is_up(sub: Subsystem[Any]) -> bool:
-    return sub.link_state is SubsystemLinkState.UP
+def is_up(sub: Subsystem) -> bool:
+    return sub.link_state() is LinkState.UP
 
 
-def routines_of(sub: Subsystem[Any], category: str) -> list[Routine]:
-    return [
-        one for one in sub.bench.routines.values() if one.category.value == category
+def tests_while_down(seen: SubsystemView) -> list[TestView]:
+    return [one for one in seen.tests if one.needs is Needs.DOWN]
+
+
+def test_groups(seen: SubsystemView) -> list[tuple[str, list[TestView]]]:
+    return _grouped([one for one in seen.tests if one.needs is not Needs.DOWN])
+
+
+def command_groups(seen: SubsystemView) -> list[tuple[str, list[CommandView]]]:
+    return _grouped(list(seen.commands))
+
+
+def _grouped(items: list[Any]) -> list[tuple[str, list[Any]]]:
+    held: dict[str, list[Any]] = {}
+    for one in items:
+        held.setdefault(one.group, []).append(one)
+    return list(held.items())
+
+
+def group_label(name: str) -> str:
+    return name.replace("_", " ").title()
+
+
+def status_of(test: TestView) -> str:
+    last = test.last
+    if last is None:
+        return "idle"
+    if last.running:
+        return "running"
+    return last.verdict.value if last.verdict else "idle"
+
+
+def worst_status(tests: list[TestView]) -> str:
+    from shared.diagnostics import verdict
+
+    settled = [
+        one.last.verdict
+        for one in tests
+        if one.last is not None and one.last.verdict is not None
     ]
+    return verdict(settled).value if settled else "idle"
 
 
-def connect_routine(sub: Subsystem[Any]) -> Routine | None:
-    return next(
-        (one for one in routines_of(sub, "link") if one.name == "connect"), None
-    )
+def rows_of(test: TestView) -> list[Row]:
+    previews = [(one.title, one.hazard, False) for one in test.steps]
+    if test.end is not None:
+        previews.append((test.end.title, None, True))
+    outcomes = list(test.last.outcomes) if test.last else []
+    running = bool(test.last and test.last.running)
+    rows = []
+    for index, (title, hazard, is_end) in enumerate(previews):
+        settled = outcomes[index] if index < len(outcomes) else None
+        if settled is not None:
+            status = settled.status.value
+            if (
+                settled.status is StepStatus.SKIPPED
+                and settled.skipped is SkipReason.NOT_REACHED
+            ):
+                status = "unreached"
+        elif running and index == len(outcomes):
+            status = "running"
+        else:
+            status = "idle"
+        rows.append(Row(title, settled, status, hazard, is_end))
+    return rows
 
 
-def disconnect_routine(sub: Subsystem[Any]) -> Routine | None:
-    return next(
-        (one for one in routines_of(sub, "link") if one.name == "disconnect"), None
-    )
+def fields_of(
+    inputs: tuple[InputView, ...], warm: Any, sub_id: str, key: str
+) -> tuple[Field, ...]:
+    return tuple(_field(one, warm, sub_id, key) for one in inputs)
 
 
-def prelink_routines(sub: Subsystem[Any]) -> list[Routine]:
-    return sorted(routines_of(sub, "prelink"), key=_prelink_order)
-
-
-def _prelink_order(item: Routine) -> tuple[int, int]:
-    return (0 if item.name == "verify_port" else 1, int(item.hazardous))
-
-
-def bench_groups(sub: Subsystem[Any]) -> list[tuple[str, list[Routine]]]:
-    order: list[str] = []
-    held: dict[str, list[Routine]] = {}
-    for one in sub.bench.routines.values():
-        if one.category.value in HOUSED:
-            continue
-        held.setdefault(one.category.value, [])
-        if one.category.value not in order:
-            order.append(one.category.value)
-        held[one.category.value].append(one)
-    return [(name, held[name]) for name in order]
-
-
-def call_groups(sub: Subsystem[Any]) -> list[tuple[str, list[Routine]]]:
-    order: list[str] = []
-    held: dict[str, list[Routine]] = {}
-    for one in routines_of(sub, "call"):
-        if one.group not in held:
-            held[one.group] = []
-            order.append(one.group)
-        held[one.group].append(one)
-    return [(name, held[name]) for name in order]
-
-
-def routine_at(sub: Subsystem[Any], key: str) -> Routine | None:
-    return sub.bench.routines.get(key)
-
-
-def gate(item: Routine, sub: Subsystem[Any]):
-    return readiness_of(item, sub.link_state)
-
-
-def step_titles(item: Routine, reached: int) -> list[str]:
-    if item.steps:
-        return list(item.steps)
-    return [f"#{index + 1}" for index in range(reached)]
-
-
-def category_label(name: str) -> str:
-    return CATEGORY_LABEL.get(name, name.replace("_", " ").title())
-
-
-__all__ = [
-    "CATEGORY_LABEL",
-    "Field",
-    "fields_of",
-    "DETAIL_TONE",
-    "LINK_LABEL",
-    "STATUS_LABEL",
-    "TOOL_ICON",
-    "TOOL_LABEL",
-    "HOUSED",
-    "LEVEL_TONE",
-    "LINK_MARK",
-    "OUTCOME",
-    "TOOLS",
-    "Tab",
-    "bench_groups",
-    "call_groups",
-    "category_label",
-    "clock",
-    "connect_routine",
-    "disconnect_routine",
-    "first_available",
-    "gate",
-    "is_up",
-    "prelink_routines",
-    "routine_at",
-    "routines_of",
-    "step_titles",
-    "subsystem_tabs",
-    "Category",
-]
-
-
-@dataclass(frozen=True, slots=True)
-class Field:
-    name: str
-    kind: str
-    hint: str | None
-    unit: str | None
-    min: int | None
-    max: int | None
-    options: list[dict[str, Any]] | None
-    reload: str | None
-    autoload: bool
-    row_at: str | None
-    columns: tuple["Field", ...]
-
-
-def fields_of(item: Routine, warm) -> tuple[Field, ...]:
-    return tuple(_field(one, item, warm) for one in item.inputs)
-
-
-def _field(spec, owner: Routine, warm) -> Field:
-    from shared.bench_api import labelled_options
-    from shared.bench_api.inputs import options_are_live
-
-    live = options_are_live(spec)
-    key = f"{owner.group}.{owner.name}"
-    reload_at = (
-        f"/diagnostics/{owner.subsystem}/options/{key}/{spec.name}" if live else None
-    )
-    cached = warm(owner.subsystem, key, spec.name) if live else None
+def _field(spec: InputView, warm: Any, sub_id: str, key: str) -> Field:
+    live = spec.reload is not None
+    cached = warm(sub_id, key, spec.name) if live else None
     return Field(
         name=spec.name,
         kind=spec.kind,
@@ -237,13 +213,39 @@ def _field(spec, owner: Routine, warm) -> Field:
         unit=spec.unit,
         min=spec.min,
         max=spec.max,
-        options=cached
-        if live
-        else (list(labelled_options(spec)) if spec.options is not None else None),
-        reload=reload_at,
+        options=cached if live else (list(spec.options) if spec.options else None),
+        reload=f"/diagnostics/{sub_id}/options/{key}/{spec.name}" if live else None,
         autoload=live and cached is None,
-        row_at=f"/diagnostics/{owner.subsystem}/row/{key}/{spec.name}"
+        row_at=f"/diagnostics/{sub_id}/row/{key}/{spec.name}"
         if spec.kind == "group"
         else None,
-        columns=tuple(_field(one, owner, warm) for one in spec.columns),
+        columns=tuple(_field(one, warm, sub_id, key) for one in spec.columns),
     )
+
+
+__all__ = [
+    "DETAIL_TONE",
+    "LEVEL_TONE",
+    "LINK_LABEL",
+    "LINK_MARK",
+    "OUTCOME",
+    "STATUS_LABEL",
+    "TOOLS",
+    "TOOL_ICON",
+    "TOOL_LABEL",
+    "Field",
+    "Row",
+    "Tab",
+    "clock",
+    "command_groups",
+    "fields_of",
+    "first_available",
+    "group_label",
+    "is_up",
+    "rows_of",
+    "status_of",
+    "subsystem_tabs",
+    "test_groups",
+    "tests_while_down",
+    "worst_status",
+]

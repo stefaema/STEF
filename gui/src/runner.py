@@ -1,6 +1,6 @@
 """One thing at a time on the hardware, and one stream telling you what happened.
 
-A bench run is a blocking generator that holds the serial port: `verify_port`
+A test run blocks while it holds the serial port: `verify_port`
 waits on a boot, `flash_board` erases for tens of seconds. The server is async
 and will happily start a second one while the first still owns the port, and two
 writers on one port is a corrupted board rather than an error message.
@@ -18,12 +18,12 @@ import itertools
 import queue
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from machine import Activity, Machine
-from shared.bench_api import Level
+from shared.subsystem import Level
 
 DEPTH = 512
 BACKLOG = 200
@@ -136,23 +136,22 @@ def start_run(
     stef: Machine,
     activity: Activity,
     by: str,
-    produce: Callable[[], Iterator[Any]],
+    work: Callable[[], Any],
     report: Callable[[str, Any], None],
 ) -> None:
     stef.focus_on(activity)
 
     def pump() -> None:
         try:
-            for item in produce():
-                report("outcome", item)
+            work()
         except Exception as exc:  # noqa: BLE001
-            report("outcome", {"error": f"{type(exc).__name__}: {exc}"})
+            report("error", f"{type(exc).__name__}: {exc}")
         finally:
             stef.unfocus()
             report("done", None)
 
     report("started", None)
-    threading.Thread(target=pump, name=f"bench:{by}", daemon=True).start()
+    threading.Thread(target=pump, name=f"diagnostics:{by}", daemon=True).start()
 
 
 async def call_off_loop(

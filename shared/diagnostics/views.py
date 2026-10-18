@@ -87,6 +87,7 @@ class TestView:
 class CommandView:
     key: str
     group: str
+    name: str
     title: str
     description: str
     inputs: tuple[InputView, ...]
@@ -179,6 +180,7 @@ def command_view(sub: "Diagnosable", item: Command) -> CommandView:
     return CommandView(
         key=item.key,
         group=item.group,
+        name=item.name,
         title=item.title,
         description=item.description,
         inputs=tuple(input_view(one, address) for one in item.inputs),

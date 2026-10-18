@@ -1,0 +1,16 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+{%- import "macros/controls.html" as C -%}
+{%- set uid = (sub.id ~ "." ~ test.key)|slug -%}
+<div class="{{ S.card }}" id="test-{{ uid }}">
+  <details id="fold-{{ uid }}"{{ " open" if test.last }}>
+    {% with %}{% include "diagnostics/tests/head.html" %}{% endwith %}
+    <div class="px-4 pb-4 flex flex-col gap-3">
+      {%- if test.description %}
+      <div class="pt-3">{{ M.show_more(test.description) }}</div>
+      {%- endif %}
+      <div id="form-{{ uid }}">{{ C.form_grid(fields_for(test), test.last.values if test.last else {}, uid) }}</div>
+      {% with %}{% include "diagnostics/tests/steps.html" %}{% endwith %}
+    </div>
+  </details>
+</div>

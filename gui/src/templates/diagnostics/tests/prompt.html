@@ -1,0 +1,22 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/controls.html" as C -%}
+{%- set asked = test.last.prompt -%}
+{%- set spec = field_of(asked.question, sub.id, test.key) -%}
+<div id="prompt-{{ uid }}" class="flex flex-col gap-2 px-3 py-3 border-t border-yellow-400 bg-yellow-50 dark:bg-yellow-950">
+  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ asked.question.hint or asked.question.name }}</div>
+  <div class="{{ S.hint }}">{{ _("Asked during") }} {{ asked.step }}</div>
+  <form class="flex flex-wrap items-end gap-2"
+        hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/answer"
+        hx-target="#prompt-{{ uid }}" hx-swap="outerHTML">
+    {%- if spec.kind == "choice" and spec.options and spec.options|length == 1 %}
+    <input type="hidden" name="{{ spec.name }}" value="{{ spec.options[0].value }}">
+    <button type="submit" class="{{ S.btnPrimary }}">{{ spec.options[0].label }}</button>
+    {%- elif spec.kind == "boolean" %}
+    <button type="submit" class="{{ S.btnPrimary }}" name="{{ spec.name }}" value="true">{{ _("Yes") }}</button>
+    <button type="submit" class="{{ S.btn }}" name="{{ spec.name }}" value="false">{{ _("No") }}</button>
+    {%- else %}
+    {{ C.control(spec, spec.name, none, uid ~ "-prompt") }}
+    <button type="submit" class="{{ S.btnPrimary }}">{{ _("Answer") }}</button>
+    {%- endif %}
+  </form>
+</div>

@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from shared.bench_api import Input, coerced_values
+from shared.subsystem import Input
 
 TRUTHY = ("true", "1", "on", "yes")
 
 
 def values_from(inputs: Sequence[Input], form: Mapping[str, Any]) -> dict[str, Any]:
-    return coerced_values(inputs, _submitted(inputs, form))
+    return _submitted(inputs, form)
 
 
 def _submitted(inputs: Sequence[Input], form: Mapping[str, Any]) -> dict[str, Any]:

@@ -7,9 +7,8 @@ import time
 from typing import Any
 
 from gui.src import view
-from gui.src.runs import RUNS, RunState, address_of
-from shared import bench_api
-from shared.bench_api import Result, Routine
+from shared.diagnostics import RunView, TestView
+from shared.subsystem import Result
 
 TRUTHY = (True, 1, "true", "1", "on", "yes")
 
@@ -24,15 +23,15 @@ class OptionsCache:
             return self._held.get((subsystem, key, name))
 
     def fetch(
-        self, subsystem: str, key: str, name: str, refresh: bool = False
+        self, sub: Any, key: str, name: str, refresh: bool = False
     ) -> list[dict[str, Any]]:
         if not refresh:
-            found = self.warm(subsystem, key, name)
+            found = self.warm(sub.id, key, name)
             if found is not None:
                 return found
-        listed = bench_api.options_of(subsystem, key, name)
+        listed = list(sub.options(key, name))
         with self._lock:
-            self._held[(subsystem, key, name)] = listed
+            self._held[(sub.id, key, name)] = listed
         return listed
 
     def forget(self, subsystem: str | None = None) -> None:
@@ -121,31 +120,52 @@ def as_record(answer: Result | None) -> str:
     return json.dumps(packed, indent=2)
 
 
-def as_run(run: RunState, item: Routine, subsystem: str) -> str:
-    titles = list(item.steps) or [f"#{i + 1}" for i in range(len(run.outcomes))]
+def as_run(test: TestView, subsystem: str) -> str:
+    run: RunView | None = test.last
+    if run is None:
+        return "{}"
     return json.dumps(
         {
             "subsystem": subsystem,
-            "routine": f"{item.group}.{item.name}",
-            "title": item.title,
-            "status": run.status,
-            "when": clock(run.when) or None,
+            "test": test.key,
+            "title": test.title,
+            "status": view.status_of(test),
+            "when": clock(run.started) or None,
             "inputs": _plain(run.values),
             "steps": [
                 {
-                    "step": titles[index] if index < len(titles) else f"#{index + 1}",
+                    "step": settled.step,
                     "status": settled.status.value,
+                    **({"skipped": settled.skipped.value} if settled.skipped else {}),
                     **({"detail": settled.detail} if settled.detail else {}),
                     **(
-                        {"result": json.loads(as_record(settled.value))}
-                        if settled.value
+                        {
+                            "measurements": [
+                                {
+                                    "name": one.name,
+                                    "value": one.value,
+                                    "unit": one.unit,
+                                    "limits": one.limits() or None,
+                                    "within": one.within,
+                                }
+                                for one in settled.measurements
+                            ]
+                        }
+                        if settled.measurements
+                        else {}
+                    ),
+                    **({"answers": dict(settled.answers)} if settled.answers else {}),
+                    **(
+                        {"result": json.loads(as_record(settled.result))}
+                        if settled.result
                         else {}
                     ),
                 }
-                for index, settled in enumerate(run.outcomes)
+                for settled in run.outcomes
             ],
         },
         indent=2,
+        default=str,
     )
 
 
@@ -156,32 +176,8 @@ def _plain(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def steps_of(item: Routine, run: RunState) -> list[tuple[str, Any, str]]:
-    if item.steps:
-        declared = [
-            (title, run.settled_at(index)) for index, title in enumerate(item.steps)
-        ]
-    else:
-        declared = [
-            (f"#{index + 1}", settled) for index, settled in enumerate(run.outcomes)
-        ]
-    reached = sum(1 for _, settled in declared if settled is not None)
-    settled_rows = []
-    for index, (title, settled) in enumerate(declared):
-        if settled is not None:
-            status = settled.status.value
-        elif run.running and index == reached:
-            status = "running"
-        else:
-            status = "idle"
-        settled_rows.append((title, settled, status))
-    return settled_rows
-
-
-def worst_of(items: list[Routine], subsystem: str) -> str:
-    return RUNS.worst_under(
-        [address_of(subsystem, f"{one.group}.{one.name}") for one in items]
-    )
+def field_of(spec: Any, sub_id: str, key: str) -> view.Field:
+    return view.fields_of((spec,), OPTIONS.warm, sub_id, key)[0]
 
 
 FILTERS = {
@@ -207,8 +203,11 @@ GLOBALS = {
     "TOOLS": view.TOOLS,
     "TOOL_LABEL": view.TOOL_LABEL,
     "TOOL_ICON": view.TOOL_ICON,
-    "category_label": view.category_label,
-    "steps_of": steps_of,
+    "field_of": field_of,
+    "group_label": view.group_label,
+    "rows_of": view.rows_of,
+    "status_of": view.status_of,
+    "worst_status": view.worst_status,
 }
 
-__all__ = ["FILTERS", "GLOBALS", "OPTIONS", "OptionsCache", "steps_of", "worst_of"]
+__all__ = ["FILTERS", "GLOBALS", "OPTIONS", "OptionsCache"]

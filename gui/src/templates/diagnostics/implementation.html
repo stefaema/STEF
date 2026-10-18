@@ -1,13 +1,22 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
+{%- import "macros/result.html" as R -%}
 <div class="{{ S.card }}" id="implementation">
   <div class="{{ S.cardHead }}">
     <span class="{{ S.sectionTitle }}">{{ _("Implementation") }}</span>
     <span class="{{ S.spacer }}"></span>
-    {{ M.link_mark(sub.link_state.value) }}
+    {{ M.link_mark(sub.link_state().value) }}
+    {%- if seen.safe_state and up %}
+    <button type="button" class="{{ S.btnDanger }}" title="{{ seen.safe_state }}"
+            hx-post="/diagnostics/{{ sub.id }}/stop" hx-target="#main" hx-swap="innerHTML"
+            hx-indicator="this" hx-disabled-elt="this">
+      {{ M.icon("power_settings_new") }}<span>{{ _("Stop") }}</span>
+    </button>
+    {%- endif %}
   </div>
   <div class="flex flex-col gap-2 p-4">
-    <span class="{{ S.lede }}">{{ sub.spec.summary }}</span>
-    {%- if sub.spec.description %}{{ M.show_more(sub.spec.description) }}{% endif %}
+    <span class="{{ S.lede }}">{{ sub.summary }}</span>
+    {%- if sub.description %}{{ M.show_more(sub.description) }}{% endif %}
+    {%- if seen.facts %}<div class="pt-2">{{ R.result(seen.facts) }}</div>{% endif %}
   </div>
 </div>

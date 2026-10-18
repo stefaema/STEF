@@ -4,9 +4,13 @@
 <div class="{{ S.card }} overflow-hidden" id="steps-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
   <div class="flex items-center gap-2 px-3 py-1.5 bg-inset border-b border-gray-300 dark:border-gray-700">
     <div class="flex-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ _("Steps") }}</div>
-    {%- if run.outcomes %}{{ M.copy_button(run|as_run(routine, sub.spec.id)) }}{% endif %}
+    {%- if test.last and test.last.outcomes %}{{ M.copy_button(test|as_run(sub.id)) }}{% endif %}
   </div>
-  {%- for title, settled, status in steps_of(routine, run) %}
-  {{ R.step_row(title, settled, status) }}
+  {%- for row in rows_of(test) %}
+  {%- if row.end %}
+  <div class="px-3 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 border-t border-gray-300 dark:border-gray-700">{{ _("How it left the hardware") }}</div>
+  {%- endif %}
+  {{ R.step_row(row) }}
   {%- endfor %}
+  {%- if test.last and test.last.prompt %}{% include "diagnostics/tests/prompt.html" %}{% endif %}
 </div>

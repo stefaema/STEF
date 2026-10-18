@@ -1,17 +1,17 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
 {%- import "macros/controls.html" as C -%}
-{%- set uid = (sub.spec.id ~ "." ~ routine.group ~ "." ~ routine.name)|slug -%}
-{%- set gate_ = gate_of(routine) -%}
+{%- set uid = (sub.id ~ "." ~ command.key)|slug -%}
+{%- set gate_ = command.readiness -%}
 <div class="{{ S.card }}" id="method">
   <div class="{{ S.cardHead }}">
-    <span class="{{ S.sectionTitle }}">{{ routine.id }}</span>
+    <span class="{{ S.sectionTitle }}">{{ sub.id }}.{{ command.key }}</span>
     <span class="{{ S.spacer }}"></span>
-    {%- if routine.hazardous %}{{ M.hazard_mark() }}{% endif %}
+    {%- if command.hazard %}{{ M.hazard_mark(command.hazard) }}{% endif %}
   </div>
   <div class="flex flex-col gap-4 p-4">
-    {%- if routine.title %}<div class="{{ S.lede }}">{{ routine.title }}</div>{% endif %}
-    {%- if routine.description %}{{ M.show_more(routine.description) }}{% endif %}
+    {%- if command.title %}<div class="{{ S.lede }}">{{ command.title }}</div>{% endif %}
+    {%- if command.description %}{{ M.show_more(command.description) }}{% endif %}
     <hr class="{{ S.divider }}">
     <div>
       <div class="{{ S.label }}">{{ _("Arguments") }}</div>
@@ -22,17 +22,17 @@
     </div>
     <hr class="{{ S.divider }}">
     <div class="flex items-center gap-2">
-      <button type="button" class="{{ S.btnDanger if routine.hazardous else S.btnPrimary }}"{{ " disabled" if not gate_ }}
+      <button type="button" class="{{ S.btnDanger if command.hazard else S.btnPrimary }}"{{ " disabled" if not gate_ }}
               {%- if not gate_ %} title="{{ gate_.reason or _("Not available") }}"{% endif %}
               {%- if gate_ %}
-              hx-post="/diagnostics/{{ sub.spec.id }}/calls/{{ routine.group }}.{{ routine.name }}/run"
+              hx-post="/diagnostics/{{ sub.id }}/commands/{{ command.key }}/run"
               hx-include="#callform" hx-target="#reply" hx-swap="outerHTML"
               hx-indicator="this" hx-disabled-elt="this"
-              {%- if routine.hazardous %} hx-confirm="{{ _("Confirm") }}"{% endif %}
+              {%- if command.hazard %} hx-confirm="{{ _("Confirm") }}"{% endif %}
               {%- endif %}>
         {{ M.icon("play_arrow") }}<span>{{ _("Run") }}</span>
       </button>
     </div>
-    {% include "diagnostics/calls/reply.html" %}
+    {% include "diagnostics/commands/reply.html" %}
   </div>
 </div>
