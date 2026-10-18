@@ -1,13 +1,16 @@
 import importlib
+import os
 import threading
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 
 from machine.activity import Activity
 from shared import logs
-from shared.subsystem import LinkState, Subsystem
+from shared.subsystem import LinkState, Subsystem, truthy
 
 ROSTER = ("transport", "capture", "detect")
+DEMO = "demo"
+DEMO_FLAG = "STEF_DEMO"
 
 log = logs.as_component("machine")
 
@@ -21,6 +24,11 @@ def assembled(package_name: str) -> Subsystem:
     return made(module)
 
 
+def default_roster() -> tuple[str, ...]:
+    """Return the subsystems to assemble, with the demo board when STEF_DEMO is set."""
+    return (*ROSTER, DEMO) if truthy(os.environ.get(DEMO_FLAG, "")) else ROSTER
+
+
 class Busy(Exception):
     """Raised when the STEF machine is busy and cannot perform an activity."""
 
@@ -30,9 +38,9 @@ class Busy(Exception):
 
 
 class Machine:
-    def __init__(self, roster: Sequence[str] = ROSTER) -> None:
+    def __init__(self, roster: Sequence[str] | None = None) -> None:
         """A machine is a collection of subsystems, with a focus on one activity at a time."""
-        self.roster = tuple(roster)
+        self.roster = tuple(roster) if roster is not None else default_roster()
         self.subsystems: dict[str, Subsystem] = {}
         self._lock = threading.Lock()
         self._activity: Activity | None = None
@@ -81,4 +89,12 @@ class Machine:
             self.unfocus()
 
 
-__all__ = ["ROSTER", "Busy", "Machine", "assembled"]
+__all__ = [
+    "DEMO",
+    "DEMO_FLAG",
+    "ROSTER",
+    "Busy",
+    "Machine",
+    "assembled",
+    "default_roster",
+]

@@ -8,7 +8,7 @@ this module.
 ## What is served
 
 The diagnostics screen, for the subsystems that `ROSTER` in `machine/machine.py`
-lists. Operation, settings and the standalone log are in the rail and disabled:
+lists. With `STEF_DEMO` set, the demo board from `demo/` is listed too. Operation, settings and the standalone log are in the rail and disabled:
 operation needs `shared/scan_api`, which is not designed yet, and settings needs
 an editor for the firmware pin.
 

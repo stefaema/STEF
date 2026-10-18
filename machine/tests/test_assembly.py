@@ -44,3 +44,14 @@ def test_the_machine_skips_a_package_it_cannot_assemble():
 
     assert list(stef.subsystems) == [FIXTURE_PACKAGE]
     assert stef.link_state_of("machine.no_such_package") is LinkState.DOWN
+
+
+def test_the_demo_board_joins_the_roster_only_while_its_flag_is_set(monkeypatch):
+    from machine import DEMO, DEMO_FLAG, ROSTER, default_roster
+
+    monkeypatch.delenv(DEMO_FLAG, raising=False)
+    assert default_roster() == ROSTER
+
+    monkeypatch.setenv(DEMO_FLAG, "1")
+    assert default_roster() == (*ROSTER, DEMO)
+    assert Machine().roster[-1] == DEMO
