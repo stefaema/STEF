@@ -7,6 +7,7 @@ from typing import Any
 from shared import logs
 from shared.diagnostics import run_log
 from shared.diagnostics.records import (
+    CANCELLED,
     ERROR,
     FAILED,
     PASSED,
@@ -131,7 +132,7 @@ class Run:
             finally:
                 statuses = [one.status for one in self.outcomes]
                 if self.cancelled.is_set():
-                    statuses.append(WARNED)
+                    statuses.append(CANCELLED)
                 run_log.write_end(self.name, statuses, time.monotonic() - began)
 
     def _steps(self) -> None:
@@ -173,9 +174,9 @@ class Run:
         except Skip as skip:
             status, detail, skipped = SKIPPED, skip.detail, SkipReason.NOT_NEEDED
         except Cancelled:
-            status, detail, stop = WARNED, "cancelled", SkipReason.CANCELLED
+            status, detail, stop = CANCELLED, "", SkipReason.CANCELLED
         except NoAnswer as exc:
-            status, detail = FAILED, str(exc)
+            status, detail, stop = CANCELLED, str(exc), SkipReason.CANCELLED
         except Failed as failed:
             status, detail = FAILED, failed.detail
             if failed.result is not None:
@@ -230,6 +231,6 @@ class Run:
         if not self.done.is_set():
             return None
         found = verdict([one.status for one in self.settled()])
-        if self.cancelled.is_set() and found in (PASSED, SKIPPED):
-            return WARNED
+        if self.cancelled.is_set() and found in (WARNED, PASSED, SKIPPED):
+            return CANCELLED
         return found

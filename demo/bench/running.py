@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 class RunsLong(Test[Any]):
     """Run until the time is up, or until it is cancelled.
 
-    Try Stop while it runs: the step warns that it was cancelled, the rest is
-    skipped, and the end step still runs.
+    Try Stop while it runs: the step is cancelled, the rest is skipped, and the
+    end step still runs.
     """
 
     sub: Demo

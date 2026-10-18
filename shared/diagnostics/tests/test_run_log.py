@@ -1,7 +1,16 @@
 import pytest
 
 from shared import logs
-from shared.diagnostics import ERROR, FAILED, PASSED, SKIPPED, WARNED, run_log, verdict
+from shared.diagnostics import (
+    CANCELLED,
+    ERROR,
+    FAILED,
+    PASSED,
+    SKIPPED,
+    WARNED,
+    run_log,
+    verdict,
+)
 
 
 @pytest.fixture
@@ -69,6 +78,8 @@ def test_every_line_of_one_run_carries_the_run_s_name_and_start(oven, recorded):
 def test_the_verdict_is_the_worst_status_a_run_produced():
     assert verdict([PASSED, WARNED, FAILED, ERROR]) is ERROR
     assert verdict([PASSED, WARNED, FAILED]) is FAILED
+    assert verdict([PASSED, CANCELLED, FAILED]) is FAILED
+    assert verdict([PASSED, WARNED, CANCELLED]) is CANCELLED
     assert verdict([PASSED, WARNED]) is WARNED
     assert verdict([PASSED, SKIPPED]) is PASSED
     assert verdict([SKIPPED]) is SKIPPED

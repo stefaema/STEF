@@ -233,8 +233,9 @@ declares a question whose only answer is Continue.
 `report` and waits until `answer` is called. The answer is converted by the
 question's kind and recorded in the step's outcome.
 
-If no answer arrives within `timeout` seconds, the step fails with "no
-answer". If the run is cancelled while the question is open, `ask` raises
+If no answer arrives within `timeout` seconds, the step is cancelled with "no
+answer within N s" and the run ends as if it had been cancelled: the remaining
+steps are skipped and the end step runs. If the run is cancelled while the question is open, `ask` raises
 `Cancelled`.
 
 A test that declares questions needs an operator. `readiness` blocks it with
@@ -285,10 +286,10 @@ started.
    error.
 
 `cancel` takes effect between steps, at the next `self.checkpoint()`, or in an
-open `self.ask`. The current step is marked warned with the detail
-`cancelled`, the remaining steps are skipped, and the end step runs. A step
-that does neither finishes first, and the next one is skipped. Either way, a
-cancelled run's verdict is at least warned.
+open `self.ask`. The current step is marked cancelled, the remaining steps are
+skipped, and the end step runs. A step that does neither finishes first, and
+the next one is skipped. Either way, the run's verdict is cancelled unless a
+step failed or errored.
 
 The run is stored as the test's last result from its first step on, so the
 GUI can read it while the test is running. Last results are kept in memory.
@@ -305,9 +306,10 @@ Prompt(test, step, question, timeout)
 | status | meaning |
 | --- | --- |
 | passed | the step returned normally and every measurement was within limits |
-| warned | the step called `warn`, or was cancelled |
-| failed | a step raised, a measurement was outside its limits, or a question timed out |
+| warned | the step called `warn` |
+| failed | a step raised, or a measurement was outside its limits |
 | error | the end step raised |
+| cancelled | the run was cancelled while this step ran, or its question was not answered in time |
 | skipped | the step did not run; `skipped` says why |
 
 `skipped` is one of:
@@ -318,8 +320,9 @@ Prompt(test, step, question, timeout)
 | `NOT_REACHED` | an earlier step failed, or finished as failed |
 | `CANCELLED` | the run was cancelled |
 
-The run's verdict is its worst status, in the order error, failed, warned,
-passed, skipped. An error in the end step is worse than a failure, because the
+The run's verdict is its worst status, in the order error, failed, cancelled,
+warned, passed, skipped. A cancelled run is at least cancelled, even when the
+cancel landed between steps. An error in the end step is worse than a failure, because the
 hardware may still be on.
 
 A test that readiness blocks does not run, so it has no outcomes. Its

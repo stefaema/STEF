@@ -139,7 +139,12 @@ def _shown(values: dict[str, Any]) -> str:
 
 # ── Starting one run ─────────────────────────────────────────────────────────
 
-OUTCOME_LEVEL = {"failed": "error", "error": "error", "warned": "warn"}
+OUTCOME_LEVEL = {
+    "failed": "error",
+    "error": "error",
+    "warned": "warn",
+    "cancelled": "warn",
+}
 
 
 def _reporting(name: str, key: str) -> Callable[[str, Any], None]:

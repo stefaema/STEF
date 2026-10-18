@@ -10,6 +10,7 @@ from typing import Any
 
 from shared import logs
 from shared.diagnostics.records import (
+    CANCELLED,
     ERROR,
     FAILED,
     PASSED,
@@ -29,6 +30,7 @@ STEP_LEVEL = {
     WARNED: "WARNING",
     FAILED: "ERROR",
     ERROR: "ERROR",
+    CANCELLED: "WARNING",
 }
 
 # What the whole run's verdict is worth saying at.
@@ -38,6 +40,7 @@ RUN_LEVEL = {
     WARNED: "WARNING",
     FAILED: "ERROR",
     ERROR: "ERROR",
+    CANCELLED: "WARNING",
 }
 
 log = logs.as_component(COMPONENT)

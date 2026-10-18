@@ -6,7 +6,7 @@ import pytest
 import demo
 from demo import board as boards
 from demo.bench import asking
-from shared.diagnostics import ERROR, FAILED, PASSED, SKIPPED, WARNED, Prompt
+from shared.diagnostics import CANCELLED, ERROR, FAILED, PASSED, SKIPPED, WARNED, Prompt
 from shared.subsystem import LinkState, NotReady
 
 
@@ -97,7 +97,7 @@ def test_a_long_run_is_cancelled_and_still_tidies_up(board):
     board.cancel()
     worker.join(5)
 
-    assert statuses(done["run"]) == [WARNED, SKIPPED, PASSED]
+    assert statuses(done["run"]) == [CANCELLED, SKIPPED, PASSED]
 
 
 def test_every_question_is_asked_and_answered(board, monkeypatch):
@@ -192,4 +192,4 @@ def test_stopping_during_a_step_that_never_checks_is_still_not_a_pass(
     assert statuses(found) == [PASSED, SKIPPED, SKIPPED]
     assert found.outcomes[1].skipped is SkipReason.CANCELLED
     assert found.cancelled
-    assert found.verdict is WARNED
+    assert found.verdict is CANCELLED

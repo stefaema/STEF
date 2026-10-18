@@ -11,6 +11,7 @@ class StepStatus(enum.Enum):
     WARNED = "warned"
     FAILED = "failed"
     ERROR = "error"
+    CANCELLED = "cancelled"
     SKIPPED = "skipped"
 
 
@@ -18,9 +19,10 @@ PASSED = StepStatus.PASSED
 WARNED = StepStatus.WARNED
 FAILED = StepStatus.FAILED
 ERROR = StepStatus.ERROR
+CANCELLED = StepStatus.CANCELLED
 SKIPPED = StepStatus.SKIPPED
 
-SEVERITY = (ERROR, FAILED, WARNED, PASSED, SKIPPED)
+SEVERITY = (ERROR, FAILED, CANCELLED, WARNED, PASSED, SKIPPED)
 
 
 def verdict(statuses: Sequence[StepStatus]) -> StepStatus:

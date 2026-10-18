@@ -4,6 +4,7 @@ import time
 import pytest
 
 from shared.diagnostics import (
+    CANCELLED,
     ERROR,
     FAILED,
     PASSED,
@@ -156,7 +157,7 @@ def wait_for(condition, seconds=5.0):
         time.sleep(0.01)
 
 
-def test_cancelling_warns_the_step_skips_the_rest_and_runs_the_end(oven):
+def test_cancelling_cancels_the_step_skips_the_rest_and_runs_the_end(oven):
     heat.Waits.started.clear()
     worker, _, done = in_background(oven, "heat.Waits")
     heat.Waits.started.wait(5)
@@ -165,11 +166,10 @@ def test_cancelling_warns_the_step_skips_the_rest_and_runs_the_end(oven):
     worker.join(5)
 
     assert statuses(done["run"]) == [
-        ("Wait", WARNED),
+        ("Wait", CANCELLED),
         ("After", SKIPPED),
         ("Off", PASSED),
     ]
-    assert done["run"].outcomes[0].detail == "cancelled"
     assert done["run"].outcomes[1].skipped is SkipReason.CANCELLED
 
 
@@ -223,7 +223,7 @@ def test_a_question_waits_for_the_answer_and_records_it(oven):
     assert smell.answers == (("smelled", True),)
 
 
-def test_a_question_nobody_answers_fails_its_step(oven):
+def test_a_question_nobody_answers_cancels_the_run(oven):
     oven.patience = 0.2
     worker, heard, done = in_background(oven, "heat.Asks", operator=True)
     wait_for(lambda: len(prompts(heard)) == 1)
@@ -231,8 +231,9 @@ def test_a_question_nobody_answers_fails_its_step(oven):
 
     worker.join(5)
 
-    assert done["run"].outcomes[1].status is FAILED
+    assert done["run"].outcomes[1].status is CANCELLED
     assert done["run"].outcomes[1].detail == "no answer within 0 s"
+    assert done["run"].verdict is CANCELLED
 
 
 def test_cancelling_while_a_question_is_open_ends_the_wait(oven):
@@ -242,7 +243,7 @@ def test_cancelling_while_a_question_is_open_ends_the_wait(oven):
     oven.cancel()
     worker.join(5)
 
-    assert statuses(done["run"])[0] == ("Close", WARNED)
+    assert statuses(done["run"])[0] == ("Close", CANCELLED)
 
 
 def test_answering_when_nothing_is_asked_is_refused(oven):
@@ -270,4 +271,4 @@ def test_a_run_cancelled_between_steps_is_not_a_pass(oven):
     worker.join(5)
 
     assert done["run"].cancelled
-    assert done["run"].verdict is WARNED
+    assert done["run"].verdict is CANCELLED

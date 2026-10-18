@@ -3,6 +3,7 @@
 from shared.diagnostics.commands import Command, command
 from shared.diagnostics.diagnosable import LINK_KEY, Diagnosable
 from shared.diagnostics.records import (
+    CANCELLED,
     ERROR,
     FAILED,
     PASSED,
@@ -34,6 +35,7 @@ from shared.diagnostics.views import (
 )
 
 __all__ = [
+    "CANCELLED",
     "ERROR",
     "FAILED",
     "LINK_KEY",

@@ -16,15 +16,17 @@ PATIENCE_S = 15.0
 class Asks(Test[Any]):
     """Ask the operator four questions.
 
-    A confirmation, a yes or no, a choice, and one that fails if nobody answers
-    it in time.
+    A confirmation, a yes or no, a choice, and one that cancels the run if nobody
+    answers it in time.
     """
 
     sub: Demo
     ready = confirmation("Pretend to thread the film, then press Continue.")
     lit = boolean("lit", hint="Is the demo board's light on?")
     colour = choice("colour", COLOURS, hint="Which colour is the light?")
-    hurry = boolean("hurry", hint=f"Answer within {PATIENCE_S:.0f} s, or this fails.")
+    hurry = boolean(
+        "hurry", hint=f"Answer within {PATIENCE_S:.0f} s, or the run is cancelled."
+    )
 
     @step("Confirm")
     def confirm(self) -> None:
