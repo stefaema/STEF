@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from demo.subsystem import Demo
 
 SLOW_END_S = 45.0
+SLOW_END_EXPECTED_S = 10.0
 
 
 class RunsLong(Test[Any]):
@@ -82,22 +83,26 @@ class Hazardous(Test[Any]):
 
 
 class EndsSlowly(Test[Any]):
-    """Take a long time to put the board back.
+    """Turn a drive, then take a long time to put the board back.
 
-    Press Stop while it works: the card waits for the end step, which takes
-    longer than Stop is patient for, so you can try Stop now.
+    Press Stop while it turns. The end step takes longer than it says it will,
+    so the card reports it as late, and because this test is hazardous it says
+    to cut the power.
     """
 
     sub: Demo
 
-    @step("Work")
-    def work(self) -> None:
+    @step("Turn", hazard="keeps the left demo drive turning")
+    def turn(self) -> None:
+        drive = self.sub.board().drive("left")
+        drive.enabled = True
+        drive.velocity = 5_000
         deadline = time.monotonic() + 600
         while time.monotonic() < deadline:
             self.checkpoint()
             time.sleep(0.1)
 
-    @end("Put it back, slowly")
+    @end("Put it back, slowly", expected_s=SLOW_END_EXPECTED_S)
     def put_it_back_slowly(self) -> None:
         time.sleep(SLOW_END_S)
         self.report(f"put back after {SLOW_END_S:.0f} s")

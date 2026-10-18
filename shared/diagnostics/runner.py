@@ -57,7 +57,6 @@ class Run:
         self.cancelled = threading.Event()
         self.done = threading.Event()
         self.stop_requested: float | None = None
-        self.stop_forced = False
         self.stopped: Result | None = None
         self.outcomes: list[StepOutcome] = []
         self.prompt: Prompt | None = None
@@ -218,18 +217,8 @@ class Run:
         run_log.write_step(outcome)
         self._tell(outcome)
 
-    def stopped_now(self, stop: Callable[[], None]) -> None:
-        found = stopped_by(stop, self.name)
-        if found.level is Level.OK:
-            found = Result(
-                level=Level.OK,
-                summary="stopped now, while the end step was still running",
-            )
-        self.stopped = found
-        self._tell(found)
-
     def stop_after(self, stop: Callable[[], None]) -> None:
-        if self.stop_requested is None or self.stop_forced:
+        if self.stop_requested is None:
             return
         self.stopped = stopped_by(stop, self.name)
         self._tell(self.stopped)

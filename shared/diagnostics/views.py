@@ -48,6 +48,7 @@ class StepView:
     description: str
     hazard: str | None
     skippable: bool
+    expected_s: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +140,9 @@ def input_view(item: Input, address: tuple[str, str] | None = None) -> InputView
 
 
 def step_view(spec: StepSpec) -> StepView:
-    return StepView(spec.title, spec.description, spec.hazard, spec.skippable)
+    return StepView(
+        spec.title, spec.description, spec.hazard, spec.skippable, spec.expected_s
+    )
 
 
 def prompt_view(asked: Prompt, address: tuple[str, str]) -> PromptView:

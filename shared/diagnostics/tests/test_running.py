@@ -1,3 +1,4 @@
+import dataclasses
 import threading
 import time
 
@@ -13,6 +14,7 @@ from shared.diagnostics import (
     Prompt,
     SkipReason,
     StepOutcome,
+    end,
 )
 from shared.diagnostics.tests.fixture import heat
 from shared.subsystem import NotReady
@@ -291,7 +293,11 @@ def test_a_cancel_during_the_end_step_cuts_nothing_short(oven, monkeypatch):
 def test_a_run_that_ignores_the_cancel_is_given_up_on_and_said_so(oven, monkeypatch):
     from shared.diagnostics import diagnosable
 
-    monkeypatch.setattr(diagnosable, "CANCEL_WAIT", 0.1)
+    ending = heat.Breaks.end_step
+    assert ending is not None
+    monkeypatch.setattr(
+        heat.Breaks, "end_step", dataclasses.replace(ending, expected_s=0.1)
+    )
     said = []
     monkeypatch.setattr(
         diagnosable.run_log.log, "warning", lambda text, *args: said.append(args)
@@ -336,32 +342,6 @@ def test_a_stop_requested_during_a_run_waits_for_the_end_step(oven):
     assert heard[-1] == done["run"].stopped
 
 
-def test_stopping_now_does_not_wait_for_the_end_step(oven, monkeypatch):
-    release = threading.Event()
-    in_end = threading.Event()
-
-    def slow_off(self) -> None:
-        in_end.set()
-        release.wait(5)
-
-    monkeypatch.setattr(heat.Waits, "off", slow_off)
-    heat.Waits.started.clear()
-    worker, _, done = in_background(oven, "heat.Waits")
-    heat.Waits.started.wait(5)
-    oven.request_stop()
-    in_end.wait(5)
-
-    oven.stop_now()
-
-    assert oven.stopped == 1
-    assert oven.running() is not None
-    assert oven.running().stopped is not None
-    assert oven.running().stopped.summary.startswith("stopped now")
-    release.set()
-    worker.join(5)
-    assert oven.stopped == 1
-
-
 def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):
     def jammed() -> None:
         raise RuntimeError("element 1 did not confirm")
@@ -376,3 +356,14 @@ def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):
 
     assert done["run"].stopped is not None
     assert "element 1 did not confirm" in done["run"].stopped.summary
+
+
+def test_an_end_step_states_how_long_it_is_expected_to_take():
+    assert heat.Preheat.ends_within_s() == 30.0
+
+    class Quick(heat.Preheat):
+        @end("Element off", expected_s=5)
+        def element_off(self) -> None:
+            pass
+
+    assert Quick.ends_within_s() == 5

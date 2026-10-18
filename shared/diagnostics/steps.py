@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 MARK = "__diagnostics_step__"
 
+END_EXPECTED_S = 30.0
+
 
 @dataclass(frozen=True, slots=True)
 class StepSpec:
@@ -30,6 +32,7 @@ class StepSpec:
     skippable: bool = False
     continue_on_failure: bool = False
     end: bool = False
+    expected_s: float | None = None
 
 
 def step(
@@ -57,7 +60,9 @@ def step(
     return mark
 
 
-def end(title: str) -> Callable[[Callable[..., None]], Callable[..., None]]:
+def end(
+    title: str, *, expected_s: float = END_EXPECTED_S
+) -> Callable[[Callable[..., None]], Callable[..., None]]:
     def mark(method: Callable[..., None]) -> Callable[..., None]:
         setattr(
             method,
@@ -67,6 +72,7 @@ def end(title: str) -> Callable[[Callable[..., None]], Callable[..., None]]:
                 title=title,
                 description=inspect.getdoc(method) or "",
                 end=True,
+                expected_s=expected_s,
             ),
         )
         return method
@@ -119,6 +125,12 @@ class Test[Sub]:
     @classmethod
     def can_run(cls, sub: Any) -> Readiness | None:
         return READY
+
+    @classmethod
+    def ends_within_s(cls) -> float:
+        if cls.end_step is not None and cls.end_step.expected_s is not None:
+            return cls.end_step.expected_s
+        return END_EXPECTED_S
 
     @classmethod
     def hazardous(cls) -> bool:

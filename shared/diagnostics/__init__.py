@@ -21,7 +21,7 @@ from shared.diagnostics.records import (
     verdict,
 )
 from shared.diagnostics.runner import Report, Run
-from shared.diagnostics.steps import StepSpec, Test, end, step
+from shared.diagnostics.steps import END_EXPECTED_S, StepSpec, Test, end, step
 from shared.diagnostics.views import (
     CommandView,
     InputView,
@@ -36,6 +36,7 @@ from shared.diagnostics.views import (
 
 __all__ = [
     "CANCELLED",
+    "END_EXPECTED_S",
     "ERROR",
     "FAILED",
     "LINK_KEY",

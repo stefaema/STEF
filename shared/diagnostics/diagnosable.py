@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from shared.diagnostics.views import RunView, SubsystemView
 
 LINK_KEY = "link"
-CANCEL_WAIT = 30.0
 
 
 class Diagnosable(Subsystem):
@@ -176,31 +175,19 @@ class Diagnosable(Subsystem):
         self.stop()
         return False
 
-    def stop_now(self) -> None:
-        with self._run_lock:
-            run = self._running
-        if run is None:
-            self.stop()
-            return
-        run.stop_forced = True
-        run.cancelled.set()
-        run_log.log.warning(
-            "{}: stopping now, while the run is still finishing", run.name
-        )
-        run.stopped_now(self.stop)
-
     def cancel(self) -> None:
         with self._run_lock:
             run = self._running
         if run is None:
             return
         run.cancelled.set()
-        if not run.done.wait(CANCEL_WAIT):
+        patience = run.test.ends_within_s()
+        if not run.done.wait(patience):
             run_log.log.warning(
                 "{} did not finish within {:.0f} s of being cancelled; carrying on "
                 "while it still runs",
                 run.name,
-                CANCEL_WAIT,
+                patience,
             )
 
     # ── What was last seen ───────────────────────────────────────────────────

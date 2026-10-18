@@ -61,8 +61,9 @@ be called at any time. Calling it on hardware that is already safe does nothing
 harmful. The default does nothing.
 
 `cancel` ends whatever the subsystem is running and returns when it has ended,
-or after 30 s, whichever comes first. If the run is still going after 30 s, the
-log says so and `cancel` returns anyway. The default does nothing.
+or once the running test's end step is overdue, whichever comes first. If the
+run is still going then, the log says so and `cancel` returns anyway. The
+default does nothing.
 
 Tests never call `stop` automatically. `Diagnosable` adds the two ways an
 operator calls it, described under Stopping.
@@ -121,7 +122,6 @@ class Diagnosable(Subsystem):
     def run_command(self, key: str, submitted: Mapping) -> Result
     def answer(self, submitted: Any) -> None
     def request_stop(self) -> bool
-    def stop_now(self) -> None
     def options(self, key: str, input_name: str) -> tuple[dict, ...]
     def view(self, operator: bool = True) -> SubsystemView
 ```
@@ -193,7 +193,9 @@ the step's description.
 | `skippable` | the step may not run, and skipping it is a normal outcome |
 | `continue_on_failure` | if the step fails, the next step still runs |
 
-`@end(title)` makes a method the test's end step. A test has at most one, and
+`@end(title, expected_s=30)` makes a method the test's end step. `expected_s`
+is how long the end step is expected to take once the test is cancelled. Past
+it, `cancel` stops waiting and the GUI says the end step is late. A test has at most one, and
 a subclass may replace the one that it inherits. The end step always runs: after
 the steps pass, after a failure, after `finish` and after a cancel. Its
 outcome is shown apart from the other steps, as how the test left the
@@ -234,10 +236,6 @@ running it calls `stop` at once and returns false. With a test running it
 cancels the test and returns true straight away; the run's end step finishes,
 and then the run calls `stop` itself. What `stop` did is reported through
 `report` as a `Result`, and kept on the run as `stopped`.
-
-`stop_now` calls `stop` at once, even while a cancelled test's end step is
-still running, and logs that it did. Its result is reported and kept on the run
-as `stopped` straight away, and the run does not call `stop` again.
 
 `cancel` is for callers that have no operator to decide, such as `disconnect`.
 
