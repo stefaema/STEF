@@ -129,11 +129,10 @@ class Run:
             try:
                 self._steps()
             finally:
-                run_log.write_end(
-                    self.name,
-                    [one.status for one in self.outcomes],
-                    time.monotonic() - began,
-                )
+                statuses = [one.status for one in self.outcomes]
+                if self.cancelled.is_set():
+                    statuses.append(WARNED)
+                run_log.write_end(self.name, statuses, time.monotonic() - began)
 
     def _steps(self) -> None:
         instance = self.test(self.sub, self.values, self)
@@ -230,4 +229,7 @@ class Run:
     def verdict(self) -> StepStatus | None:
         if not self.done.is_set():
             return None
-        return verdict([one.status for one in self.settled()])
+        found = verdict([one.status for one in self.settled()])
+        if self.cancelled.is_set() and found in (PASSED, SKIPPED):
+            return WARNED
+        return found

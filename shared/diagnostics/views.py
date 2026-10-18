@@ -65,6 +65,7 @@ class RunView:
     outcomes: tuple[StepOutcome, ...]
     verdict: StepStatus | None
     running: bool
+    cancelled: bool
     prompt: PromptView | None
 
 
@@ -153,6 +154,7 @@ def run_view(run: Run, sub_id: str) -> RunView:
         outcomes=run.settled(),
         verdict=run.verdict(),
         running=not run.done.is_set(),
+        cancelled=run.cancelled.is_set(),
         prompt=prompt_view(asked, address) if asked else None,
     )
 

@@ -261,3 +261,13 @@ def test_finishing_as_failed_leaves_the_rest_not_reached(oven):
 
     assert found.outcomes[2].detail == "held"
     assert found.outcomes[-1].end
+
+
+def test_a_run_cancelled_between_steps_is_not_a_pass(oven):
+    worker, _, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+    oven.cancel()
+    worker.join(5)
+
+    assert done["run"].cancelled
+    assert done["run"].verdict is WARNED

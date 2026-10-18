@@ -167,3 +167,29 @@ def test_a_group_input_arrives_as_rows(board):
 def test_the_facts_describe_the_board(board):
     assert board.facts() is not None
     assert dict(board.facts().fields)["drives"] == "left, right"
+
+
+def test_stopping_during_a_step_that_never_checks_is_still_not_a_pass(
+    board, monkeypatch
+):
+    from demo.bench import link
+    from shared.diagnostics import SkipReason
+
+    monkeypatch.setattr(link, "PACE_S", 0.3)
+    done = {}
+    worker = threading.Thread(
+        target=lambda: done.setdefault("run", run(board, "outcomes.Passes"))
+    )
+    worker.start()
+    while board.running() is None:
+        time.sleep(0.01)
+    time.sleep(0.1)
+
+    board.cancel()
+    worker.join(5)
+
+    found = done["run"]
+    assert statuses(found) == [PASSED, SKIPPED, SKIPPED]
+    assert found.outcomes[1].skipped is SkipReason.CANCELLED
+    assert found.cancelled
+    assert found.verdict is WARNED

@@ -286,7 +286,9 @@ started.
 
 `cancel` takes effect between steps, at the next `self.checkpoint()`, or in an
 open `self.ask`. The current step is marked warned with the detail
-`cancelled`, the remaining steps are skipped, and the end step runs.
+`cancelled`, the remaining steps are skipped, and the end step runs. A step
+that does neither finishes first, and the next one is skipped. Either way, a
+cancelled run's verdict is at least warned.
 
 The run is stored as the test's last result from its first step on, so the
 GUI can read it while the test is running. Last results are kept in memory.
@@ -419,7 +421,7 @@ TestView(key, group, title, description, inputs, needs, readiness, steps,
 StepView(title, description, hazard, skippable)
 CommandView(key, group, title, description, inputs, needs, hazard,
             readiness, last)
-RunView(key, started, values, outcomes, verdict, running, prompt)
+RunView(key, started, values, outcomes, verdict, running, cancelled, prompt)
 InputView(name, kind, hint, unit, min, max, options, reload, columns)
 ```
 
