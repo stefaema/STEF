@@ -13,9 +13,14 @@ from functools import lru_cache
 from itertools import pairwise
 from math import hypot
 
-from fasteners.heat_insert import HeatInsert
-from fasteners.insert_specs import INSERT_M3_SHORT
-from fasteners.screw_specs import SCREW_M3_COUNTERSUNK, SCREW_M5_COUNTERSUNK
+from board_case.shoebox import (
+    FLOOR_THICKNESS,
+    WALL_THICKNESS,
+    Shoebox,
+    clear_above,
+    floor_level_with,
+)
+from board_case.shoebox import wall_top as _wall_top
 from mounts.dc_barrel_jack import DCBarrelJackMount
 from mounts.red_button_cutout import BUTTON_DIAMETER
 from mounts.rj45_keystone import RJ45KeystoneMount
@@ -28,11 +33,6 @@ INTERIOR_WIDTH = 120.0  # along y
 
 BOARD_SIDE = 100.0
 BOARD_THICKNESS = 1.5
-BOARD_UNDERSIDE_CLEARANCE = 3.0  # above the tallest channel, for the board's leads
-
-WALL_THICKNESS = 3.0  # the panel the RJ45 and jack samples were fitted against
-FLOOR_THICKNESS = 3.0
-UPPER_HEIGHT = 30.0  # board's top face to the lid
 
 RJ45_COUNT = 3
 
@@ -48,11 +48,9 @@ SUPPORT_PILLAR_EDGE_DISTANCE = (
     5.0  # board's RJ45-side edge to the pillars between the RJ45s
 )
 CLAMP_PILLAR_OFFSETS = ((-7.0, 27.0), (-7.0, 72.0), (-75.0, 22.0), (-75.0, 70.0))
-CLAMP_SQUEEZE = 0.2
 
 BOARD_WINDOW_SIDE = 25.0  # square, through the jack wall from the board's underside
 
-LID_THICKNESS = 3.0
 BUTTON_WALL_DISTANCE = (
     20.0  # jack wall's and y = 0 wall's inner faces to the button's centre
 )
@@ -62,59 +60,10 @@ LOGO_WALL_DISTANCE = (
 LOGO_WIDTH = 35.0  # along x
 LOGO_DEPTH = 1.0  # into the lid's top face
 BUTTON_PILLAR_CLEARANCE = 2.0  # button hole's edge to a clamp pillar's
-LID_SCREW = SCREW_M3_COUNTERSUNK
-LID_INSERT = INSERT_M3_SHORT
-LID_SCREW_LENGTH = 8.0  # under the head
-
-TAB_SCREW = SCREW_M5_COUNTERSUNK
-TAB_THICKNESS = 5.0
-TAB_WIDTH = 20.0  # along x
-TAB_REACH = 16.0  # out from the wall's outer face
-
-CUT_OVERSHOOT = 0.5
 
 
-def outer_extent() -> tuple[float, float, float, float]:
-    """The shoebox's rectangle in plan, as `(x0, x1, y0, y1)`, which the lid shares."""
-    return (
-        -WALL_THICKNESS,
-        INTERIOR_LENGTH + WALL_THICKNESS,
-        -WALL_THICKNESS,
-        INTERIOR_WIDTH + WALL_THICKNESS,
-    )
-
-
-def post_half_side() -> float:
-    """Half a lid post's side: the insert's boss radius, so the pocket has its wall all round."""
-    return HeatInsert(spec=LID_INSERT).boss_radius
-
-
-def post_points() -> tuple[tuple[float, float], ...]:
-    """The four lid posts' centres, as `(x, y)`.
-
-    Each post carries a side wall on past an end wall's outer face, its outer
-    face flush with that side wall's, so the posts stand out along x only and
-    the outline in plan reads as an H.
-    """
-    half = post_half_side()
-    x0 = -WALL_THICKNESS - half
-    x1 = INTERIOR_LENGTH + WALL_THICKNESS + half
-    y0, y1 = -WALL_THICKNESS + half, INTERIOR_WIDTH + WALL_THICKNESS - half
-    return ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
-
-
-def plan_rectangles() -> list[tuple[float, float, float, float]]:
-    """The shoebox's outline in plan, as `(x0, x1, y0, y1)` rectangles: the walls' and each post's."""
-    half = post_half_side()
-    return [outer_extent()] + [
-        (x - half, x + half, y - half, y + half) for x, y in post_points()
-    ]
-
-
-def _cutout_centre(mount: SidePanelMount) -> float:
-    """Height of a mount's cutout centre above its own channel floor."""
-    box = mount.cutout().bounding_box()
-    return (box.min.Z + box.max.Z) / 2
+def box() -> Shoebox:
+    return Shoebox(INTERIOR_LENGTH, INTERIOR_WIDTH)
 
 
 def _rj45_prototype(material: Material) -> RJ45KeystoneMount:
@@ -160,13 +109,7 @@ def jack_mount(material: Material = Material.PLA) -> DCBarrelJackMount:
         panel_thickness=WALL_THICKNESS,
         material=material,
     )
-    rj45_centre = _cutout_centre(_rj45_prototype(material))
-    floor = FLOOR_THICKNESS + rj45_centre - _cutout_centre(probe)
-    if floor < FLOOR_THICKNESS:
-        raise ValueError(
-            f"the jack's cutout centre sits above the RJ45s', so lining them "
-            f"up would sink the jack {FLOOR_THICKNESS - floor} into the floor"
-        )
+    floor = floor_level_with(_rj45_prototype(material), probe)
     return DCBarrelJackMount(
         at=(INTERIOR_LENGTH, INTERIOR_WIDTH / 2, floor),
         facing=SidePanelFacing.X_NEG,
@@ -181,15 +124,8 @@ def connector_mounts(material: Material = Material.PLA) -> list[SidePanelMount]:
 
 @lru_cache(maxsize=None)
 def board_underside(material: Material = Material.PLA) -> float:
-    """Top of the support pillars: clear of the tallest channel or cutout by the leads' room."""
-    tallest = FLOOR_THICKNESS
-    for mount in connector_mounts(material):
-        tallest = max(
-            tallest,
-            mount.body().bounding_box().max.Z,
-            mount.cutout().bounding_box().max.Z,
-        )
-    return tallest + BOARD_UNDERSIDE_CLEARANCE
+    """Top of the support pillars. It clears every connector by the board leads' room."""
+    return clear_above(connector_mounts(material))
 
 
 def board_top(material: Material = Material.PLA) -> float:
@@ -197,8 +133,7 @@ def board_top(material: Material = Material.PLA) -> float:
 
 
 def wall_top(material: Material = Material.PLA) -> float:
-    """Top of the walls and posts, which is where the lid's underside lands."""
-    return board_top(material) + UPPER_HEIGHT
+    return _wall_top(board_top(material))
 
 
 def board_extent() -> tuple[float, float, float, float]:
