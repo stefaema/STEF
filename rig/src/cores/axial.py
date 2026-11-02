@@ -15,7 +15,7 @@ class AxialCore(ABC):
     @property
     @abstractmethod
     def end_depth(self) -> float:
-        """How far in from an end face the core's features reach, so whatever closes the body's ends is at least this thick."""
+        """How far the core's features reach in from an end face. Whatever closes the body's ends must be at least this thick."""
 
     @abstractmethod
     def check_radius(self, radius: float) -> None:

@@ -81,12 +81,12 @@ def _clamp_pillars(psu: PSUSpecs, material: Material) -> Part:
 
 
 def build(material: Material = Material.PLA, psu: PSUSpecs = PSU) -> Part:
-    """The plate the PSU bolts down onto, which is also the shoebox's ceiling.
+    """The plate that the PSU bolts onto. It is also the shoebox's ceiling.
 
     One face carries the PSU, the other closes the connector tray, and the skirt
-    is what ties the two pieces together. It carries no cable opening: the PSU
-    covers nearly all of it, so cables leave through the shoebox's side door.
-    Pillars hang off its underside onto the connectors that ask to be clamped.
+    is what ties the two pieces together. It has no cable opening because the PSU
+    covers nearly all of it. Cables leave through the shoebox's side door instead.
+    Pillars on its underside press down on the connectors that need clamping.
     """
     seam.check_clear_of_psu(psu)
 

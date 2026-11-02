@@ -89,11 +89,11 @@ class PlatterHub:
 
 
 def build(material: Material = Material.PLA) -> Part:
-    """The hub turned over, which is how it prints.
+    """The hub, flipped upside down for printing.
 
-    On the bed the seat face is the flattest surface the printer makes, its six
-    pockets open as first-layer holes, and the cone narrows going up rather than
-    overhanging, so no angle of cone needs support.
+    With the seat face on the bed, it gets the flattest surface the printer
+    makes and its six pockets print as first-layer holes. The cone narrows going
+    up instead of overhanging, so it needs no support at any angle.
     """
     hub = PlatterHub(material=material)
     return cast(Part, Pos(0.0, 0.0, hub.height) * Rot(180.0, 0.0, 0.0) * hub.build())

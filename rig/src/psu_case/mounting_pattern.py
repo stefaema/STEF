@@ -65,7 +65,7 @@ def _boss_radius(hole: PSUScrewHole, material: Material) -> float:
 
 
 def _floor_cutter(hole: PSUScrewHole, psu: PSUSpecs, material: Material) -> Part:
-    """What to subtract at a floor hole: a bore up from below, or a pocket down from above."""
+    """The cut at a floor hole. Tapped holes get a countersunk bore from below, and the others get an insert pocket from above."""
     x, y = _floor_position(hole, psu)
     if hole.is_tapped:
         screw = ScrewHole(spec=SCREWS[hole.thread], sink_head=True)
@@ -146,7 +146,7 @@ def _rib(
 
 
 def _pillar(hole: PSUScrewHole, psu: PSUSpecs, material: Material) -> Part:
-    """The back wall grown tall enough to reach one hole, sized from that hole alone.
+    """A section of the back wall raised high enough to reach one hole. Its size depends only on that hole.
 
     It shares the wall's depth, so it adds height over a hole and nothing else.
     """
@@ -161,7 +161,7 @@ def _pillar(hole: PSUScrewHole, psu: PSUSpecs, material: Material) -> Part:
 
 
 def _extent(psu: PSUSpecs) -> tuple[float, float, float, float]:
-    """The coupon's outer rectangle: the PSU's footprint, plus what stands outside it."""
+    """Outer rectangle of the coupon. It covers the PSU footprint and everything around it."""
     return (
         -RIM_THICKNESS,
         psu.length + RIM_THICKNESS,
@@ -171,13 +171,13 @@ def _extent(psu: PSUSpecs) -> tuple[float, float, float, float]:
 
 
 def _band_bounds(psu: PSUSpecs) -> tuple[float, float, float, float]:
-    """Where the perimeter band's inner edge runs, which is what the ribs tie to."""
+    """Inner edge of the perimeter band. The ribs connect to it."""
     x0, x1, y0, y1 = _extent(psu)
     return (x0 + BAND_WIDTH, x1 - BAND_WIDTH, y0 + BAND_WIDTH, y1 - BAND_WIDTH)
 
 
 def _floor(psu: PSUSpecs, material: Material) -> Part:
-    """The open frame the PSU lands on: a perimeter band, a pad per hole, ties between them."""
+    """The open frame that the PSU sits on. It is a perimeter band with a pad at each hole and ribs that connect the pads to the band."""
     x0, x1, y0, y1 = _extent(psu)
     inner_x0, inner_x1, inner_y0, inner_y1 = _band_bounds(psu)
 
@@ -207,9 +207,9 @@ def _wall(at_x: float, at_y: float, length: float, width: float) -> Part:
 
 
 def _rims(psu: PSUSpecs) -> Part:
-    """Three low walls, one outside each free edge of the footprint, so it drops in located.
+    """Three low walls along the free edges of the footprint. They guide the PSU into place.
 
-    The fourth edge is the one the PSU bears against, and belongs to `_back_wall`.
+    The PSU rests against the fourth edge, which `_back_wall` builds.
     """
     x0, x1, y0, y1 = _extent(psu)
     return cast(

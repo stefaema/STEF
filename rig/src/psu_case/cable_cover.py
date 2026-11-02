@@ -22,7 +22,7 @@ def outer_depth() -> float:
 
 
 def wall_face(psu: PSUSpecs = PSU) -> float:
-    """The right wall's outer face, which the flange lies on."""
+    """Position of the right wall's outer face. The flange lies against it."""
     return psu.length + shoebox.wall_thickness()
 
 
@@ -69,7 +69,7 @@ def _duct(psu: PSUSpecs, material: Material) -> Part:
 
 
 def _bore(psu: PSUSpecs, material: Material) -> Part:
-    """The cable way: open at the back onto the door, open at the top.
+    """The cable channel. It opens at the back onto the door and at the top.
 
     One cut does both openings. Its floor is the door's sill, so a cable leaves
     the tray and turns upward without a lip to climb.

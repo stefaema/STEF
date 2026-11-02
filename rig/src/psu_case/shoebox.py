@@ -91,12 +91,12 @@ def interior_height(material: Material = Material.PLA) -> float:
 
 
 def tray_height(material: Material = Material.PLA) -> float:
-    """Top of the walls, which is where the plate lands."""
+    """Height of the wall tops. The plate sits on them."""
     return FLOOR_THICKNESS + interior_height(material)
 
 
 def seam_height(material: Material = Material.PLA) -> float:
-    """Top of the plate once it is seated, which is the PSU's underside."""
+    """Height of the plate's top once it is seated. The PSU sits on it."""
     return tray_height(material) + seam.PLATE_THICKNESS
 
 
@@ -107,7 +107,7 @@ def mount_screw_height(psu: PSUSpecs = PSU, material: Material = Material.PLA) -
 
 
 def back_wall_top(psu: PSUSpecs = PSU, material: Material = Material.PLA) -> float:
-    """Top of the back wall: the PSU's full height, plus room for the M5 heads."""
+    """Height of the back wall. It is as tall as the PSU, plus room for the M5 heads."""
     head = ScrewHole(spec=MOUNT_SCREW).head_radius
     return (
         mount_screw_height(psu, material) + head + MOUNT_SCREW_MARGIN + BACK_WALL_CROWN
@@ -126,7 +126,7 @@ def mount_points(
 
 
 def outer_extent(psu: PSUSpecs = PSU) -> tuple[float, float, float, float]:
-    """The box's rectangle: the plate's, carried back over the back wall."""
+    """Outline of the box. It matches the plate but extends back to cover the back wall."""
     x0, x1, y0, _ = seam.plate_extent(psu)
     return (x0, x1, y0, psu.width + wall_thickness())
 
@@ -457,7 +457,7 @@ def clamp_sites(
 
 
 def _wago_holders(psu: PSUSpecs, front_panel: ResolvedLayout) -> Part:
-    """The Wagos, each sharing the centreline of the connector it feeds.
+    """The Wago holders. Each one is centred on the connector it feeds.
 
     Neither carries a cutout, so only the footprint matters. The 3-wire one
     stands against the back wall opening toward the C14, on the C14's own X. The
@@ -488,7 +488,7 @@ def _pair_centre_depth(psu: PSUSpecs) -> float:
 
 
 def build(material: Material = Material.PLA, psu: PSUSpecs = PSU) -> Part:
-    """The lower story: connectors on the front, a back wall for the PSU, open on top.
+    """The lower story. It holds the connectors on the front and a back wall for the PSU, and it is open on top.
 
     The top is left to `roofop`, which screws into the wall tops. Cables leave
     by the right wall's door and climb the outside of that wall to the PSU's

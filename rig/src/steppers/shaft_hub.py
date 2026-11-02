@@ -8,7 +8,7 @@ from fasteners.insert_specs import INSERT_M3_SHORT, HeatInsertSpec
 from rig.materials import Material
 from steppers.stepper_specs import NEMA_17, NemaStepperSpec
 
-# Added to the shaft's diameter, and to its flat's distance from the axis.
+# Added to the shaft's diameter and to its flat's distance from the axis.
 BORE_CLEARANCE = {Material.PLA: 0.2, Material.PETG: 0.2}
 
 STANDOFF = 5.0  # mounting face to the hub's end face
@@ -26,7 +26,7 @@ SAMPLE_WALL = 2.0
 
 
 def _aimed_at_axis(distance: float, z: float, tool: Part) -> Part:
-    """`tool` turned so its -Z runs toward the axis, its origin `distance` out along +X at height `z`."""
+    """Rotate `tool` so its -Z points at the axis, then move it `distance` along +X and up to `z`."""
     return cast(Part, Pos(distance, 0.0, z) * Rot(0.0, 90.0, 0.0) * tool)
 
 
@@ -79,7 +79,7 @@ class ShaftHub(AxialCore):
 
     @property
     def end_depth(self) -> float:
-        """END_DEPTH, the end that holds the insert and its tunnel."""
+        """Depth of the end section that holds the insert and its tunnel."""
         return END_DEPTH
 
     def check_radius(self, radius: float) -> None:
@@ -134,7 +134,7 @@ class ShaftHub(AxialCore):
         return cast(Part, run + headroom)
 
     def cutters(self) -> Part:
-        """Solid to subtract from the roller's body to leave the bore, the pocket and the way in."""
+        """Cutter for the bore, the insert pocket and the tunnel. Subtract it from the roller's body."""
         return cast(
             Part,
             Pos(*self.at) * (self._d_bore() + self._insert_pocket() + self._tunnel()),

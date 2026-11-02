@@ -39,7 +39,7 @@ def laid_out(parts: dict[str, "Part"]) -> dict[str, "Part"]:
 
 
 def main() -> None:
-    """Collect build() and sample() across the category, and serve them for yacv to view."""
+    """Collect build() and sample() from the category and serve them to yacv."""
     args = sys.argv[1:]
 
     material = Material.PLA

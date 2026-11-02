@@ -14,13 +14,13 @@ from fasteners.heat_insert import HeatInsert, InsertFacing
 from platters.platter_specs import PLATTER_360, PlatterSpec
 from rig.materials import Material
 
-# Measured from vertical. Steeper is a shorter cone, which lowers the platter
-# but brings the two bearings closer together, and their spacing is what keeps
-# the belt from rocking the hub.
+# Measured from vertical. A steeper wall makes a shorter cone. That lowers the
+# platter but also brings the two bearings closer together, and their spacing is
+# what keeps the belt from rocking the hub.
 CONE_WALL_ANGLE = 45.0
 
-# Flat top the platter lands on. Deep enough for an insert pocket and a floor
-# under it, which the cone alone does not give at the bolt circle.
+# Flat top that the platter sits on. Deep enough for an insert pocket with a
+# floor under it. The cone alone is too thin for that at the bolt circle.
 TOP_PLATE_THICKNESS = 6.0
 
 CUT_OVERSHOOT = 0.5
@@ -65,7 +65,7 @@ class PlatterSeat:
 
     @property
     def top_height(self) -> float:
-        """Height of the flat face, which is where the platter's underside lands."""
+        """Height of the flat face. The platter's underside sits on it."""
         return self.base_height + self.height
 
     def body(self) -> Part:

@@ -23,7 +23,7 @@ def _polar(radius: float, angle: float) -> Vector:
 
 @dataclass(frozen=True)
 class ToothedBand:
-    """The grooved band a belt wraps, and the numbers its groove is cut from."""
+    """The grooved band that a belt wraps around. Its fields set the shape of the grooves."""
 
     belt: TimingBeltSpec
     teeth: int
@@ -31,22 +31,22 @@ class ToothedBand:
 
     @property
     def pitch_radius(self) -> float:
-        """Radius the belt's pitch line wraps onto, one whose circumference is teeth * pitch."""
+        """Radius of the belt's pitch line. Its circumference is teeth * pitch."""
         return self.teeth * self.belt.pitch / (2 * math.pi)
 
     @property
     def tip_radius(self) -> float:
-        """Radius of the flat tip between two grooves, the band's outermost surface."""
+        """Radius of the flat tips between grooves. This is the outer surface of the band."""
         return self.pitch_radius - self.belt.pitch_line_offset
 
     @property
     def _groove_mouth_radius(self) -> float:
-        """Radius where the flanks give way to the root arc, the groove's opening."""
+        """Radius where the flanks meet the root arc. This is where the groove opens."""
         return self.tip_radius - self.belt.flank_drop
 
     @property
     def _groove_center_radius(self) -> float:
-        """Radius the root arc's own center sits at, so the arc meets both flanks."""
+        """Radius of the root arc's center. At this radius the arc meets both flanks."""
         mouth, half = self._groove_mouth_radius, self._groove_half_angle
         offset = mouth * math.sin(half)
         return mouth * math.cos(half) + math.sqrt(
@@ -55,7 +55,7 @@ class ToothedBand:
 
     @property
     def root_radius(self) -> float:
-        """Radius of the groove's deepest point, the band's innermost surface."""
+        """Radius of the groove's deepest point. This is the inner surface of the band."""
         return self._groove_center_radius - self.belt.groove_radius
 
     @property
@@ -104,7 +104,7 @@ class Flange:
     thickness: float
 
     def diameter(self, band: ToothedBand) -> float:
-        """Outer diameter of the disc, the band's tips plus the rim on each side."""
+        """Outer diameter of the disc, including the rim on each side."""
         return 2 * (band.tip_radius + self.rim)
 
 

@@ -51,7 +51,7 @@ class BearingCore(AxialCore):
 
     @property
     def end_depth(self) -> float:
-        """A seat's depth, so the outermost flange is never thinner than the bearing it holds."""
+        """Depth of a seat. This keeps the outermost flange at least as thick as the bearing."""
         return self.seat.depth
 
     def check_radius(self, radius: float) -> None:

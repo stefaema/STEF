@@ -24,7 +24,7 @@ MOTOR_SCREW = SCREW_M3_COUNTERSUNK
 SLOT_BOLT = SCREW_M5_COUNTERSUNK
 
 BOSS_RADIAL_CLEARANCE = 1.0  # per side, between the boss and the bore
-MOUTH_WIDTH_CLEARANCE = 0.4  # across the mouth, total: the boss just passes
+MOUTH_WIDTH_CLEARANCE = 0.4  # total across the mouth, so the boss just fits through
 MINIMUM_FACE_LAND = 4.0  # flat plate the motor face bears on, outside the opening
 MINIMUM_HEAD_MOUTH_MARGIN = 1.0  # plate left between a sunk screw head and the mouth
 MINIMUM_SLOT_EDGE_DISTANCE = 2.5  # plate left between the slot and any arm edge
@@ -194,10 +194,10 @@ class SlottedArm:
 
 
 class MotorMount:
-    """A motor plate with a slotted arm on each side given, one clamping point per arm.
+    """A motor plate with a slotted arm on each of the given sides. Each arm has one clamping point.
 
-    A nonzero `motor_rise` sets the plate that far above the arms, each arm joined
-    to it by a forearm standing outside the motor body.
+    A nonzero `motor_rise` raises the plate that far above the arms. A forearm
+    outside the motor body joins each arm to the plate.
     """
 
     def __init__(
@@ -262,7 +262,7 @@ class MotorMount:
 
     @property
     def length(self) -> float:
-        """End to end along Y, the plate and every arm."""
+        """Total length along Y, including the plate and all arms."""
         ends = [self.plate.edge, -self.plate.edge, *(arm.far_edge for arm in self.arms)]
         return max(ends) - min(ends)
 
@@ -276,7 +276,7 @@ class MotorMount:
 
 
 def build() -> dict[str, Part]:
-    """One plate per single arm side, and one with both."""
+    """One plate for each arm side, plus one with both arms."""
     plates: dict[str, tuple[ArmSide, ...]] = {
         side.name.lower(): (side,) for side in ArmSide
     }

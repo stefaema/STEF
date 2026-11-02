@@ -3,9 +3,9 @@ from enum import Enum, auto
 
 
 class PSUFace(Enum):
-    """A face of the PSU that carries screw holes, and so a face the case answers with a wall.
+    """A face of the PSU that has screw holes. The case puts a wall against each one.
 
-    FLOOR is the PSU's underside, BACK the side it stands against.
+    FLOOR is the PSU's underside. BACK is the side that it stands against.
     """
 
     FLOOR = auto()

@@ -35,7 +35,7 @@ class WagoPair:
 
     @property
     def width(self) -> float:
-        """Across the opening axis, the channel plus a flank each side."""
+        """Width across the opening axis (the channel plus a sidewall on each side)."""
         return self.channel_width + 2 * self.sidewall_thickness
 
     @property
@@ -43,10 +43,10 @@ class WagoPair:
         return Wago222Mount.CHANNEL_HEIGHT
 
     def _halves(self) -> list[Wago222Mount]:
-        """The two holders, each backed off the centre by half the spine.
+        """The two holders. Each is moved back from the centre by half the spine.
 
-        Offsetting both by half a wall is what makes their closing walls land on
-        the same slab rather than one eating into the other's channel.
+        Moving both by half a wall makes their end walls share one slab. Otherwise
+        one holder would cut into the other's channel.
         """
         east, north = self.facing.unit_vector
         back_off = self.sidewall_thickness / 2

@@ -6,7 +6,7 @@ from shared.film_formats import FilmGeometricFormat
 
 @dataclass(frozen=True)
 class FilmRollerGauge:
-    """A film gauge a roller serves: its track diameter, and how it contacts the film.
+    """Which film a roller is built for and how the roller touches it.
 
     Attributes:
         film_format_spec: the film format this gauge is designed for.

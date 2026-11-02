@@ -91,7 +91,7 @@ class BearingSeat:
         ledge extends, so the bearing's inner race and whatever spins with it
         don't rub against the surrounding material."""
 
-        # main holes: bearing pocket over the race clearance, expressed as a stepped profile
+        # Main holes. The bearing pocket and the race clearance under it form one stepped profile.
         pocket_and_bore = Polygon(
             (0.0, -race_clearance_depth),
             (self.race_clearance_radius, -race_clearance_depth),

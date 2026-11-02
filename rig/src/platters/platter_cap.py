@@ -26,7 +26,7 @@ from shared.film_formats import (
     FilmGeometricFormat,
 )
 
-# Bore of the film cores this stands in, one inch.
+# Bore of a film core (one inch). The crown fits inside it.
 CORE_BORE_DIAMETER = 25.4
 
 # Taken off the platter's hole diameter.
@@ -39,13 +39,13 @@ BRIM_FLUSH_CLEARANCE = 0.1
 CORE_FIT = {Material.PLA: 0.1, Material.PETG: 0.1}
 CROWN_LEAD_IN = 1.0  # taper at the crown's top, so a core starts on squarely
 
-# The key on the crown, which the notch in the core's bore drops over.
+# The key on the crown. The notch in the core's bore slides down over it.
 CORE_KEY_WIDTH = 4.0  # across the crown
 CORE_KEY_LENGTH = 3.0  # out from the crown's surface, away from the axis
 # taken off the width, so the key enters the core's notch
 CORE_KEY_FIT = {Material.PLA: 0.1, Material.PETG: 0.1}
 CORE_KEY_ROOT_OVERLAP = 0.5  # how far the key reaches back into the crown
-# Opposite one screw, and midway between the other two.
+# Opposite one screw and midway between the other two.
 CORE_KEY_ANGLE = 180.0
 
 # Clears the rod and the bearing's inner race. Both stand still while the cap
@@ -71,7 +71,7 @@ def bolt_circle_radius(material: Material = Material.PLA) -> float:
 
 
 class PlatterCap:
-    """Fills the platter's centre hole, and stands a crown the film core slides onto.
+    """Fills the platter's centre hole and carries the crown that the film core slides onto.
 
     It bolts to the hub.
     """
@@ -125,7 +125,7 @@ class PlatterCap:
         )
 
     def key(self) -> Part:
-        """The key standing out from the crown, which the core's notch drops over.
+        """The key that sticks out from the crown. The core's notch slides down over it.
 
         It stops short of the crown's lead-in, so the core starts onto the
         cylinder first and only then has a notch to line up.

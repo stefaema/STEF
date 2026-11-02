@@ -32,7 +32,7 @@ GAUGE_35 = FilmRollerGauge(
 
 @dataclass(frozen=True)
 class Idler:
-    """One idler variant: which gauges it carries, and whether it prints in two pieces."""
+    """One idler variant. It lists the gauges it carries and whether it prints in two pieces."""
 
     name: str
     gauges: list[FilmRollerGauge]

@@ -50,9 +50,9 @@ class ScrewHole:
             )
 
         if self.sink_head:
-            # A funnel (a.k.a. countersink): head radius at the surface,
-            # narrowing to bore radius over the head's height, then straight
-            # down to `depth`.
+            # A countersink. It starts at head radius on the surface, narrows
+            # to bore radius over the head's height, then goes straight down to
+            # `depth`.
             profile = Polygon(
                 (0.0, CUT_OVERSHOOT),
                 (self.head_radius, CUT_OVERSHOOT),
@@ -63,7 +63,7 @@ class ScrewHole:
                 align=None,
             )
         else:
-            # A plain cylinder at bore radius, which the screw passes through
+            # A plain cylinder at bore radius. The screw passes through it
             # loose. The head lands on the surface, so nothing is opened for it.
             profile = Polygon(
                 (0.0, CUT_OVERSHOOT),

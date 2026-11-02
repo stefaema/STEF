@@ -24,7 +24,7 @@ def skirt_width() -> float:
 
 
 def plate_extent(psu: PSUSpecs = PSU) -> tuple[float, float, float, float]:
-    """The plate's rectangle: the footprint, skirted on three edges.
+    """Outline of the plate. It is the PSU footprint with a skirt added on three edges.
 
     The back edge stops flush at the PSU's back face, since the shoebox's back
     wall rises through that plane and there is nothing there to screw into.
