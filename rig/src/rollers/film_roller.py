@@ -10,6 +10,7 @@ from build123d import (
     Cone,
     Cylinder,
     Edge,
+    Face,
     Line,
     Part,
     Plane,
@@ -42,7 +43,7 @@ JOINT_LEAD_IN = (
 )
 
 
-# ── The profile, as regions rather than traced edges ────────────────────────
+# ── The profile, as regions ────────────────────────
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,7 @@ class RollerPolarRegion:
 
 @dataclass(frozen=True)
 class GaugeProfile:
-    """One gauge's regions: what limits the film's play, what it rides on, and what it must never touch.
+    """One gauge's regions.
 
     Attributes:
         gauge: the gauge these regions were built for.
@@ -113,7 +114,7 @@ def _flange_radius(gauge: FilmRollerGauge, is_outermost: bool) -> float:
 def _flange_width(
     gauge: FilmRollerGauge, is_outermost: bool, end_depth: float
 ) -> float:
-    """How far a gauge's limit flange extends in z, its flat land beyond the film edge."""
+    """How far a gauge's limit flange extends in z (its flat land beyond the film edge)."""
     if is_outermost:
         return max(OUTERMOST_FLANGE_WIDTH, end_depth)
     return gauge.effective_format.width * INNER_FLANGE_WIDTH_RATIO
@@ -253,6 +254,53 @@ def _side_silhouette(profiles: Sequence[GaugeProfile], sign: float) -> list[Edge
     return edges
 
 
+def half_section(gauges: Sequence[FilmRollerGauge], end_depth: float) -> Face:
+    """The roller's profile from the axis out, in the XY plane: x is radius, y is z along the axis.
+
+    Revolving it about the y axis gives the roller's body; extruding it gives the
+    same profile on a straight run.
+    """
+    ordered = _validated(gauges)
+    profiles = [
+        _gauge_profile(gauge, index == len(ordered) - 1, end_depth)
+        for index, gauge in enumerate(ordered)
+    ]
+    _validate_profiles(profiles)
+    half_length = total_length(ordered, end_depth) / 2
+    widest = profiles[-1]
+    innermost = profiles[0]
+
+    opposite_radial_line = Line(
+        (0.0, -half_length), _far(widest.limit_flanges[0], -1.0)
+    )
+
+    opposite_axial_silhouette = reversed(_side_silhouette(profiles, -1.0))
+
+    # Connect the innermost contact bands with a sagitta arc, so the roller's own body doesn't touch the film.
+    waist_arc = SagittaArc(
+        _near(innermost.contact_bands[0], -1.0),
+        _near(innermost.contact_bands[1], 1.0),
+        _waist_sagitta(innermost.gauge),
+    )
+
+    guide_axial_silhouette = _side_silhouette(profiles, 1.0)
+
+    guide_radial_line = Line(_far(widest.limit_flanges[1], 1.0), (0.0, half_length))
+
+    # Close the profile parallel to the axis (actually, the axis itself) so revolve() can make a solid.
+    axis_closure = Line((0.0, half_length), (0.0, -half_length))
+
+    edges: list[Edge] = [
+        opposite_radial_line,
+        *opposite_axial_silhouette,
+        waist_arc,
+        *guide_axial_silhouette,
+        guide_radial_line,
+        axis_closure,
+    ]
+    return make_face(Wire(edges)).face()
+
+
 # ── The roller itself ────────────────────────────────────────────────────────
 
 
@@ -286,40 +334,7 @@ class FilmRoller:
 
     def _body(self) -> Part:
         """Revolve the whole roller's limiting-stage profile in one pass."""
-        half_length = self._half_length()
-        widest = self.profiles[-1]
-        innermost = self.profiles[0]
-
-        opposite_radial_line = Line(
-            (0.0, -half_length), _far(widest.limit_flanges[0], -1.0)
-        )
-
-        opposite_axial_silhouette = reversed(_side_silhouette(self.profiles, -1.0))
-
-        # Connect the innermost contact bands with a sagitta arc, so the roller's own body doesn't touch the film.
-        waist_arc = SagittaArc(
-            _near(innermost.contact_bands[0], -1.0),
-            _near(innermost.contact_bands[1], 1.0),
-            _waist_sagitta(innermost.gauge),
-        )
-
-        guide_axial_silhouette = _side_silhouette(self.profiles, 1.0)
-
-        guide_radial_line = Line(_far(widest.limit_flanges[1], 1.0), (0.0, half_length))
-
-        # Close the profile parallel to the axis (actually, the axis itself) so revolve() can make a solid.
-        axis_closure = Line((0.0, half_length), (0.0, -half_length))
-
-        edges: list[Edge] = [
-            opposite_radial_line,
-            *opposite_axial_silhouette,
-            waist_arc,
-            *guide_axial_silhouette,
-            guide_radial_line,
-            axis_closure,
-        ]
-        wire = Wire(edges)
-        face = make_face(wire)
+        face = half_section(self.gauges, self.core.end_depth)
         return revolve((Plane.XZ * face).face(), axis=Axis.Z)
 
     def build_one_piece(self) -> Part:
