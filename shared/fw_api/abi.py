@@ -65,7 +65,7 @@ TMC2209_ACCESS_WRITE = 2
 
 
 class RpcFrame(enum.IntEnum):
-    """Which of the three kinds of frame this is. First byte, always."""
+    """Which kind of frame this is. First byte, always."""
 
     RPC_FRAME_REQ = 0
     REQ = 0
@@ -122,8 +122,8 @@ class RpcSysMethod(enum.IntEnum):
     DEVICES = 2
     RPC_SYS_TRIP_SET = 3
     TRIP_SET = 3
-    RPC_SYS_TRIP_CLEAR = 4
-    TRIP_CLEAR = 4
+    RPC_SYS_UNTRIP = 4
+    UNTRIP = 4
     RPC_SYS_COUNT = 5
     COUNT = 5
 
@@ -133,7 +133,7 @@ RPC_SYS_VERSION = RpcSysMethod.RPC_SYS_VERSION
 RPC_SYS_STATE = RpcSysMethod.RPC_SYS_STATE
 RPC_SYS_DEVICES = RpcSysMethod.RPC_SYS_DEVICES
 RPC_SYS_TRIP_SET = RpcSysMethod.RPC_SYS_TRIP_SET
-RPC_SYS_TRIP_CLEAR = RpcSysMethod.RPC_SYS_TRIP_CLEAR
+RPC_SYS_UNTRIP = RpcSysMethod.RPC_SYS_UNTRIP
 RPC_SYS_COUNT = RpcSysMethod.RPC_SYS_COUNT
 
 
@@ -238,7 +238,7 @@ RPC_RAW_COUNT = RpcRawMethod.RPC_RAW_COUNT
 
 
 class RpcMode(enum.IntEnum):
-    """What the firmware is doing. Reported by `sys.state`, never set."""
+    """What the firmware is doing. Reported by `sys.state`."""
 
     RPC_MODE_IDLE = 0
     IDLE = 0
@@ -258,6 +258,8 @@ RPC_MODE_TRIPPED = RpcMode.RPC_MODE_TRIPPED
 
 
 class RpcTripReason(enum.IntEnum):
+    """Why the board tripped."""
+
     RPC_TRIP_NONE = 0
     NONE = 0
     RPC_TRIP_KEEPALIVE = 1
@@ -626,6 +628,8 @@ class rpc_rep_hdr_t(ctypes.Structure):
 
 
 class rpc_keepalive_hdr_t(ctypes.Structure):
+    """What a keepalive says. It carries no payload."""
+
     _fields_ = [
         ("type", ctypes.c_uint8),
         ("_pad", ctypes.c_uint8 * 3),
@@ -648,7 +652,7 @@ class rpc_log_hdr_t(ctypes.Structure):
 class rpc_buf_t(ctypes.Union):
     """Storage for one frame, aligned so its structs may be read in place.
 
-    Every header is read through its own type, and naming the three alternatives
+    Every header is read through its own type, and naming every alternative
     here is what makes their alignment the compiler's problem.
     """
 
@@ -726,7 +730,8 @@ class rpc_sys_version_ret(ctypes.Structure):
 class rpc_sys_state_ret(ctypes.Structure):
     """What `sys.state` answers. Takes no arguments.
 
-    Reported, never set. The PC does not announce that it is about to run
+    Reported. The one mode the PC can set is a trip, through `sys.trip_set`.
+    It does not announce that it is about to run
     diagnostics; it asks what is happening and is refused per call if the answer
     makes the call unsafe. So this is the whole of the mode system from the
     outside: one question, no state to keep in sync across a link that can drop.
@@ -768,6 +773,12 @@ class rpc_sys_devices_ret(ctypes.Structure):
 
 
 class rpc_sys_trip_set_args(ctypes.Structure):
+    """What `sys.trip_set` takes. Answers with the status alone.
+
+    Every drive is halted and its VACTUAL set to 0, and ENN drops once nothing
+    moves. A board that is already tripped keeps its first reason.
+    """
+
     _fields_ = [
         ("detail", ctypes.c_uint8),
         ("immediate", ctypes.c_uint8),
@@ -775,7 +786,13 @@ class rpc_sys_trip_set_args(ctypes.Structure):
     ]
 
 
-class rpc_sys_trip_clear_ret(ctypes.Structure):
+class rpc_sys_untrip_ret(ctypes.Structure):
+    """What `sys.untrip` answers. Takes no arguments.
+
+    Refused with RPC_BUSY while a ramped halt is still running. The drives stay
+    released, so moving again starts with `raw.enable`.
+    """
+
     _fields_ = [
         ("reason", ctypes.c_uint8),
         ("detail", ctypes.c_uint8),
@@ -1223,7 +1240,7 @@ SIZEOF = {
     "rpc_dev_info_t": 20,
     "rpc_sys_devices_ret": 4,
     "rpc_sys_trip_set_args": 4,
-    "rpc_sys_trip_clear_ret": 4,
+    "rpc_sys_untrip_ret": 4,
     "rpc_relay_send_args": 4,
     "rpc_relay_send_ret": 36,
     "rpc_raw_read_args": 4,
@@ -1290,7 +1307,7 @@ SEMANTIC = {
         "has_stepgen": "rpc_bool_t",
     },
     rpc_sys_trip_set_args: {"immediate": "rpc_bool_t"},
-    rpc_sys_trip_clear_ret: {"reason": "rpc_trip_reason_id_t"},
+    rpc_sys_untrip_ret: {"reason": "rpc_trip_reason_id_t"},
     rpc_relay_send_args: {"idx": "rpc_dev_id_t"},
     rpc_relay_send_ret: {"outcome": "rpc_status_t"},
     rpc_raw_read_args: {"idx": "rpc_dev_id_t", "reg": "tmc2209_reg_id_t"},
@@ -1366,15 +1383,22 @@ DOC = {
     "rpc_frame_t.RPC_FRAME_REQ": "inbound, asking for a method",
     "rpc_frame_t.RPC_FRAME_REP": "outbound, answering a request",
     "rpc_frame_t.RPC_FRAME_LOG": "outbound, unprompted. Payload is the text, no terminator",
+    "rpc_frame_t.RPC_FRAME_KEEPALIVE": "inbound, saying the caller is still there. Answered by a reply",
     "rpc_ns_t.RPC_NS_SYS": "about the firmware, not about a driver",
     "rpc_ns_t.RPC_NS_RELAY": "the PC assembles the datagram",
     "rpc_ns_t.RPC_NS_RAW": "the firmware assembles it, from a register you name",
     "rpc_ns_t.RPC_NS_FILM": "the firmware assembles it, from an outcome you name",
-    "rpc_sys_method_t.RPC_SYS_STATE": "what the firmware is doing, and whether it is ready",
+    "rpc_sys_method_t.RPC_SYS_STATE": "what the firmware is doing, and why it tripped",
     "rpc_sys_method_t.RPC_SYS_DEVICES": "the board table: what exists and what it has",
+    "rpc_sys_method_t.RPC_SYS_TRIP_SET": "stop and release every drive, then refuse motion",
+    "rpc_sys_method_t.RPC_SYS_UNTRIP": "allow motion again. The drives stay released",
     "rpc_mode_t.RPC_MODE_IDLE": "nothing in flight. raw and relay are permitted",
     "rpc_mode_t.RPC_MODE_SCANNING": "a run owns the transport; raw and relay are refused",
     "rpc_mode_t.RPC_MODE_FAULT": "construction failed, so no device can be addressed",
+    "rpc_mode_t.RPC_MODE_TRIPPED": "halted and released. Moving and enabling are refused",
+    "rpc_trip_reason_t.RPC_TRIP_NONE": "not tripped",
+    "rpc_trip_reason_t.RPC_TRIP_KEEPALIVE": "a drive was moving and no keepalive came in time",
+    "rpc_trip_reason_t.RPC_TRIP_REQUESTED": "the PC called `sys.trip_set`",
     "tmc2209_err_t.TMC2209_ERR_ARG": "caller passed something impossible",
     "tmc2209_err_t.TMC2209_ERR_TX_TIMEOUT": "Port accepted fewer bytes than it was given.",
     "tmc2209_err_t.TMC2209_ERR_RX_TIMEOUT": "port delivered fewer bytes than were asked for",
@@ -1415,11 +1439,19 @@ DOC = {
     "rpc_req_hdr_t.id": "echoed in the reply, so a late answer is recognisable",
     "rpc_rep_hdr_t.type": "@ref RPC_FRAME_REP",
     "rpc_rep_hdr_t.id": "the request this answers",
+    "rpc_rep_hdr_t.keepalive_within_ms": "how soon the responder needs a keepalive, or\n\n@ref RPC_KEEPALIVE_NONE. Never 0",
+    "rpc_keepalive_hdr_t.type": "@ref RPC_FRAME_KEEPALIVE",
+    "rpc_keepalive_hdr_t.id": "echoed in the reply",
     "rpc_log_hdr_t.type": "@ref RPC_FRAME_LOG",
     "rpc_view_t.type": "@ref rpc_frame_t",
     "rpc_view_t.hdr": "cast to the header @c type names",
     "rpc_view_t.payload": "aligned, and empty when @c payload_len is 0",
+    "rpc_sys_state_ret.trip_reason": "RPC_TRIP_NONE unless the board is tripped",
+    "rpc_sys_state_ret.trip_detail": "what `sys.trip_set` was given, else 0",
     "rpc_dev_info_t.addr": "set by the MS1/MS2 straps",
+    "rpc_sys_trip_set_args.detail": "kept for the PC to read back. The firmware gives it no meaning",
+    "rpc_sys_trip_set_args.immediate": "halt at the next pulse instead of ramping down",
+    "rpc_sys_untrip_ret.reason": "what was cleared, or RPC_TRIP_NONE",
     "rpc_relay_send_args.reply_len": "bytes to wait for. 0 when the datagram has no reply",
     "rpc_relay_send_args.count": "how many of @c tx follow",
     "rpc_relay_send_ret.outcome": "of the transaction, not of the call",

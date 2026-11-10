@@ -145,12 +145,12 @@ RPC_WIRE_SIZE(rpc_op_t, 8);
  * has not been agreed yet, so its reply shape can never change.
  */
 typedef enum {
-    RPC_SYS_VERSION    = 0,
-    RPC_SYS_STATE      = 1, /**< what the firmware is doing, and whether it is ready */
-    RPC_SYS_DEVICES    = 2, /**< the board table: what exists and what it has */
-    RPC_SYS_TRIP_SET   = 3,
-    RPC_SYS_TRIP_CLEAR = 4,
-    RPC_SYS_COUNT      = 5,
+    RPC_SYS_VERSION  = 0,
+    RPC_SYS_STATE    = 1, /**< what the firmware is doing, and why it tripped */
+    RPC_SYS_DEVICES  = 2, /**< the board table: what exists and what it has */
+    RPC_SYS_TRIP_SET = 3, /**< stop and release every drive, then refuse motion */
+    RPC_SYS_UNTRIP   = 4, /**< allow motion again. The drives stay released */
+    RPC_SYS_COUNT    = 5,
 } rpc_sys_method_t;
 
 /**
@@ -182,7 +182,8 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
 /**
  * @brief What `sys.state` answers. Takes no arguments.
  *
- * Reported, never set. The PC does not announce that it is about to run
+ * Reported. The one mode the PC can set is a trip, through `sys.trip_set`.
+ * It does not announce that it is about to run
  * diagnostics; it asks what is happening and is refused per call if the answer
  * makes the call unsafe. So this is the whole of the mode system from the
  * outside: one question, no state to keep in sync across a link that can drop.
@@ -191,8 +192,8 @@ typedef struct {
     uint32_t             uptime_ms;
     uint16_t             device_count;
     rpc_mode_id_t        mode;
-    rpc_trip_reason_id_t trip_reason;
-    uint8_t              trip_detail;
+    rpc_trip_reason_id_t trip_reason;  /**< RPC_TRIP_NONE unless the board is tripped */
+    uint8_t              trip_detail;  /**< what `sys.trip_set` was given, else 0 */
     uint8_t              _pad[3];
 } rpc_sys_state_ret;
 RPC_WIRE_SIZE(rpc_sys_state_ret, 12);
@@ -220,19 +221,31 @@ typedef struct {
 } rpc_sys_devices_ret;
 RPC_WIRE_SIZE(rpc_sys_devices_ret, 4);
 
+/**
+ * @brief What `sys.trip_set` takes. Answers with the status alone.
+ *
+ * Every drive is halted and its VACTUAL set to 0, and ENN drops once nothing
+ * moves. A board that is already tripped keeps its first reason.
+ */
 typedef struct {
-    uint8_t    detail;
-    rpc_bool_t immediate;
+    uint8_t    detail;     /**< kept for the PC to read back. The firmware gives it no meaning */
+    rpc_bool_t immediate;  /**< halt at the next pulse instead of ramping down */
     uint8_t    _pad[2];
 } rpc_sys_trip_set_args;
 RPC_WIRE_SIZE(rpc_sys_trip_set_args, 4);
 
+/**
+ * @brief What `sys.untrip` answers. Takes no arguments.
+ *
+ * Refused with RPC_BUSY while a ramped halt is still running. The drives stay
+ * released, so moving again starts with `raw.enable`.
+ */
 typedef struct {
-    rpc_trip_reason_id_t reason;
+    rpc_trip_reason_id_t reason;  /**< what was cleared, or RPC_TRIP_NONE */
     uint8_t              detail;
     uint8_t              _pad[2];
-} rpc_sys_trip_clear_ret;
-RPC_WIRE_SIZE(rpc_sys_trip_clear_ret, 4);
+} rpc_sys_untrip_ret;
+RPC_WIRE_SIZE(rpc_sys_untrip_ret, 4);
 
 /* ── relay ──────────────────────────────────────────────────────────────── */
 
@@ -539,18 +552,19 @@ RPC_WIRE_SIZE(rpc_raw_motion_report_ret, 12);
 
 /* ── State and statuses ─────────────────────────────────────────────────── */
 
-/** @brief What the firmware is doing. Reported by `sys.state`, never set. */
+/** @brief What the firmware is doing. Reported by `sys.state`. */
 typedef enum {
     RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and relay are permitted */
     RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and relay are refused */
     RPC_MODE_FAULT    = 2, /**< construction failed, so no device can be addressed */
-    RPC_MODE_TRIPPED  = 3,
+    RPC_MODE_TRIPPED  = 3, /**< halted and released. Moving and enabling are refused */
 } rpc_mode_t;
 
+/** @brief Why the board tripped. */
 typedef enum {
-    RPC_TRIP_NONE      = 0,
-    RPC_TRIP_KEEPALIVE = 1,
-    RPC_TRIP_REQUESTED = 2,
+    RPC_TRIP_NONE      = 0, /**< not tripped */
+    RPC_TRIP_KEEPALIVE = 1, /**< a drive was moving and no keepalive came in time */
+    RPC_TRIP_REQUESTED = 2, /**< the PC called `sys.trip_set` */
 } rpc_trip_reason_t;
 
 /**
