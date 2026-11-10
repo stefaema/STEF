@@ -1,9 +1,8 @@
 #include "crc16.h"
 
 /*
- * Bitwise rather than table-driven. A 512-byte table would save microseconds on
- * frames that are a few hundred bytes long, on a link whose round trip is
- * measured in milliseconds. Nothing here is on the cadence path.
+ * Bitwise, since a 512-byte table would save microseconds on a link whose round
+ * trip is milliseconds.
  */
 
 uint16_t crc16_ccitt(const uint8_t *data, size_t len)

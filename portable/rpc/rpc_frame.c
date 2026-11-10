@@ -3,9 +3,9 @@
 #include "crc16.h"
 
 /*
- * The CRC covers the header and the payload together, so it is computed after
- * the header is in place and never before. Appended low byte first, like every
- * other multi-byte value on this wire.
+ * The CRC covers the header and the payload, so it is computed once the header
+ * is in place. Appended low byte first, like every other multi-byte value on
+ * this wire.
  */
 static size_t seal(rpc_buf_t *b, size_t payload_len)
 {
@@ -95,8 +95,8 @@ bool rpc_frame_open(const void *buf, size_t len, rpc_view_t *out)
         return false;
     }
 
-    /* A header and a CRC is the shortest thing that can be called a frame, and
-     * anything longer than the buffer it arrived in cannot be one either. */
+    /* A header and a CRC is the shortest frame, and nothing longer than the
+     * buffer can be one. */
     if (len < RPC_HDR_LEN + RPC_CRC_LEN || len > RPC_MAX_FRAME) {
         return false;
     }

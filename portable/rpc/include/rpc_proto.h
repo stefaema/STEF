@@ -2,28 +2,22 @@
  * @file rpc_proto.h
  * @brief What the two ends must agree on to exchange a frame at all.
  *
- * A frame kind, a size bound and the shape of a status byte are
- * properties of the transport.
+ * Frame kinds, the size bound and the status byte. Includes only stdint and
+ * assert, since every side that speaks this protocol compiles it.
  *
- * Nothing in this file may include anything but stdint and assert. It is
- * compiled for every side that speaks this RPC protocol, which is what
- * binds all to one definition.
+ * ## Layout rules, for every struct on this wire
  *
- * ## The layout rules, which hold for every struct on this wire
- *
- * A frame is `[header][payload][crc]`, and both the header and the payload are
- * plain structs read in place rather than fields decoded one at a time. Three
- * rules make that safe, and all three are load-bearing:
+ * A frame is `[header][payload][crc]`, and headers and payloads are plain
+ * structs read in place. That is safe because:
  *
  * 1. Every field sits at an offset that is a multiple of its own width, reached
- *    by explicit `_pad` members. Padding is declared, so no compiler is deciding it.
- * 2. Every header is exactly @ref RPC_HDR_LEN bytes, so the payload always
- *    begins at an offset divisible by 4 and its own fields stay aligned.
- * 3. Every struct asserts its own size, so a layout that drifts fails to compile
- *    on the end that drifted.
+ *    by explicit `_pad` members, to avoid the compiler choosing the padding.
+ * 2. Every header is exactly @ref RPC_HDR_LEN bytes, so the payload begins at
+ *    an offset divisible by 4 and its fields stay aligned.
+ * 3. Every struct asserts its own size, so a layout that drifts fails to
+ *    compile on the end that drifted.
  *
  * Little-endian throughout.
- *
  */
 
 #ifndef RPC_PROTO_H
@@ -44,23 +38,14 @@
 /** What is left for a payload once the header and the CRC have their share. */
 #define RPC_MAX_PAYLOAD (RPC_MAX_FRAME - RPC_HDR_LEN - RPC_CRC_LEN)
 
-/**
- * @brief How many namespaces the dispatch table holds.
- *
- * Capacity, not a count of what exists.
- *
- */
+/** @brief How many namespaces the dispatch table can hold. */
 #define RPC_NS_MAX 8
 
 /**
  * @brief Asserts that @p type occupies exactly @p n bytes on the wire.
  *
- * `static_assert` comes from `<assert.h>`, which is the one include this file
- * carries beyond stdint. It is checked while compiling and emits no code, and
- * `NDEBUG` does not reach it: that switch governs `assert`, not this.
- *
- * Everywhere the macro is used gets the include along with the macro, so a
- * caller declaring its own payloads never names assert at all.
+ * Checked at compile time and unaffected by `NDEBUG`. Including this header
+ * brings in `<assert.h>`, so a caller declaring payloads needs nothing else.
  */
 #define RPC_WIRE_SIZE(type, n) \
     static_assert(sizeof(type) == (n), #type " is not " #n " bytes on the wire")
@@ -76,11 +61,11 @@ typedef enum {
 /* ── What a byte means ──────────────────────────────────────────────────── */
 
 /**
- * Every field on this wire is a `uintN_t`, so the width says how much room a
- * value has and nothing says what kind of value it is. These name the kind.
+ * Every field on this wire is a `uintN_t`. These typedefs name what kind of
+ * value a field holds.
  *
- * Each is an alias for a width, never an enum: an enum is `int`-sized and would
- * move the wire. A typedef carries kind, never bounds.
+ * Each is an alias for a width and never an enum, to avoid an `int`-sized enum
+ * moving the wire.
  */
 
 /** @brief A truth value on the wire. */
@@ -98,15 +83,11 @@ typedef uint8_t rpc_log_level_t;
 /**
  * @brief What a reply reports, as one byte on the wire.
  *
- * A plain integer rather than an enum, because the values are shared out: the
- * ones below are the transport's own and everything else belongs to whoever
- * registers handlers. An enum would have to name all of them in one place,
- * which is the coupling this file exists without.
+ * A plain integer, so the transport and whoever registers handlers can each own
+ * part of the range without one enum naming both.
  *
- * One byte, split at @ref RPC_STATUS_TRANSPORT_BASE. Above the line the
- * transport answers for the value; below it the caller does. The transport
- * takes the narrow end because it has three statuses and will not grow, while
- * a caller's vocabulary follows whatever it drives.
+ * Split at @ref RPC_STATUS_TRANSPORT_BASE: the transport's three statuses sit
+ * above it, the caller's below.
  *
  * Values are fixed by the wire. Never renumber; append.
  */
@@ -114,9 +95,8 @@ typedef uint8_t rpc_status_t;
 
 /* ── Headers ────────────────────────────────────────────────────────────── */
 /*
- * The type byte leads every header, so a receiver can tell them apart before it
- * knows which struct it is holding. Everything after that is arranged for
- * alignment rather than for reading order.
+ * The type byte leads every header, so a receiver can tell them apart first.
+ * The rest is ordered for alignment.
  */
 
 /** @brief What a request says before its arguments. */
@@ -168,18 +148,16 @@ RPC_WIRE_SIZE(rpc_log_hdr_t, RPC_HDR_LEN);
 /**
  * @brief Where the transport's statuses begin. Below this belongs to the caller.
  *
- * The split has to be enforced from the caller's side, since neither end of it
- * can see the other's names. This constant is the one thing both can refer to,
- * so a caller asserts its own statuses stay under it and the two vocabularies
- * share a byte without either listing the other.
+ * A caller asserts its own statuses stay under this, so the two vocabularies
+ * share a byte without either naming the other.
  */
 #define RPC_STATUS_TRANSPORT_BASE 240U
 
 enum {
     RPC_OK = 0,
 
-    /* The transport's own, for frames that never reach a handler. Append
-       upward from the base; the space below it is not the transport's to use. */
+    /* The transport's own, for frames that never reach a handler. Append upward
+       from the base. */
     RPC_NO_METHOD = 240, /**< no such namespace, or no such method in it */
     RPC_BAD_FRAME = 241, /**< the payload is not the length this method takes */
     RPC_INTERNAL  = 242, /**< the responder failed for its own reasons */

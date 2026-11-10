@@ -1,7 +1,6 @@
 /*
- * COBS is worth testing at its edges rather than in the middle: the cases that
- * break it are a zero at each end, a run of exactly 254 non-zero bytes, and a
- * receiver that has to find its place again after damage.
+ * COBS at its edges: a zero at each end, a run of exactly 254 non-zero bytes,
+ * and a receiver finding its place after damage.
  */
 
 #include <string.h>
@@ -92,9 +91,8 @@ void test_cobs_decode_rejects_malformed(void)
 }
 
 /*
- * The property the framing was chosen for. Corrupt a frame arbitrarily and the
- * next delimiter still starts a good one, so a receiver loses at most the frame
- * it was in the middle of.
+ * Corrupt a frame arbitrarily and the next delimiter still starts a good one,
+ * so a receiver loses at most the frame it was in.
  */
 void test_cobs_resyncs_after_damage(void)
 {

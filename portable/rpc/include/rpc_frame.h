@@ -2,18 +2,14 @@
  * @file rpc_frame.h
  * @brief Puts a header and a CRC around a payload, and takes them off again.
  *
- * This is the whole of the wire format's code. It knows a frame is
- * `[header][payload][crc]` and it knows nothing whatever about the payload,
- * which is a span of bytes to it and a struct to whoever asked for the call.
- *
- * The struct is the layout, and `rpc_proto.h` states the three rules that make
- * one safe to read in place.
+ * A frame is `[header][payload][crc]`. This code treats the payload as bytes;
+ * the caller reads it as its own struct. `rpc_proto.h` states the rules that
+ * make that safe.
  *
  * ## Building one
  *
- * The payload is written first, directly into the buffer at @ref rpc_payload,
- * and the header goes on afterwards because only then is the length known.
- * Nothing is copied and there is no intermediate.
+ * Write the payload straight into the buffer at @ref rpc_payload, then seal the
+ * header on, since only then is the length known. Nothing is copied.
  *
  *     rpc_buf_t buf;
  *     my_payload_t *p = rpc_payload(&buf);
@@ -33,8 +29,7 @@
 /**
  * @brief Storage for one frame, aligned so its structs may be read in place.
  *
- * Every header is read through its own type, and naming every alternative
- * here is what makes their alignment the compiler's problem.
+ * The union names every header type, so the compiler aligns for all of them.
  */
 typedef union {
     rpc_req_hdr_t       req;
@@ -88,12 +83,11 @@ size_t rpc_frame_seal_keepalive(rpc_buf_t *b, uint16_t id);
 /**
  * @brief Says whether @p buf holds a frame, and where its parts are.
  *
- * Nothing is copied or decoded. @p out borrows @p buf, so it is valid only
- * while that buffer holds still, and a payload can become a struct by a cast the
- * caller could make.
+ * Nothing is copied or decoded. @p out points into @p buf, so it is valid only
+ * while that buffer is unchanged.
  *
  * @param buf  a decoded frame, CRC included. Must be aligned, which is what
- *             @ref rpc_buf_t is for: the header is read through its own type
+ *             @ref rpc_buf_t is for
  * @param len  its length
  * @param out  untouched on failure
  *

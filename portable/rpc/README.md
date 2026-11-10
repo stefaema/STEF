@@ -21,12 +21,11 @@ every side that speaks this protocol compile the one definition.
 
 ## Boundaries
 
-- Framing knows a frame is `[header][payload][crc]` and nothing about the
-  payload, which is a span of bytes here and a struct to whoever asked for the
-  call.
+- Framing knows a frame is `[header][payload][crc]` and treats the payload as
+  bytes.
 
-- Handlers are registered, not compiled in. A switch over method numbers would
-  name every handler here, and linking against everything they reach.
+- Handlers are registered at run time, to avoid naming and linking every
+  handler here.
 
 - A status byte is split at `RPC_STATUS_TRANSPORT_BASE`: above it the transport
   answers, below it the caller does. Neither end lists the other's names.

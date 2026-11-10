@@ -69,8 +69,8 @@ size_t cobs_decode(const uint8_t *src, size_t len, uint8_t *dst, size_t cap)
 
         /*
          * The removed zero is put back, except after a full group, which stood
-         * for no zero, and except at the end, where the last code closes the
-         * chain rather than standing in for anything.
+         * for no zero, and except at the end, where the last code only closes
+         * the chain.
          */
         if (code != 0xFF && i < len) {
             if (out >= cap) {

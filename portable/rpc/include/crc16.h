@@ -1,12 +1,9 @@
 /**
  * @file crc16.h
- * @brief The check that tells a well-formed frame from a plausible one.
- *
- * COBS says where a frame ends, not whether it survived the trip.
+ * @brief The check that a frame arrived intact.
  *
  * CRC-16/CCITT-FALSE: polynomial 0x1021, initial value 0xFFFF, no reflection,
  * no final xor.
- *
  */
 
 #ifndef CRC16_H

@@ -1,12 +1,6 @@
 /*
- * The wire format is the one thing both ends compile, so what is worth testing
- * is not that a field survives a roundtrip inside one process, but that the
- * bytes are the ones promised: fixed offsets, little-endian, declared padding.
- * A test that only read back what it wrote would pass on a broken layout.
- *
- * The assertions in rpc_proto.h already fail the build if a struct changes
- * size. What they cannot see is which byte went where, so that is what is
- * pinned here.
+ * Pins which byte goes where: fixed offsets, little-endian, declared padding.
+ * The asserts in rpc_proto.h catch a size change, not a field that moved.
  */
 
 #include <stdint.h>
@@ -15,10 +9,8 @@
 #include "crc16.h"
 #include "rpc_frame.h"
 
-/* The frame layer moves bytes and does not know what a namespace or a status
-   means, so neither does this test. Any numbers will do, and using the ones
-   this image happens to serve would be the coupling rpc_proto.h was split to
-   avoid. */
+/* The frame layer does not know what a namespace or a status means, so any
+   numbers will do. */
 #define A_NAMESPACE 2U
 #define A_METHOD    7U
 #define A_STATUS    10U
@@ -26,9 +18,8 @@
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
-/* Every header is the same length, which is what keeps a payload's uint32_t
-   fields at offsets divisible by four. Little else in the design survives this
-   changing. */
+/* Every header is the same length, which keeps a payload's uint32_t fields at
+   offsets divisible by four. */
 void test_frame_headers_are_all_one_length(void)
 {
     TEST_ASSERT_EQUAL_size_t(8, sizeof(rpc_req_hdr_t));
@@ -134,10 +125,8 @@ void test_frame_reply_carries_its_keepalive_deadline(void)
 }
 
 /*
- * Two identical calls have to produce two identical frames. They would not if a
- * header's padding were left holding whatever the previous frame put in the
- * buffer, and the failure would be a CRC that changes for an answer that does
- * not. Sealing writes the header whole, which is what makes this hold.
+ * Two identical calls produce two identical frames, to avoid a CRC that changes
+ * for an unchanged answer. Sealing writes the header whole, padding included.
  */
 void test_frame_padding_is_written_not_inherited(void)
 {
@@ -253,8 +242,7 @@ void test_frame_rejects_corrupt_frames(void)
     TEST_ASSERT_TRUE(rpc_frame_open(&b, len, &v)); /* and it still opens after */
 }
 
-/* A header and a CRC is the shortest thing that can be a frame, so anything
- * under that is not one however well its bytes happen to check out. */
+/* A header and a CRC is the shortest frame, so anything shorter is refused. */
 void test_frame_rejects_a_runt(void)
 {
     rpc_buf_t  b;
@@ -269,8 +257,7 @@ void test_frame_rejects_a_runt(void)
     TEST_ASSERT_FALSE(rpc_frame_open(&b, RPC_MAX_FRAME + 1U, &v));
 }
 
-/* With a CRC that agrees, so what is refused is the type itself rather than
- * the damage done in changing it. */
+/* With a CRC that agrees, so the type itself is what gets refused. */
 void test_frame_rejects_unknown_frame_type(void)
 {
     rpc_buf_t b;

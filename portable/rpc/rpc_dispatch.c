@@ -4,10 +4,8 @@
 #include <string.h>
 
 /*
- * One table per namespace, indexed by method number, so a method the protocol
- * names but this build does not implement is a zeroed entry rather than a gap
- * in a switch. Registration is what keeps this file from naming any handler,
- * and therefore from linking against anything a handler needs.
+ * One table per namespace, indexed by method number. A method the protocol names
+ * but this build does not serve is a zeroed entry.
  */
 typedef struct {
     const rpc_method_t *methods;
@@ -23,10 +21,8 @@ bool rpc_register(uint8_t ns, const rpc_method_t *methods, size_t count)
     }
 
     /*
-     * Checked once, here, so that dispatch never has to ask whether a reply
-     * will fit. A method declaring more than a frame can carry is a mistake in
-     * the table, and the place to find out is at start-up rather than on the
-     * first call that happens to use it.
+     * Checked once at start-up, so dispatch never has to ask whether a reply
+     * fits.
      */
     for (size_t i = 0; i < count; i++) {
         if (methods[i].args_len > RPC_MAX_PAYLOAD || methods[i].ret_len > RPC_MAX_PAYLOAD) {
@@ -81,10 +77,9 @@ rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method, const void *args, size_t a
     }
 
     /*
-     * Payloads have padding members and the reply buffer is reused, so a field
-     * the handler leaves alone still travels. Clearing here settles what it
-     * carries for every method at once: an answer that has not changed keeps
-     * the same CRC, and nothing reaches the caller that was not written for it.
+     * Cleared first, since payloads have padding and the reply buffer is reused.
+     * An unchanged answer keeps the same CRC, and nothing unwritten reaches the
+     * caller.
      */
     if (ret != NULL && m->ret_len > 0U) {
         memset(ret, 0, m->ret_len);
@@ -94,9 +89,8 @@ rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method, const void *args, size_t a
 
     if (m->variable) {
         /*
-         * A minimum, because the head of the payload is what holds the count
-         * that settles the real length. The handler checks that count against
-         * what arrived; it is the only thing that knows where the field is.
+         * A minimum, since the head of the payload holds the count that settles
+         * the real length. The handler checks that count.
          */
         if (args_len < m->args_len) {
             return RPC_BAD_FRAME;
@@ -112,9 +106,8 @@ rpc_status_t rpc_dispatch(uint8_t ns, uint8_t method, const void *args, size_t a
         *ret_len = (status == RPC_OK) ? room : 0;
     } else {
         /*
-         * Exact, both ways. Short means the ends disagree about this method's
-         * arguments; long means the same thing and is worth catching now rather
-         * than at the field that eventually matters.
+         * Exact both ways. Either mismatch means the ends disagree about this
+         * method.
          */
         if (args_len != m->args_len) {
             return RPC_BAD_FRAME;

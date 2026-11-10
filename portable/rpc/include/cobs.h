@@ -2,15 +2,11 @@
  * @file cobs.h
  * @brief Turns a frame into a run of bytes that contains no zero.
  *
- * A byte stream has no boundaries, so a receiver needs some byte to mean "the
- * frame ends here". Any byte that is picked could also occur inside the payload.
+ * A byte stream has no boundaries, so one byte value has to mean end of frame.
+ * COBS encodes a frame with no zero bytes in it, so a zero in the stream always
+ * ends a frame.
  *
- * COBS removes the problem instead of managing it: the encoding is guaranteed
- * to contain no zero byte at all, so a zero in the stream means end-of-frame
- * and can mean nothing else.
- *
- * Neither function writes the delimiter. Framing is the caller's, so the caller
- * appends the zero.
+ * Neither function writes the delimiter; the caller adds it.
  */
 
 #ifndef COBS_H
@@ -47,7 +43,7 @@ size_t cobs_encode(const uint8_t *src, size_t len, uint8_t *dst, size_t cap);
  *
  * @return bytes written, or 0 if the input is malformed: a zero inside it, a
  *         group running past the end, or output beyond @p cap. Garbage that
- *         happens to decode is caught by the CRC, not here.
+ *         happens to decode is left for the CRC.
  */
 size_t cobs_decode(const uint8_t *src, size_t len, uint8_t *dst, size_t cap);
 
