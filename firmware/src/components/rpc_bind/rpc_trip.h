@@ -20,10 +20,10 @@ void rpc_keepalive_heard(uint32_t now_ms);
 /** @brief The deadline a reply carries. The clock starts when motion is first seen. */
 uint16_t rpc_keepalive_within_ms(uint32_t now_ms);
 
-/** @brief Halts every drive and releases them once nothing moves. Keeps the first reason. */
+/** @brief Halts every drive and releases them once nothing is pulsing. Keeps the first reason. */
 void rpc_trip(rpc_trip_reason_t reason, uint8_t detail, bool immediate);
 
-/** @brief Clears the trip. False while a halted drive is still moving. */
+/** @brief Clears the trip. False while a halted drive is still pulsing. */
 bool rpc_untrip(void);
 
 /** @brief Trips on a missed keepalive and finishes a pending release. */

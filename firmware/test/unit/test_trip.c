@@ -299,11 +299,39 @@ static void test_an_untripped_board_moves_again(void)
     TEST_ASSERT_TRUE(enabled());
 }
 
+static void test_an_unknown_velocity_on_an_enabled_driver_asks_for_a_keepalive(void)
+{
+    trip_setup();
+    tmc2209_invalidate_owned(&g_dev);
+    TEST_ASSERT_EQUAL_UINT16(RPC_KEEPALIVE_WITHIN_MS, rpc_keepalive_within_ms(0));
+}
+
+static void test_an_unknown_velocity_on_a_disabled_driver_asks_for_none(void)
+{
+    trip_setup();
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, false));
+    tmc2209_invalidate_owned(&g_dev);
+    TEST_ASSERT_EQUAL_UINT16(RPC_KEEPALIVE_NONE, rpc_keepalive_within_ms(0));
+}
+
+static void test_an_unreachable_driver_does_not_hold_up_the_untrip(void)
+{
+    trip_setup();
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, 1000));
+    g_mock.drop_reply = 1000;
+
+    rpc_trip(RPC_TRIP_REQUESTED, 0, false);
+    TEST_ASSERT_TRUE(rpc_untrip());
+    TEST_ASSERT_FALSE(enabled());
+}
+
 void run_trip_tests(void)
 {
     RUN_TEST(test_an_idle_board_asks_for_no_keepalive);
     RUN_TEST(test_a_run_in_flight_asks_for_a_keepalive);
     RUN_TEST(test_a_set_velocity_asks_for_a_keepalive);
+    RUN_TEST(test_an_unknown_velocity_on_an_enabled_driver_asks_for_a_keepalive);
+    RUN_TEST(test_an_unknown_velocity_on_a_disabled_driver_asks_for_none);
     RUN_TEST(test_silence_while_moving_trips_with_a_ramped_halt);
     RUN_TEST(test_a_keepalive_puts_the_deadline_off);
     RUN_TEST(test_silence_while_idle_trips_nothing);
@@ -313,6 +341,7 @@ void run_trip_tests(void)
     RUN_TEST(test_a_trip_stops_a_set_velocity);
     RUN_TEST(test_the_first_reason_is_kept);
     RUN_TEST(test_untripping_waits_for_the_release);
+    RUN_TEST(test_an_unreachable_driver_does_not_hold_up_the_untrip);
     RUN_TEST(test_a_tripped_board_refuses_to_move_or_enable);
     RUN_TEST(test_an_untripped_board_moves_again);
 }
