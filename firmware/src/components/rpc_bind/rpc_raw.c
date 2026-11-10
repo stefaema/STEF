@@ -28,6 +28,7 @@
 #include "fw_api.h"
 #include "rpc_methods.h"
 #include "rpc_status.h"
+#include "rpc_trip.h"
 #include "tmc2209.h"
 
 /*
@@ -340,6 +341,10 @@ static rpc_status_t raw_enable(const void *args, void *ret)
         return RPC_ARG;
     }
 
+    if (in->on != 0U && rpc_trip_reason() != RPC_TRIP_NONE) {
+        return RPC_REFUSED;
+    }
+
     return rpc_status_of_err(tmc2209_enable(dev, in->on != 0U));
 }
 
@@ -373,6 +378,10 @@ static rpc_status_t raw_move(const void *args, void *ret)
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
         return RPC_ARG;
+    }
+
+    if (rpc_trip_reason() != RPC_TRIP_NONE) {
+        return RPC_REFUSED;
     }
 
     tmc2209_movement_plan_t m = {

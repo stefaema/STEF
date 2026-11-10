@@ -130,7 +130,7 @@ static rpc_status_t call(uint8_t ns, uint8_t method, const void *args, size_t ar
     rpc_status_t status  = rpc_dispatch(req->ns, req->method, rv.payload, rv.payload_len,
                                         rpc_payload(&g_rep), &ret_len);
 
-    size_t rep_len = rpc_frame_seal_rep(&g_rep, req->id, status, ret_len);
+    size_t rep_len = rpc_frame_seal_rep(&g_rep, req->id, status, RPC_KEEPALIVE_NONE, ret_len);
     TEST_ASSERT_GREATER_THAN(0, rep_len);
 
     rpc_view_t pv;

@@ -54,12 +54,14 @@ add_executable(unit_tests
     main.c
     test_rpc.c
     test_ramp.c
+    test_trip.c
     fake_devices.c
     ${TMC2209_DIR}/test/mock_tmc2209.c
 
     ${RPC_BIND_DIR}/rpc_raw.c
     ${RPC_BIND_DIR}/rpc_relay.c
     ${RPC_BIND_DIR}/rpc_status.c
+    ${RPC_BIND_DIR}/rpc_trip.c
 
     # Freestanding, which is the point: the ramp arithmetic runs here.
     ${TMC_BIND_DIR}/ramp.c)

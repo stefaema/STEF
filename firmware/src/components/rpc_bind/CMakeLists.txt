@@ -1,7 +1,7 @@
 # What the rpc component alone cannot know: which methods exist and what they do. The
 # component moves frames and names no handler; these are the handlers, plus the
 # vocabulary both ends compile and the link that carries the bytes.
-idf_component_register(SRCS "rpc_status.c" "rpc_sys.c" "rpc_raw.c" "rpc_relay.c" "rpc_link.c"
+idf_component_register(SRCS "rpc_status.c" "rpc_sys.c" "rpc_raw.c" "rpc_relay.c" "rpc_link.c" "rpc_trip.c"
                        INCLUDE_DIRS "include"
                        PRIV_INCLUDE_DIRS "."
                        REQUIRES rpc fw_api

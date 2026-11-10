@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "rpc_dispatch.h"
 #include "rpc_frame.h"
+#include "rpc_trip.h"
 
 /* Encoded worst case, plus the delimiter that closes the frame. */
 #define RPC_ENCODED_MAX (COBS_ENCODED_MAX(RPC_MAX_FRAME) + 1U)
@@ -38,8 +39,15 @@ typedef struct {
     uint8_t  data[RPC_MAX_FRAME];
 } tx_frame_t;
 
+static const char *TAG = "rpc_link";
+
 static QueueHandle_t s_txq;
 static bool          s_started;
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
 
 /* ── The single TX owner ────────────────────────────────────────────────── */
 
@@ -169,8 +177,7 @@ static int log_to_link(const char *fmt, va_list ap)
         return n;
     }
 
-    size_t frame_len =
-        rpc_frame_seal_log(&buf, RPC_LOG_ERROR, (uint32_t)(esp_timer_get_time() / 1000), len);
+    size_t frame_len = rpc_frame_seal_log(&buf, RPC_LOG_ERROR, now_ms(), len);
     if (frame_len > 0) {
         /* Never wait. A full queue means the PC is not draining, and a log is
          * not worth stalling the task that produced it. */
@@ -189,7 +196,23 @@ static void serve(const rpc_buf_t *frame, size_t len)
     static rpc_buf_t reply;
 
     rpc_view_t v;
-    if (!rpc_frame_open(frame, len, &v) || v.type != RPC_FRAME_REQ) {
+    if (!rpc_frame_open(frame, len, &v)) {
+        return;
+    }
+
+    if (v.type == RPC_FRAME_KEEPALIVE) {
+        const rpc_keepalive_hdr_t *ka = v.hdr;
+
+        rpc_keepalive_heard(now_ms());
+        size_t reply_len =
+            rpc_frame_seal_rep(&reply, ka->id, RPC_OK, rpc_keepalive_within_ms(now_ms()), 0);
+        if (reply_len > 0) {
+            (void)tx_send(&reply, reply_len, pdMS_TO_TICKS(100));
+        }
+        return;
+    }
+
+    if (v.type != RPC_FRAME_REQ) {
         return;
     }
 
@@ -205,7 +228,8 @@ static void serve(const rpc_buf_t *frame, size_t len)
     rpc_status_t status =
         rpc_dispatch(req->ns, req->method, v.payload, v.payload_len, rpc_payload(&reply), &ret_len);
 
-    size_t reply_len = rpc_frame_seal_rep(&reply, req->id, status, ret_len);
+    size_t reply_len =
+        rpc_frame_seal_rep(&reply, req->id, status, rpc_keepalive_within_ms(now_ms()), ret_len);
     if (reply_len > 0) {
         (void)tx_send(&reply, reply_len, pdMS_TO_TICKS(100));
     }
@@ -232,8 +256,19 @@ static void rx_task(void *arg)
     size_t run_len = 0;
     bool   overrun = false;
 
+    rpc_trip_reason_t reported = RPC_TRIP_NONE;
+
     for (;;) {
         int got = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(RPC_RX_POLL_MS));
+
+        rpc_trip_update(now_ms());
+
+        rpc_trip_reason_t reason = rpc_trip_reason();
+        if (reason != reported && reason != RPC_TRIP_NONE) {
+            ESP_LOGE(TAG, "tripped, reason %d, detail %u", (int)reason,
+                     (unsigned)rpc_trip_detail());
+        }
+        reported = reason;
 
         if (got <= 0) {
             continue;
