@@ -205,9 +205,13 @@ def check_test(m: Module) -> bool:
         return skip(f"test {m.name}", "no shell on this system")
     ok = True
     for d in m.ctest_dirs:
+        label = f"test {m.name}/{d.relative_to(m.path)}"
+        if cmake(m, d) != 0:
+            ok &= report(label, False, "it did not build")
+            continue
         out = CICD_BUILD / m.name / d.name
         rc = run_in_module_shell(m, f"ctest --test-dir {out} --output-on-failure")
-        ok &= report(f"test {m.name}/{d.relative_to(m.path)}", rc == 0, "ctest")
+        ok &= report(label, rc == 0, "ctest")
     if m.python_pkg:
         if m.native_lib and cmake(m, m.native_lib) != 0:
             return ok and report(f"test {m.name}", False, "its library did not build")
