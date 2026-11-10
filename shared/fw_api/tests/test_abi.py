@@ -86,7 +86,7 @@ def test_a_sealed_request_opens_as_what_went_in():
 
 def test_a_corrupted_frame_does_not_open():
     buf = abi.rpc_buf_t()
-    length = abi.rpc_frame_seal_rep(buf, 7, abi.RPC_OK, 0)
+    length = abi.rpc_frame_seal_rep(buf, 7, abi.RPC_OK, abi.RPC_KEEPALIVE_NONE, 0)
     buf.bytes[abi.RPC_HDR_LEN - 1] ^= 0xFF
     assert not abi.rpc_frame_open(
         ctypes.byref(buf), length, ctypes.byref(abi.rpc_view_t())

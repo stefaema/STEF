@@ -272,11 +272,14 @@ def test_a_reply_reaches_the_caller_as_a_dataclass():
     spec = fw_api.namespaces()["sys"]["state"]
     payload = bytes(
         fw_api.rpc_sys_state_ret(
-            uptime_ms=1234, device_count=3, mode=fw_api.RPC_MODE_SCANNING, ready=1
+            uptime_ms=1234,
+            device_count=3,
+            mode=fw_api.RPC_MODE_TRIPPED,
+            trip_reason=fw_api.RPC_TRIP_KEEPALIVE,
         )
     )
 
     out = fw_api.result(spec, payload)
-    assert out.mode is fw_api.RpcMode.SCANNING
-    assert out.ready is True
+    assert out.mode is fw_api.RpcMode.TRIPPED
+    assert out.trip_reason is fw_api.RpcTripReason.KEEPALIVE
     assert out.uptime_ms == 1234

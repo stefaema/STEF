@@ -110,6 +110,9 @@ typedef uint8_t rpc_mode_id_t;
 /** @brief The reset reason the board booted with. */
 typedef uint8_t rpc_reset_id_t;
 
+/** @brief A @ref rpc_trip_reason_t narrowed to a byte. */
+typedef uint8_t rpc_trip_reason_id_t;
+
 /* ── Shared payload shapes ──────────────────────────────────────────────── */
 
 /**
@@ -142,10 +145,12 @@ RPC_WIRE_SIZE(rpc_op_t, 8);
  * has not been agreed yet, so its reply shape can never change.
  */
 typedef enum {
-    RPC_SYS_VERSION = 0,
-    RPC_SYS_STATE   = 1, /**< what the firmware is doing, and whether it is ready */
-    RPC_SYS_DEVICES = 2, /**< the board table: what exists and what it has */
-    RPC_SYS_COUNT   = 3,
+    RPC_SYS_VERSION    = 0,
+    RPC_SYS_STATE      = 1, /**< what the firmware is doing, and whether it is ready */
+    RPC_SYS_DEVICES    = 2, /**< the board table: what exists and what it has */
+    RPC_SYS_TRIP_SET   = 3,
+    RPC_SYS_TRIP_CLEAR = 4,
+    RPC_SYS_COUNT      = 5,
 } rpc_sys_method_t;
 
 /**
@@ -183,12 +188,14 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
  * outside: one question, no state to keep in sync across a link that can drop.
  */
 typedef struct {
-    uint32_t      uptime_ms;
-    uint16_t      device_count;
-    rpc_mode_id_t mode;
-    rpc_bool_t    ready;
+    uint32_t             uptime_ms;
+    uint16_t             device_count;
+    rpc_mode_id_t        mode;
+    rpc_trip_reason_id_t trip_reason;
+    uint8_t              trip_detail;
+    uint8_t              _pad[3];
 } rpc_sys_state_ret;
-RPC_WIRE_SIZE(rpc_sys_state_ret, 8);
+RPC_WIRE_SIZE(rpc_sys_state_ret, 12);
 
 /** @brief One driver, as `sys.devices` reports it. */
 typedef struct {
@@ -212,6 +219,20 @@ typedef struct {
     rpc_dev_info_t devs[];
 } rpc_sys_devices_ret;
 RPC_WIRE_SIZE(rpc_sys_devices_ret, 4);
+
+typedef struct {
+    uint8_t    detail;
+    rpc_bool_t immediate;
+    uint8_t    _pad[2];
+} rpc_sys_trip_set_args;
+RPC_WIRE_SIZE(rpc_sys_trip_set_args, 4);
+
+typedef struct {
+    rpc_trip_reason_id_t reason;
+    uint8_t              detail;
+    uint8_t              _pad[2];
+} rpc_sys_trip_clear_ret;
+RPC_WIRE_SIZE(rpc_sys_trip_clear_ret, 4);
 
 /* ── relay ──────────────────────────────────────────────────────────────── */
 
@@ -523,7 +544,14 @@ typedef enum {
     RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and relay are permitted */
     RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and relay are refused */
     RPC_MODE_FAULT    = 2, /**< construction failed, so no device can be addressed */
+    RPC_MODE_TRIPPED  = 3,
 } rpc_mode_t;
+
+typedef enum {
+    RPC_TRIP_NONE      = 0,
+    RPC_TRIP_KEEPALIVE = 1,
+    RPC_TRIP_REQUESTED = 2,
+} rpc_trip_reason_t;
 
 /**
  * @brief What a handler in this image reports, on top of @ref rpc_status_t.
@@ -590,4 +618,4 @@ static_assert(RPC_STATUS_LAST <= RPC_STATUS_TRANSPORT_BASE,
  */
 const char *rpc_strerror(rpc_status_t status);
 
-#endif /* RPC_API_H */
+#endif /* FW_API_H */

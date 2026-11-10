@@ -12,6 +12,7 @@ RPC_HDR_LEN = 8
 RPC_CRC_LEN = 2
 RPC_MAX_PAYLOAD = 502
 RPC_NS_MAX = 8
+RPC_KEEPALIVE_NONE = 65535
 RPC_STATUS_TRANSPORT_BASE = 240
 FW_API_BACKEND = "esp32-tmc2209"
 FW_API_VERSION = "0.1.0"
@@ -72,12 +73,15 @@ class RpcFrame(enum.IntEnum):
     REP = 1
     RPC_FRAME_LOG = 2
     LOG = 2
+    RPC_FRAME_KEEPALIVE = 3
+    KEEPALIVE = 3
 
 
 rpc_frame_t = RpcFrame
 RPC_FRAME_REQ = RpcFrame.RPC_FRAME_REQ
 RPC_FRAME_REP = RpcFrame.RPC_FRAME_REP
 RPC_FRAME_LOG = RpcFrame.RPC_FRAME_LOG
+RPC_FRAME_KEEPALIVE = RpcFrame.RPC_FRAME_KEEPALIVE
 
 
 class RpcNs(enum.IntEnum):
@@ -116,14 +120,20 @@ class RpcSysMethod(enum.IntEnum):
     STATE = 1
     RPC_SYS_DEVICES = 2
     DEVICES = 2
-    RPC_SYS_COUNT = 3
-    COUNT = 3
+    RPC_SYS_TRIP_SET = 3
+    TRIP_SET = 3
+    RPC_SYS_TRIP_CLEAR = 4
+    TRIP_CLEAR = 4
+    RPC_SYS_COUNT = 5
+    COUNT = 5
 
 
 rpc_sys_method_t = RpcSysMethod
 RPC_SYS_VERSION = RpcSysMethod.RPC_SYS_VERSION
 RPC_SYS_STATE = RpcSysMethod.RPC_SYS_STATE
 RPC_SYS_DEVICES = RpcSysMethod.RPC_SYS_DEVICES
+RPC_SYS_TRIP_SET = RpcSysMethod.RPC_SYS_TRIP_SET
+RPC_SYS_TRIP_CLEAR = RpcSysMethod.RPC_SYS_TRIP_CLEAR
 RPC_SYS_COUNT = RpcSysMethod.RPC_SYS_COUNT
 
 
@@ -236,12 +246,30 @@ class RpcMode(enum.IntEnum):
     SCANNING = 1
     RPC_MODE_FAULT = 2
     FAULT = 2
+    RPC_MODE_TRIPPED = 3
+    TRIPPED = 3
 
 
 rpc_mode_t = RpcMode
 RPC_MODE_IDLE = RpcMode.RPC_MODE_IDLE
 RPC_MODE_SCANNING = RpcMode.RPC_MODE_SCANNING
 RPC_MODE_FAULT = RpcMode.RPC_MODE_FAULT
+RPC_MODE_TRIPPED = RpcMode.RPC_MODE_TRIPPED
+
+
+class RpcTripReason(enum.IntEnum):
+    RPC_TRIP_NONE = 0
+    NONE = 0
+    RPC_TRIP_KEEPALIVE = 1
+    KEEPALIVE = 1
+    RPC_TRIP_REQUESTED = 2
+    REQUESTED = 2
+
+
+rpc_trip_reason_t = RpcTripReason
+RPC_TRIP_NONE = RpcTripReason.RPC_TRIP_NONE
+RPC_TRIP_KEEPALIVE = RpcTripReason.RPC_TRIP_KEEPALIVE
+RPC_TRIP_REQUESTED = RpcTripReason.RPC_TRIP_REQUESTED
 
 
 class Tmc2209Err(enum.IntEnum):
@@ -593,6 +621,15 @@ class rpc_rep_hdr_t(ctypes.Structure):
         ("status", ctypes.c_uint8),
         ("_pad", ctypes.c_uint8 * 2),
         ("id", ctypes.c_uint16),
+        ("keepalive_within_ms", ctypes.c_uint16),
+    ]
+
+
+class rpc_keepalive_hdr_t(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 3),
+        ("id", ctypes.c_uint16),
         ("_pad2", ctypes.c_uint16),
     ]
 
@@ -619,6 +656,7 @@ class rpc_buf_t(ctypes.Union):
         ("req", rpc_req_hdr_t),
         ("rep", rpc_rep_hdr_t),
         ("log", rpc_log_hdr_t),
+        ("keepalive", rpc_keepalive_hdr_t),
         ("bytes", ctypes.c_uint8 * 512),
     ]
 
@@ -698,7 +736,9 @@ class rpc_sys_state_ret(ctypes.Structure):
         ("uptime_ms", ctypes.c_uint32),
         ("device_count", ctypes.c_uint16),
         ("mode", ctypes.c_uint8),
-        ("ready", ctypes.c_uint8),
+        ("trip_reason", ctypes.c_uint8),
+        ("trip_detail", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 3),
     ]
 
 
@@ -724,6 +764,22 @@ class rpc_sys_devices_ret(ctypes.Structure):
 
     _fields_ = [
         ("count", ctypes.c_uint32),
+    ]
+
+
+class rpc_sys_trip_set_args(ctypes.Structure):
+    _fields_ = [
+        ("detail", ctypes.c_uint8),
+        ("immediate", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 2),
+    ]
+
+
+class rpc_sys_trip_clear_ret(ctypes.Structure):
+    _fields_ = [
+        ("reason", ctypes.c_uint8),
+        ("detail", ctypes.c_uint8),
+        ("_pad", ctypes.c_uint8 * 2),
     ]
 
 
@@ -1136,6 +1192,7 @@ rpc_status_t = ctypes.c_uint8
 rpc_dev_id_t = ctypes.c_uint8
 rpc_mode_id_t = ctypes.c_uint8
 rpc_reset_id_t = ctypes.c_uint8
+rpc_trip_reason_id_t = ctypes.c_uint8
 rpc_raw_poll_raw_args = rpc_raw_read_args
 rpc_raw_poll_raw_ret = rpc_raw_read_ret
 rpc_raw_poll_health_args = rpc_dev_args
@@ -1155,15 +1212,18 @@ tmc2209_condition_mask_t = ctypes.c_uint32
 SIZEOF = {
     "rpc_req_hdr_t": 8,
     "rpc_rep_hdr_t": 8,
+    "rpc_keepalive_hdr_t": 8,
     "rpc_log_hdr_t": 8,
     "rpc_buf_t": 512,
     "rpc_view_t": 32,
     "rpc_dev_args": 4,
     "rpc_op_t": 8,
     "rpc_sys_version_ret": 100,
-    "rpc_sys_state_ret": 8,
+    "rpc_sys_state_ret": 12,
     "rpc_dev_info_t": 20,
     "rpc_sys_devices_ret": 4,
+    "rpc_sys_trip_set_args": 4,
+    "rpc_sys_trip_clear_ret": 4,
     "rpc_relay_send_args": 4,
     "rpc_relay_send_ret": 36,
     "rpc_raw_read_args": 4,
@@ -1218,16 +1278,19 @@ FLEX = {
 SEMANTIC = {
     rpc_req_hdr_t: {"type": "rpc_frame_id_t", "ns": "rpc_ns_id_t"},
     rpc_rep_hdr_t: {"type": "rpc_frame_id_t", "status": "rpc_status_t"},
+    rpc_keepalive_hdr_t: {"type": "rpc_frame_id_t"},
     rpc_log_hdr_t: {"type": "rpc_frame_id_t", "level": "rpc_log_level_t"},
     rpc_dev_args: {"idx": "rpc_dev_id_t"},
     rpc_op_t: {"reg": "tmc2209_reg_id_t"},
     rpc_sys_version_ret: {"reset_reason": "rpc_reset_id_t"},
-    rpc_sys_state_ret: {"mode": "rpc_mode_id_t", "ready": "rpc_bool_t"},
+    rpc_sys_state_ret: {"mode": "rpc_mode_id_t", "trip_reason": "rpc_trip_reason_id_t"},
     rpc_dev_info_t: {
         "wired": "tmc2209_line_mask_t",
         "has_uart": "rpc_bool_t",
         "has_stepgen": "rpc_bool_t",
     },
+    rpc_sys_trip_set_args: {"immediate": "rpc_bool_t"},
+    rpc_sys_trip_clear_ret: {"reason": "rpc_trip_reason_id_t"},
     rpc_relay_send_args: {"idx": "rpc_dev_id_t"},
     rpc_relay_send_ret: {"outcome": "rpc_status_t"},
     rpc_raw_read_args: {"idx": "rpc_dev_id_t", "reg": "tmc2209_reg_id_t"},
@@ -1280,6 +1343,8 @@ PY_ENUM = {
     "rpc_raw_method_t": RpcRawMethod,
     "rpc_mode_t": RpcMode,
     "rpc_mode_id_t": RpcMode,
+    "rpc_trip_reason_t": RpcTripReason,
+    "rpc_trip_reason_id_t": RpcTripReason,
     "tmc2209_err_t": Tmc2209Err,
     "tmc2209_reg_t": Tmc2209Reg,
     "tmc2209_reg_id_t": Tmc2209Reg,
@@ -1572,6 +1637,7 @@ rpc_frame_seal_rep.argtypes = [
     ctypes.POINTER(rpc_buf_t),
     ctypes.c_uint16,
     ctypes.c_uint8,
+    ctypes.c_uint16,
     ctypes.c_size_t,
 ]
 
@@ -1583,6 +1649,10 @@ rpc_frame_seal_log.argtypes = [
     ctypes.c_uint32,
     ctypes.c_size_t,
 ]
+
+rpc_frame_seal_keepalive = _lib.rpc_frame_seal_keepalive
+rpc_frame_seal_keepalive.restype = ctypes.c_size_t
+rpc_frame_seal_keepalive.argtypes = [ctypes.POINTER(rpc_buf_t), ctypes.c_uint16]
 
 rpc_frame_open = _lib.rpc_frame_open
 rpc_frame_open.restype = ctypes.c_bool
