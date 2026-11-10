@@ -7,7 +7,7 @@ the one thing the header cannot state, the sentence each status answers to.
 
 ## abi.py
 
-The PC does not reimplement what the firmware implements. `host/CMakeLists.txt` compiles the
+The PC uses the firmware's own definitions. `host/CMakeLists.txt` compiles the
 same sources into `libfw_api.so`, and `tools/abi_gen.py` reads the same headers with
 libclang and writes `abi.py`: a `ctypes.Structure` per payload, an `IntEnum` per enum, an
 int per constant, an exception per status, `argtypes` with `restype` per function, and the

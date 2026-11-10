@@ -2,40 +2,19 @@
  * @file fw_api.h
  * @brief What this firmware serves: namespaces, method numbers, payloads.
  *
- * The `rpc` component moves frames and is entitled to know nothing about what
- * they ask for. This is the other half of that split, and it lives in its own
- * module for the same reason `board.h` lives in `tmc2209_bind`: it names
- * drivers, registers and library calls, so it changes when this machine changes
- * and the transport does not.
+ * Both ends compile this header, to avoid the PC and the firmware drifting on a
+ * method number or a payload layout. The `rpc` component moves frames and knows
+ * none of this.
  *
- * A method number is the third thing that would otherwise be written twice,
- * after register layouts and the framing itself. Written twice it drifts, and
- * the failure is silent: the PC asks for method 4 and the firmware runs the one
- * that used to be 4. So the numbering lives here, in a header both ends
- * compile, and neither end is entitled to its own copy.
+ * Every method's arguments and return values are a struct below, and the ABI
+ * generator reads them from here. `rpc_proto.h` states the layout rules: no
+ * packing, explicit `_pad` members, and every struct asserts its own size.
  *
- * ## The payloads are here too, and that is the point
+ * Semantic typedefs say what a `uintN_t` holds. The wire's live in
+ * `rpc_proto.h`, the driver's in the tmc2209 headers, and this board's here.
  *
- * Every method's arguments and return values are a struct below. Not a
- * convenience: it is the difference between a protocol you can read and one you
- * have to reconstruct by following the order of calls in a handler body. What a
- * method takes is a declaration, both ends compile it, and the PC's cffi build
- * parses this file rather than reimplementing it.
- *
- * `rpc_proto.h` states the three layout rules these structs obey. The short
- * version: nothing is packed, every field is naturally aligned by way of
- * explicit `_pad` members, and every struct asserts its own size.
- *
- * ## What a field means
- *
- * Semantic typedefs say what kind of value a `uintN_t` holds, and each lives
- * beside the thing it names: the wire's in `rpc_proto.h`, the driver's in the
- * tmc2209 headers, this board's here. So `raw`'s payloads name driver types
- * instead of restating them, `raw` being a projection of that library's API.
- *
- * Nothing in this file may include anything but stdint, rpc_proto.h and the
- * portable driver headers naming those types, all of them freestanding. It is
- * compiled for the ESP32 and again for the host, and read by the ABI generator.
+ * Includes only stdint, rpc_proto.h and the freestanding tmc2209 headers, since
+ * it is compiled for the ESP32 and for the host.
  */
 
 #ifndef FW_API_H
@@ -50,25 +29,19 @@
 /**
  * What the two ends check before trusting each other, as (backend, version).
  *
- * A version alone cannot say whether the thing on the far end is ours at all,
- * so the backend names the implementation and the version names its contract.
- * Both are compiled into the firmware and imported by the PC from here, which
- * is what keeps them from drifting.
+ * The backend names the implementation and the version its contract, since a
+ * version alone cannot say whether the far end is ours. The backend carries no
+ * chip model or driver count, as neither changes the contract.
  *
- * The backend carries no chip model and no driver count. Neither changes this
- * contract: the chip is settled at flash time against the manifest, and how
- * many drivers are fitted is `sys.state`'s to report.
- *
- * Bump the version on any change to a payload layout, a method number, or a
- * status value, and only on a dev to main merge. Nothing in between has
- * shipped.
+ * Bump the version on a change to a payload layout, method number or status
+ * value, on a dev to main merge.
  */
 #define FW_API_BACKEND "esp32-tmc2209"
 #define FW_API_VERSION "0.1.0"
 
 /** @brief Namespaces, by who assembles the bytes. */
 typedef enum {
-    RPC_NS_SYS   = 0, /**< about the firmware, not about a driver */
+    RPC_NS_SYS   = 0, /**< about the firmware itself */
     RPC_NS_RELAY = 1, /**< the PC assembles the datagram */
     RPC_NS_RAW   = 2, /**< the firmware assembles it, from a register you name */
     RPC_NS_FILM  = 3, /**< the firmware assembles it, from an outcome you name */
@@ -80,15 +53,14 @@ typedef enum {
 /**
  * @brief Largest batch `raw.write` or `raw.bringup` will accept.
  *
- * A batch names registers, and there are 23 of them. Room to name one twice,
- * which the library allows, and a bound so the firmware needs no allocation.
+ * Above the 23 registers, so one can be named twice. Fixed, to avoid allocating.
  */
 #define RPC_MAX_OPS 32
 
 /** @brief The part's longest datagram, both directions. */
 #define RPC_RELAY_MAX_BYTES 32
 
-/** @brief Most drivers one board can declare, since four addresses fit a wire. */
+/** @brief Most drivers one board can declare. Four addresses fit a wire. */
 #define RPC_MAX_DEVICES 4
 
 /** @brief Room for a driver's name in `sys.devices`, terminator included. */
@@ -98,8 +70,7 @@ typedef enum {
 #define RPC_STR_MAX 32
 
 /* ── What a byte means here ─────────────────────────────────────────────── */
-/* This board's own kinds. Everything else a payload carries is spelled in the
-   wire's headers or the driver's. */
+/* This board's own kinds. The rest are in the wire's headers or the driver's. */
 
 /** @brief An index into the board's device table, as `sys.devices` reports it. */
 typedef uint8_t rpc_dev_id_t;
@@ -118,9 +89,7 @@ typedef uint8_t rpc_trip_reason_id_t;
 /**
  * @brief A device index and nothing else, which is most of `raw`'s arguments.
  *
- * Devices are named by index into the board table. `sys.devices` is how a
- * client learns which index is which, and giving them prettier names is the
- * PC's job.
+ * `sys.devices` says which index is which.
  */
 typedef struct {
     rpc_dev_id_t idx;
@@ -141,8 +110,8 @@ RPC_WIRE_SIZE(rpc_op_t, 8);
 /**
  * @brief `sys` methods.
  *
- * RPC_SYS_VERSION is the one method that must answer on a link whose version
- * has not been agreed yet, so its reply shape can never change.
+ * RPC_SYS_VERSION must answer before the versions are agreed, so its reply
+ * shape never changes.
  */
 typedef enum {
     RPC_SYS_VERSION = 0,
@@ -156,19 +125,11 @@ typedef enum {
 /**
  * @brief What `sys.version` answers. Takes no arguments.
  *
- * The version leads and is fixed width, so a PC built against a different one
- * can read that field, decide it does not understand the rest, and say so,
- * which is the whole point of asking. The backend follows for the same reason:
- * an end that disagrees about the version still has to be able to say whether
- * this is even our firmware. Nothing may ever be inserted before them.
+ * Version and backend come first and are fixed width, so an end that disagrees
+ * about everything after them can still read them. Nothing may be inserted
+ * before them.
  *
- * The strings are fixed rather than variable for the same reason. This reply
- * has to be readable by an end that disagrees about everything after it, and a
- * length-prefixed field is a thing that end would have to parse correctly to
- * find the field after it.
- *
- * The reset reason is here because the question a stale link raises first is
- * "did the board reboot", and answering it costs one byte.
+ * The reset reason says whether the board rebooted.
  */
 typedef struct {
     char           version[RPC_STR_MAX];
@@ -182,11 +143,8 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
 /**
  * @brief What `sys.state` answers. Takes no arguments.
  *
- * Reported. The one mode the PC can set is a trip, through `sys.trip`.
- * It does not announce that it is about to run
- * diagnostics; it asks what is happening and is refused per call if the answer
- * makes the call unsafe. So this is the whole of the mode system from the
- * outside: one question, no state to keep in sync across a link that can drop.
+ * Reported only. The PC sets no mode except a trip, through `sys.trip`, and an
+ * unsafe call is refused per call.
  */
 typedef struct {
     uint32_t             uptime_ms;
@@ -211,9 +169,7 @@ RPC_WIRE_SIZE(rpc_dev_info_t, 20);
 /**
  * @brief What `sys.devices` answers. Takes no arguments.
  *
- * What the board actually has, so a diagnostic loops over it instead of
- * hardcoding one driver. A bench board with one driver and the carrier with
- * three answer the same question, and the same script covers both.
+ * What the board actually has, so a diagnostic can loop over it.
  */
 typedef struct {
     uint32_t       count;
@@ -252,8 +208,7 @@ RPC_WIRE_SIZE(rpc_sys_untrip_ret, 4);
 /**
  * @brief `relay` methods.
  *
- * One, and there will only ever be one. The namespace exists to put bytes on
- * the wire unaltered, and a second method would be a second opinion.
+ * One: put the caller's bytes on the wire unaltered.
  */
 typedef enum {
     RPC_RELAY_SEND  = 0,
@@ -273,15 +228,11 @@ RPC_WIRE_SIZE(rpc_relay_send_args, 4);
 /**
  * @brief What came back, and what the wire made of the attempt.
  *
- * @c outcome is a value rather than the frame's status because a driver that
- * stayed silent, or one whose echo came back altered, is an *answer* here and
- * not a failure. The bytes that did arrive are the evidence the caller asked
- * for, and a failing status would have dispatch discard them. The frame's
- * status then reports only whether the call was well formed, which is the one
- * thing this tier is still entitled to have an opinion about.
+ * @c outcome is a field, to avoid a failing status discarding the bytes that did
+ * arrive. Silence or an altered echo is an answer here. The frame's status says
+ * only whether the call was well formed.
  *
- * Only @c count bytes of @c rx are sent, so the reply is as long as the answer
- * and no longer.
+ * Only @c count bytes of @c rx are sent.
  */
 typedef struct {
     rpc_status_t outcome; /**< of the transaction, not of the call */
@@ -294,11 +245,9 @@ RPC_WIRE_SIZE(rpc_relay_send_ret, 36);
 /* ── raw ────────────────────────────────────────────────────────────────── */
 
 /**
- * @brief `raw` methods, one per public library call, in the header's order.
+ * @brief `raw` methods, one per public library call, in `tmc2209.h`'s order.
  *
- * The numbering is the wire's and the ordering is `tmc2209.h`'s, so a method
- * added to the library is appended here rather than inserted. Renumbering
- * would silently redirect an older PC's calls.
+ * New methods are appended, to avoid redirecting an older PC's calls.
  */
 typedef enum {
     RPC_RAW_READ             = 0,
@@ -352,21 +301,6 @@ typedef struct {
 } rpc_raw_write_args;
 RPC_WIRE_SIZE(rpc_raw_write_args, 8);
 
-/**
- * @brief Where the library gave up, which is diagnostic only.
- *
- * Any failure invalidates every slot in the batch, including the ops
- * transmitted before it, because nothing is confirmed until the closing IFCNT
- * read. So this says where the library stopped, not where the state boundary
- * is, and it travels even on success for exactly that reason: it is never a
- * boundary to act on.
- */
-typedef struct {
-    uint16_t failed_at;
-    uint16_t _pad;
-} rpc_raw_write_ret;
-RPC_WIRE_SIZE(rpc_raw_write_ret, 4);
-
 /* Conditions and verdicts. */
 
 typedef rpc_dev_args rpc_raw_poll_health_args;
@@ -385,8 +319,8 @@ RPC_WIRE_SIZE(rpc_raw_clear_faults_args, 8);
 
 typedef rpc_dev_args rpc_raw_poll_load_args;
 
-/** @c usable travels beside the number because SG_RESULT outside the TCOOLTHRS
- *  window is noise, and a control loop given only the number will act on it. */
+/** @c usable comes with the number, since SG_RESULT outside the TCOOLTHRS
+ *  window is noise. */
 typedef struct {
     uint16_t   value;  /**< SG_RESULT, 0..510. Higher means less load */
     rpc_bool_t usable;
@@ -396,8 +330,7 @@ RPC_WIRE_SIZE(rpc_raw_poll_load_ret, 4);
 
 typedef rpc_dev_args rpc_raw_poll_pins_args;
 
-/** IOIN as it came off the wire. The PC decodes it with the same codec the
- *  firmware would have used, so decoding here would only cost a round trip. */
+/** IOIN as read. The PC decodes it with the same codec. */
 typedef struct {
     uint32_t value;
 } rpc_raw_poll_pins_ret;
@@ -416,10 +349,8 @@ typedef rpc_dev_args rpc_raw_verify_config_args;
 /**
  * @brief Whether the device agrees with the cache, and where it does not.
  *
- * A disagreement is a result rather than a transport failure, and the caller
- * wants to know *which* slots disagree. A failing status would have the mask
- * discarded with the frame, so what the call found travels as a value. Same
- * shape as relay's outcome, for the same reason.
+ * Travels as a value, to avoid a failing status discarding the mask of slots
+ * that disagree.
  */
 typedef struct {
     tmc2209_slot_mask_t mismatched;
@@ -449,10 +380,9 @@ RPC_WIRE_SIZE(rpc_raw_set_current_args, 4);
 
 typedef rpc_raw_write_args rpc_raw_bringup_args;
 
-/** GSTAT as found is the only look anyone gets at what the driver went through
- *  before this firmware owned it, so it travels even though bring-up clears it. */
+/** GSTAT as the driver held it, before bring-up cleared it. */
 typedef struct {
-    uint32_t gstat_at_bringup;
+    uint32_t gstat_found;
 } rpc_raw_bringup_ret;
 RPC_WIRE_SIZE(rpc_raw_bringup_ret, 4);
 
@@ -507,15 +437,14 @@ RPC_WIRE_SIZE(rpc_raw_is_enabled_ret, 4);
 /* Motion. */
 
 /**
- * @brief A run, exactly as the driver library takes it.
+ * @brief A run, as the driver library takes it.
  *
- * A run outlives the call that started it and nothing on the board ends it on
- * the caller's behalf, so whoever starts one owns stopping it.
+ * A run outlives the call. Whoever starts it stops it, or a trip does.
  */
 typedef struct {
     rpc_dev_id_t       idx;
     tmc2209_level_id_t dir;   /**< level to drive on DIR, electrical and uninterpreted */
-    rpc_bool_t         shaft; /**< GCONF.shaft this move was planned around */
+    rpc_bool_t         shaft; /**< GCONF.shaft for this move */
     uint8_t            _pad;
     uint32_t           pulses;      /**< microsteps to emit. 0 runs until halted */
     uint32_t           pullin_pps;  /**< rate of the first and last pulse */
@@ -543,7 +472,7 @@ typedef rpc_dev_args rpc_raw_motion_report_args;
 typedef struct {
     uint32_t           emitted;  /**< pulses of the current run, or of the last one */
     uint32_t           rate_pps; /**< rate presently being emitted */
-    rpc_bool_t         running;
+    rpc_bool_t         pulsing;
     tmc2209_level_id_t dir;      /**< DIR the counted run was started with */
     rpc_bool_t         shaft;    /**< GCONF.shaft the counted run was started with */
     uint8_t            _pad;
@@ -555,7 +484,7 @@ RPC_WIRE_SIZE(rpc_raw_motion_report_ret, 12);
 /** @brief What the firmware is doing. Reported by `sys.state`. */
 typedef enum {
     RPC_MODE_IDLE     = 0, /**< nothing in flight. raw and relay are permitted */
-    RPC_MODE_SCANNING = 1, /**< a run owns the transport; raw and relay are refused */
+    RPC_MODE_SCANNING = 1, /**< reserved for a scan. Nothing sets it yet */
     RPC_MODE_FAULT    = 2, /**< construction failed, so no device can be addressed */
     RPC_MODE_TRIPPED  = 3, /**< halted and released. Moving and enabling are refused */
 } rpc_mode_t;
@@ -567,20 +496,36 @@ typedef enum {
     RPC_TRIP_REQUESTED = 2, /**< the PC called `sys.trip` */
 } rpc_trip_reason_t;
 
+/** @brief Why the board last booted. Same values as esp_reset_reason_t. */
+typedef enum {
+    RPC_RESET_UNKNOWN    = 0,
+    RPC_RESET_POWERON    = 1,
+    RPC_RESET_EXT        = 2,
+    RPC_RESET_SW         = 3,
+    RPC_RESET_PANIC      = 4,
+    RPC_RESET_INT_WDT    = 5,
+    RPC_RESET_TASK_WDT   = 6,
+    RPC_RESET_WDT        = 7,
+    RPC_RESET_DEEPSLEEP  = 8,
+    RPC_RESET_BROWNOUT   = 9,
+    RPC_RESET_SDIO       = 10,
+    RPC_RESET_USB        = 11,
+    RPC_RESET_JTAG       = 12,
+    RPC_RESET_EFUSE      = 13,
+    RPC_RESET_PWR_GLITCH = 14,
+    RPC_RESET_CPU_LOCKUP = 15,
+} rpc_reset_t;
+
 /**
  * @brief What a handler in this image reports, on top of @ref rpc_status_t.
  *
- * The library's `TMC2209_ERR_*` names with the prefix dropped, because raw is a
- * projection of that API and inventing a second error vocabulary would mean
- * translating between two sets of names that describe the same events. The
- * mapping is in rpc_status.c, firmware-side; the PC only ever sees these.
+ * The library's `TMC2209_ERR_*` names without the prefix, to avoid a second
+ * vocabulary for the same events. The mapping is in rpc_status.c. They live here
+ * and not with the transport because they follow the library.
  *
- * That correspondence is also why these live here and not with the transport:
- * they follow the library, and the transport must not.
- *
- * Values are fixed by the wire and are not the library's enum values. They live
- * below @ref RPC_STATUS_TRANSPORT_BASE, and @ref RPC_STATUS_LAST is what holds
- * them there. Never renumber; append.
+ * Values are fixed by the wire and differ from the library's enum. They stay
+ * below @ref RPC_STATUS_TRANSPORT_BASE, which @ref RPC_STATUS_LAST asserts.
+ * Never renumber; append.
  */
 /* clang-format off */
 enum { /* NOLINT(readability-enum-initial-value): RPC_STATUS_LAST must follow, never pin */
@@ -600,16 +545,15 @@ enum { /* NOLINT(readability-enum-initial-value): RPC_STATUS_LAST must follow, n
     RPC_MISMATCH     = 14, /**< the device disagrees with the cache */
     RPC_BUSY         = 15, /**< a run is in flight and this would disturb it */
     RPC_IDLE         = 16, /**< no run is in flight and this needs one */
-    RPC_RATE         = 17, /**< a rate beyond what this stepgen can emit */
+    RPC_RATE         = 17, /**< a rate this stepgen cannot emit */
 
-    /* This image's own, for a call the library never got to see. */
+    /* This image's own, for a call the library never saw. */
     RPC_REFUSED      = 18, /**< policy: unsafe in the present state */
 
     /**
-     * One past the last status this image serves. A marker for the assertion
-     * below, never a value on the wire: appending above it is what would push
-     * this vocabulary into the transport's, and that has to fail loudly rather
-     * than produce a reply the other end reads as a framing error.
+     * One past the last status this image serves. Not a wire value. The
+     * assertion below uses it, to avoid this vocabulary growing into the
+     * transport's.
      */
     RPC_STATUS_LAST
 };
@@ -620,15 +564,11 @@ static_assert(RPC_STATUS_LAST <= RPC_STATUS_TRANSPORT_BASE,
 /**
  * @brief Names a status, for a log line or an operator.
  *
- * Both bands in one call. @ref rpc_proto.h keeps the transport's statuses and
- * the caller's apart on purpose and neither is entitled to list the other, but
- * this file already names both, so the strings cost no coupling that the
- * numbering has not already paid for.
- *
+ * Covers both the transport's statuses and this image's.
  *
  * @param status  any value, named here or not
  *
- * @return a static string, never NULL, so it drops straight into a %s
+ * @return a static string, never NULL
  */
 const char *rpc_strerror(rpc_status_t status);
 
