@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from shared import fw_api
 from shared.diagnostics import Diagnosable
 from shared.subsystem import Level, Linked, LinkState, Readiness, Result
 from transport import fw
@@ -55,15 +56,24 @@ class Transport(Linked[str], Diagnosable):
             return None
         board = self.firmware()
         version = board.sys.version()
+        state = board.sys.state()
         drives = [text(entry.name) for entry in board.sys.devices().devs]
+        tripped = state.mode is fw_api.RpcMode.TRIPPED
+        mode = state.mode.name.removeprefix("RPC_MODE_").lower()
+        reason = state.trip_reason.name.removeprefix("RPC_TRIP_").lower()
+        summary = f"{text(version.backend)} {text(version.version)}"
+        if tripped:
+            summary = f"tripped: {reason}"
         return Result(
-            level=Level.OK,
-            summary=f"{text(version.backend)} {text(version.version)}",
+            level=Level.WARN if tripped else Level.OK,
+            summary=summary,
             fields=(
                 ("backend", text(version.backend)),
                 ("version", text(version.version)),
                 ("idf", text(version.idf)),
                 ("drives", ", ".join(drives) or "none"),
+                ("mode", mode),
+                ("trip", f"{reason}, detail {state.trip_detail}"),
             ),
         )
 

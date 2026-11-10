@@ -23,6 +23,7 @@ HEADERS = {
     fw_api.RPC_FRAME_REQ: fw_api.rpc_req_hdr_t,
     fw_api.RPC_FRAME_REP: fw_api.rpc_rep_hdr_t,
     fw_api.RPC_FRAME_LOG: fw_api.rpc_log_hdr_t,
+    fw_api.RPC_FRAME_KEEPALIVE: fw_api.rpc_keepalive_hdr_t,
 }
 
 
@@ -88,6 +89,12 @@ def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes
     length = fw_api.rpc_frame_seal_req(buf, request_id, ns, method, len(payload))
     if length == 0:
         raise FramingError(f"the firmware refused to seal {len(payload)} bytes")
+    return bytes(buf.bytes[:length])
+
+
+def seal_keepalive(request_id: int) -> bytes:
+    buf = fw_api.rpc_buf_t()
+    length = fw_api.rpc_frame_seal_keepalive(buf, request_id)
     return bytes(buf.bytes[:length])
 
 

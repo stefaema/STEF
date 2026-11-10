@@ -10,11 +10,11 @@ from transport import fw
 TIMEOUT = 0.5
 
 
-def seal_reply(request_id, status, payload=b""):
+def seal_reply(request_id, status, payload=b"", within=fw_api.RPC_KEEPALIVE_NONE):
     buf = fw_api.rpc_buf_t()
     if payload:
         ctypes.memmove(ctypes.byref(buf, fw_api.RPC_HDR_LEN), payload, len(payload))
-    length = fw_api.rpc_frame_seal_rep(buf, request_id, status, len(payload))
+    length = fw_api.rpc_frame_seal_rep(buf, request_id, status, within, len(payload))
     return fw.framing.encode(bytes(buf.bytes[:length]))
 
 
@@ -71,7 +71,7 @@ class FakeFirmware:
 
 def echo_state(_firmware, frame):
     ret = fw_api.rpc_sys_state_ret(
-        uptime_ms=1234, device_count=3, mode=fw_api.RPC_MODE_IDLE, ready=1
+        uptime_ms=1234, device_count=3, mode=fw_api.RPC_MODE_IDLE
     )
     return [seal_reply(frame.header.id, fw_api.RPC_OK, bytes(ret))]
 
@@ -140,10 +140,14 @@ def test_a_reply_reaches_the_caller_as_python_and_not_as_ctypes():
         state = link.sys.state()
 
     assert state == fw_api.namespaces()["sys"]["state"].ret(
-        uptime_ms=1234, device_count=3, mode=fw_api.RpcMode.IDLE, ready=True
+        uptime_ms=1234,
+        device_count=3,
+        mode=fw_api.RpcMode.IDLE,
+        trip_reason=fw_api.RpcTripReason.NONE,
+        trip_detail=0,
     )
     assert state.mode is fw_api.RpcMode.RPC_MODE_IDLE
-    assert state.ready is True
+    assert state.trip_reason is fw_api.RpcTripReason.NONE
     assert not isinstance(state, ctypes.Structure)
 
 
@@ -357,3 +361,63 @@ def test_a_sink_that_raises_costs_one_record_and_nothing_else():
         firmware.push(seal_log(3, 1, "boom"))
         assert wait_until(lambda: link.dropped == 1)
         assert link.sys.state().uptime_ms == 1234
+
+
+# ── Keepalive ────────────────────────────────────────────────────────────────
+
+
+def keepalives(firmware):
+    return [r for r in firmware.requests if r.type == fw_api.RPC_FRAME_KEEPALIVE]
+
+
+def moving_for(renewals):
+    left = [renewals]
+
+    def answer(_firmware, frame):
+        within = 60
+        if frame.type == fw_api.RPC_FRAME_KEEPALIVE:
+            left[0] -= 1
+            if left[0] <= 0:
+                within = fw_api.RPC_KEEPALIVE_NONE
+        return [seal_reply(frame.header.id, fw_api.RPC_OK, within=within)]
+
+    return answer
+
+
+def test_an_idle_board_is_sent_no_keepalive():
+    firmware, link = linked(echo_state)
+    with link:
+        link.sys.state()
+        time.sleep(0.1)
+
+    assert keepalives(firmware) == []
+
+
+def test_a_reply_that_states_a_deadline_is_kept_alive():
+    firmware, link = linked(moving_for(1000))
+    with link:
+        link.raw.halt(idx=0, immediate=False)
+        assert wait_until(lambda: len(keepalives(firmware)) >= 3)
+
+
+def test_keepalives_stop_once_a_reply_states_none():
+    firmware, link = linked(moving_for(2))
+    with link:
+        link.raw.halt(idx=0, immediate=False)
+        assert wait_until(lambda: len(keepalives(firmware)) == 2)
+        time.sleep(0.1)
+
+    assert len(keepalives(firmware)) == 2
+
+
+def test_an_unanswered_keepalive_fails_no_call():
+    def answer(_firmware, frame):
+        if frame.type == fw_api.RPC_FRAME_KEEPALIVE:
+            return []
+        return [seal_reply(frame.header.id, fw_api.RPC_OK, within=60)]
+
+    firmware, link = linked(answer)
+    with link:
+        link.raw.halt(idx=0, immediate=False)
+        assert wait_until(lambda: len(keepalives(firmware)) >= 1)
+        link.raw.halt(idx=0, immediate=False)

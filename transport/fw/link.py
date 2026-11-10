@@ -3,6 +3,7 @@
 import itertools
 import queue
 import threading
+import time
 from concurrent.futures import Future
 from typing import Any, Callable, NamedTuple
 
@@ -187,6 +188,8 @@ class RequestBroker:
         self._ids = itertools.count()
         self._closed = threading.Event()
         self._thread: threading.Thread | None = None
+        self._renew_every: float | None = None
+        self._renew_at: float | None = None
         self.unmatched = 0
 
     def start(self) -> None:
@@ -236,12 +239,44 @@ class RequestBroker:
         """Match a reply to the request that is waiting for it, or count it lost."""
         with self._lock:
             pending = self._pending.pop(frame.header.id, None)
+        self._schedule_renewal(frame.header.keepalive_within_ms)
         if pending is None:
             self.unmatched += 1
             return
         pending.status = frame.header.status
         pending.payload = frame.payload
         pending.event.set()
+
+    def _schedule_renewal(self, within_ms: int) -> None:
+        with self._lock:
+            if within_ms == fw_api.RPC_KEEPALIVE_NONE:
+                self._renew_every = None
+                self._renew_at = None
+                return
+            self._renew_every = within_ms / 3000
+            if self._renew_at is None:
+                self._renew_at = time.monotonic() + self._renew_every
+
+    def _renewal_wait(self) -> float | None:
+        with self._lock:
+            if self._renew_at is None:
+                return None
+            return max(0.0, self._renew_at - time.monotonic())
+
+    def _renew(self) -> None:
+        with self._lock:
+            every = self._renew_every
+            if every is None:
+                self._renew_at = None
+                return
+            self._renew_at = time.monotonic() + every
+        request_id, pending = self._reserve()
+        try:
+            self._write(framing.encode(framing.seal_keepalive(request_id)))
+            pending.event.wait(every)
+        finally:
+            with self._lock:
+                self._pending.pop(request_id, None)
 
     def _reserve(self) -> tuple[int, _Pending]:
         """Return a request id no reply is pending on, and the slot to wait at."""
@@ -257,9 +292,15 @@ class RequestBroker:
     def _loop(self) -> None:
         """Serve one job to completion before looking at the next."""
         while True:
-            job = self._jobs.get()
+            try:
+                job = self._jobs.get(timeout=self._renewal_wait())
+            except queue.Empty:
+                self._renew()
+                continue
             if job is _DONE:
                 return
+            if self._renewal_wait() == 0.0:
+                self._renew()
             if not job.future.set_running_or_notify_cancel():
                 continue
             try:
