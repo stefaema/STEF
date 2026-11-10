@@ -1,16 +1,12 @@
 /*
  * test_rpc.c: the bridges, end to end, without a cable.
  *
- * A raw handler reads its arguments, makes one library call, and writes what
- * came back. All three of those can be wrong independently, so the test drives
- * whole frames: build a REQ, run it through the real dispatch, and read the
- * REP the way the PC will.
+ * Each test drives whole frames: build a REQ, run it through the real dispatch,
+ * and read the REP the way the PC will. Argument decoding, the library call and
+ * the reply can each be wrong on their own.
  *
- * The paths worth the effort are the ones hardware will not produce on
- * request. A driver answers or it does not, and asking it to corrupt one CRC
- * is not a thing you can do. The mock does it on demand, which is what makes
- * the mapping from library error to wire status testable at all rather than
- * merely reviewed.
+ * The mock produces faults on demand that a real driver will not, such as one
+ * corrupted CRC, so the mapping from library error to wire status gets tested.
  */
 
 #include <stddef.h>
@@ -104,9 +100,8 @@ static size_t      g_ret_len;
 
 /*
  * Everything rpc_link.c's serve() does, minus the USB. Going through the real
- * framing means an argument this test lays out wrongly fails here rather than
- * on a bench, and it exercises dispatch's length check rather than stepping
- * around it.
+ * framing catches an argument laid out wrongly here instead of on a bench, and
+ * exercises dispatch's length check.
  */
 static rpc_status_t call(uint8_t ns, uint8_t method, const void *args, size_t args_len)
 {
@@ -178,8 +173,7 @@ void test_rpc_unknown_device_is_a_bad_argument(void)
 
 /*
  * Both ways a frame can disagree with the method it names. Dispatch checks the
- * length against the table, so neither a short payload nor a long one reaches
- * a handler, and the handler never learns that either was possible.
+ * length, so neither a short nor a long payload reaches a handler.
  */
 void test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame(void)
 {
@@ -192,8 +186,8 @@ void test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame(void)
     TEST_ASSERT_EQUAL(RPC_BAD_FRAME, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, 0));
 }
 
-/* A failing status carries nothing, so a client never reads return values that
- * describe a call that did not happen. */
+/* A failing status carries nothing, to avoid a client reading return values
+ * of a call that did not happen. */
 void test_rpc_a_failing_call_carries_no_payload(void)
 {
     rpc_setup(false);
@@ -272,7 +266,7 @@ void test_rpc_write_batch_lands_on_the_device(void)
 }
 
 /* The count is inside the payload, so dispatch can only check that a head
- * arrived. The handler is what reconciles the two, and this is that check. */
+ * arrived. The handler checks the rest. */
 void test_rpc_a_batch_that_lies_about_its_count_is_a_bad_frame(void)
 {
     rpc_setup(false);
@@ -317,8 +311,8 @@ void test_rpc_verify_config_reports_agreement_as_a_value(void)
     TEST_ASSERT_EQUAL_UINT8(1, RET(rpc_raw_verify_config_ret)->agrees);
     TEST_ASSERT_EQUAL_HEX32(0, RET(rpc_raw_verify_config_ret)->mismatched);
 
-    /* Disagree behind the library's back. The call still succeeds, because
-       finding a mismatch is what it is for; the mask is the answer. */
+    /* Disagree behind the library's back. The call still succeeds, and the mask
+       is the answer. */
     mock_set_reg(&g_mock, TMC2209_GCONF, CFG_GCONF ^ 0x40U);
 
     TEST_ASSERT_EQUAL(RPC_OK, call(RPC_NS_RAW, RPC_RAW_VERIFY_CONFIG, &a, sizeof(a)));
@@ -402,8 +396,8 @@ void test_rpc_lines_drive_and_read_back(void)
     TEST_ASSERT_EQUAL_UINT8(1, RET(rpc_raw_line_read_ret)->level);
 }
 
-/* ENN is active low, so enable() and the level disagree by construction. A
-   test that asked only one of them could not tell correct from inverted. */
+/* ENN is active low, so enable() and the level disagree. Asking both catches
+   an inverted implementation. */
 void test_rpc_enable_applies_the_parts_polarity(void)
 {
     rpc_setup(true);
@@ -478,9 +472,8 @@ void test_rpc_relay_hands_back_the_reply_undecoded(void)
 }
 
 /*
- * Silence is an answer here, not a failure. The reply still arrives with the
- * shape a client expects, so a diagnostic can tell "nothing came back" from
- * "the call was malformed" without a special case.
+ * Silence is an answer here. The reply still has the shape a client expects,
+ * so a diagnostic can tell "nothing came back" from "the call was malformed".
  */
 void test_rpc_relay_reports_silence_without_failing_the_call(void)
 {
@@ -499,10 +492,9 @@ void test_rpc_relay_reports_silence_without_failing_the_call(void)
 }
 
 /*
- * The cache rule that follows from who assembled the bytes. A datagram the
- * library did not build may have written anything, so the owned slots stop
- * being believable. A four-byte read request is the exception, because it
- * cannot have changed the driver.
+ * A datagram the library did not build may have written anything, so the owned
+ * slots stop being valid. A four-byte read request is the exception, since it
+ * cannot change the driver.
  */
 void test_rpc_relay_writes_void_the_cache_and_reads_do_not(void)
 {
@@ -527,8 +519,8 @@ void test_rpc_relay_refuses_an_oversized_datagram(void)
 {
     rpc_setup(false);
 
-    /* Claims more than the part's longest datagram, and sends that much, so
-       what is refused is the size and not a length that disagrees with it. */
+    /* Claims more than the part's longest datagram and sends that much, so what
+       is refused is the size itself. */
     relay_args_t a;
     memset(&a, 0, sizeof(a));
     a.s.idx   = 0;
@@ -541,11 +533,9 @@ void test_rpc_relay_refuses_an_oversized_datagram(void)
 /* ── Variable-length replies ────────────────────────────────────────────── */
 
 /*
- * A reply ending in a flexible array member is the one shape whose length no
- * table can hold, because sizeof() stops at that member. So the bound is
- * declared by hand, and these two are what keep it honest: one that the real
- * length reaches the wire, one that a handler outgrowing its bound is reported
- * rather than quietly emptied.
+ * A reply ending in a flexible array has its bound declared by hand, since
+ * sizeof() stops at that member. These two check the real length reaches the
+ * wire, and that a handler outgrowing its bound is reported.
  */
 
 #define VAR_NS  RPC_NS_FILM  /* an index this build registers nothing else on */
@@ -580,18 +570,17 @@ void test_rpc_a_variable_reply_travels_at_its_real_length(void)
     TEST_ASSERT_EQUAL(RPC_OK, call(VAR_NS, 0, NULL, 0));
     TEST_ASSERT_EQUAL_size_t(VAR_MAX, g_ret_len);
 
-    /* Shorter than the bound is the ordinary case, and it must not be padded
-       out to it: the length on the wire is what the handler produced. */
+    /* Shorter than the bound is the ordinary case, and the length on the wire
+       is what the handler produced. */
     install_var_method(4);
     TEST_ASSERT_EQUAL(RPC_OK, call(VAR_NS, 0, NULL, 0));
     TEST_ASSERT_EQUAL_size_t(4, g_ret_len);
 }
 
 /*
- * Reported, because by the time the handler says so it has already written past
- * the room the table promised. RPC_OK with an empty payload would read as a
- * method that had nothing to say, which is how a bound too small to hold one
- * element stays invisible.
+ * Reported, since the handler has already written past the room the table
+ * promised. RPC_OK with an empty payload would hide a bound too small to hold
+ * one element.
  */
 void test_rpc_a_handler_that_overruns_its_bound_is_not_a_success(void)
 {
@@ -601,10 +590,20 @@ void test_rpc_a_handler_that_overruns_its_bound_is_not_a_success(void)
     TEST_ASSERT_EQUAL_size_t(0, g_ret_len);
 }
 
+void test_rpc_a_board_that_never_came_up_answers_no_backend(void)
+{
+    rpc_setup(false);
+    fake_devices_clear();
+
+    rpc_raw_poll_raw_args a = { .idx = 0, .reg = TMC2209_IOIN };
+    TEST_ASSERT_EQUAL(RPC_NO_BACKEND, call(RPC_NS_RAW, RPC_RAW_POLL_RAW, &a, sizeof(a)));
+}
+
 void run_rpc_tests(void)
 {
     RUN_TEST(test_rpc_unknown_namespace_and_method);
     RUN_TEST(test_rpc_unknown_device_is_a_bad_argument);
+    RUN_TEST(test_rpc_a_board_that_never_came_up_answers_no_backend);
     RUN_TEST(test_rpc_a_payload_of_the_wrong_length_is_a_bad_frame);
     RUN_TEST(test_rpc_a_failing_call_carries_no_payload);
     RUN_TEST(test_rpc_poll_returns_what_the_device_holds);

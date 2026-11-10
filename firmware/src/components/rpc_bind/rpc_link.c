@@ -16,8 +16,8 @@
 #include "rpc_frame.h"
 #include "rpc_trip.h"
 
-/* Encoded worst case, plus the delimiter that closes the frame. */
-#define RPC_ENCODED_MAX (COBS_ENCODED_MAX(RPC_MAX_FRAME) + 1U)
+/* Encoded worst case, plus a delimiter on each end. */
+#define RPC_ENCODED_MAX (COBS_ENCODED_MAX(RPC_MAX_FRAME) + 2U)
 
 #define RPC_RX_POLL_MS 50U
 
@@ -26,6 +26,7 @@
 #define RPC_LOG_MAX     192  /**< one log line, ANSI stripped */
 #define RPC_USB_CHUNK   64   /**< a USB full-speed bulk packet */
 #define RPC_LOG_ERROR   1U   /**< the one level the link carries */
+#define RPC_TXQ_REPLIES 2    /**< queue slots a log never takes */
 /* clang-format on */
 
 /**
@@ -52,10 +53,8 @@ static uint32_t now_ms(void)
 /* ── The single TX owner ────────────────────────────────────────────────── */
 
 /*
- * Two producers, one consumer: replies from the RX task, error logs from
- * whichever task called ESP_LOGx. Two tasks writing the port directly would
- * interleave inside a frame, and the damage would show up as a CRC failure on
- * the PC with nothing pointing back here.
+ * Two producers, one consumer: replies from the RX task, error logs from any
+ * task that logs. One writer, to avoid two tasks interleaving inside a frame.
  */
 static void tx_task(void *arg)
 {
@@ -69,17 +68,20 @@ static void tx_task(void *arg)
             continue;
         }
 
-        size_t n = cobs_encode(frame.data, frame.len, encoded, sizeof(encoded) - 1U);
+        /* Leading zero, so a frame cut short before this one ends here */
+        encoded[0] = 0x00;
+
+        size_t n = cobs_encode(frame.data, frame.len, &encoded[1], sizeof(encoded) - 2U);
         if (n == 0) {
             continue; /* cannot happen for a frame that fits; drop rather than send garbage */
         }
+        n += 1U;
         encoded[n++] = 0x00;
 
         /*
          * A host that is not reading gets a short write and the frame is
-         * dropped. Blocking here would stall every reply behind a PC that
-         * closed the port, and there is no one to tell about it: this task is
-         * what logging would have to go through.
+         * dropped. Blocking would stall every reply behind a PC that closed
+         * the port.
          */
         (void)usb_serial_jtag_write_bytes(encoded, n, pdMS_TO_TICKS(50));
     }
@@ -101,9 +103,8 @@ static bool tx_send(const void *data, size_t len, TickType_t wait)
 /* ── Logging ────────────────────────────────────────────────────────────── */
 
 /*
- * IDF hands the hook a line that is already formatted and already wrapped in
- * colour escapes. The escapes are for a terminal that is no longer on the other
- * end, so they are dropped here rather than shipped and dropped there.
+ * IDF hands the hook a formatted line wrapped in colour escapes. They are
+ * dropped here, since no terminal is on the other end.
  */
 static size_t strip_ansi(const char *src, size_t len, char *dst, size_t cap)
 {
@@ -125,8 +126,8 @@ static size_t strip_ansi(const char *src, size_t len, char *dst, size_t cap)
     return out;
 }
 
-/* The level is not passed to the hook, so it is read back off the line IDF
- * formatted: the letter before the timestamp, which nothing else can be. */
+/* The level is not passed to the hook, so it is read off the formatted line:
+ * the letter before the timestamp. */
 static uint8_t level_of(const char *line, size_t len)
 {
     for (size_t i = 0; i < len && line[i] != '('; i++) {
@@ -157,8 +158,8 @@ static int log_to_link(const char *fmt, va_list ap)
         return n;
     }
 
-    /* An ISR has no business queueing, and ESP_EARLY_LOGx is the only thing
-     * that gets here from one. Dropping is better than a crash inside a log. */
+    /* An ISR must not queue, and only ESP_EARLY_LOGx gets here from one. Dropped,
+     * to avoid crashing inside a log. */
     if (xPortInIsrContext()) {
         return n;
     }
@@ -178,7 +179,7 @@ static int log_to_link(const char *fmt, va_list ap)
     }
 
     size_t frame_len = rpc_frame_seal_log(&buf, RPC_LOG_ERROR, now_ms(), len);
-    if (frame_len > 0) {
+    if (frame_len > 0 && uxQueueSpacesAvailable(s_txq) > RPC_TXQ_REPLIES) {
         /* Never wait. A full queue means the PC is not draining, and a log is
          * not worth stalling the task that produced it. */
         (void)tx_send(&buf, frame_len, 0);
@@ -189,8 +190,8 @@ static int log_to_link(const char *fmt, va_list ap)
 
 /* ── Serving ────────────────────────────────────────────────────────────── */
 
-/* Ignores anything that is not a request: a reply or a log arriving here is
- * the PC echoing, not asking. */
+/* Serves requests and keepalives. A reply or a log arriving here is the PC
+ * echoing, and is ignored. */
 static void serve(const rpc_buf_t *frame, size_t len)
 {
     static rpc_buf_t reply;
@@ -219,10 +220,9 @@ static void serve(const rpc_buf_t *frame, size_t len)
     const rpc_req_hdr_t *req = v.hdr;
 
     /*
-     * The handler writes its return values straight into the reply frame, so
-     * what comes back is only how much of it to send. Any length it reports
-     * fits, because rpc_register refuses at start-up a table whose declared
-     * payloads do not.
+     * The handler writes its return values straight into the reply frame. Any
+     * length it reports fits, since rpc_register refuses a table whose payloads
+     * do not.
      */
     size_t       ret_len = 0;
     rpc_status_t status =
@@ -236,11 +236,10 @@ static void serve(const rpc_buf_t *frame, size_t len)
 }
 
 /*
- * Bytes arrive in whatever sizes USB felt like. A frame is what lies between
- * two zeros, so this accumulates until one shows up and hands the run over.
+ * USB delivers bytes in any chunk size. A frame is what lies between two zeros,
+ * so bytes accumulate until a zero arrives.
  *
- * An overlong run is discarded, and so is everything after it up to the next
- * zero. That is the property COBS was chosen for.
+ * An overlong run is discarded, along with everything up to the next zero.
  */
 static void rx_task(void *arg)
 {
@@ -249,8 +248,8 @@ static void rx_task(void *arg)
     static uint8_t chunk[RPC_USB_CHUNK];
     static uint8_t run[RPC_ENCODED_MAX];
 
-    /* The union rather than a byte array, because serve() reads the header
-     * through its own type and a byte array is aligned for nothing. */
+    /* The union, since serve() reads the header through its own type and a byte
+     * array has no alignment. */
     static rpc_buf_t decoded;
 
     size_t run_len = 0;
@@ -325,7 +324,7 @@ esp_err_t rpc_link_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    /* Last, deliberately: anything that failed above still had the console. */
+    /* Last, so anything that failed above still had the console. */
     esp_log_set_vprintf(log_to_link);
     s_started = true;
 

@@ -3,12 +3,11 @@
 #include "sdkconfig.h"
 
 /*
- * The machine, as this image believes it to be. Every layer above addresses a
- * driver by the name written here, so growing the machine is growing this
- * table, and the table grows from menuconfig rather than from an edit here.
+ * The machine as this image sees it. Growing the machine is growing this table,
+ * from menuconfig.
  *
- * The name is what the PC says. Keep it mechanical rather than electrical:
- * "capstan" survives a rewiring, "drv0" does not.
+ * The name is what the PC shows. Name it after what it moves: "capstan"
+ * survives a rewiring, "drv0" does not.
  */
 
 #if !defined(CONFIG_STEF_DRV0_ENABLED) && !defined(CONFIG_STEF_DRV1_ENABLED) && \
@@ -58,10 +57,9 @@ static const board_t board = {
     .baud     = CONFIG_STEF_TMC_BAUD,
 
     /*
-     * A TMC2209 answers a read in well under a millisecond, so the timeout is
-     * not waiting for the part: it is how long the bus tolerates a driver that
-     * is not there before saying so. Short enough that probing an empty
-     * address is quick, long enough to survive a scheduler hiccup.
+     * A TMC2209 answers a read in well under a millisecond, so this is how long
+     * the bus waits for a driver that is not there. Short enough that probing an
+     * empty address is quick, long enough to survive a scheduler hiccup.
      */
     .timeout_ms = 20,
     .retries    = 2,

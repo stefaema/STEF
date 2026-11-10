@@ -2,8 +2,7 @@
  * @file rpc_link.h
  * @brief Carries frames over the native USB port.
  *
- * One cable does everything: flashing, JTAG, and this. Starting the link
- * redirects the log stream into it.
+ * One cable carries flashing, JTAG and this. Error logs go over it too.
  */
 
 #ifndef RPC_LINK_H

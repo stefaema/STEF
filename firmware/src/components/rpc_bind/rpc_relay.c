@@ -2,17 +2,12 @@
  * @file rpc_relay.c
  * @brief The PC assembles the datagram; this only puts it on the wire.
  *
- * A bridge, so it knows both libraries and nothing about ESP-IDF. That is what
- * lets `test/unit` compile it against the mock driver, where a bad CRC or a
- * silent reply can be produced on demand and a real driver's cannot.
+ * Knows both libraries and nothing of ESP-IDF, so `test/unit` builds it against
+ * the mock driver.
  *
- * Nothing here judges the reply. That is the whole point of the tier: the
- * caller is diagnosing a driver, and an opinion from the library would be the
- * thing under suspicion. What comes back is bytes and a count.
- *
- * Why the transaction's outcome travels as a field rather than as the frame's
- * status is written down beside @ref rpc_relay_send_ret, where the shape it
- * explains actually lives.
+ * The reply is not judged, since the caller is diagnosing the driver. What comes
+ * back is bytes and a count. Why the outcome is a field is noted at
+ * @ref rpc_relay_send_ret.
  */
 
 #include <stddef.h>
@@ -43,8 +38,8 @@ static rpc_status_t relay_send(const void *args, size_t args_len, void *ret, siz
     const rpc_relay_send_args *in  = args;
     rpc_relay_send_ret        *out = ret;
 
-    /* The count is inside the payload, so dispatch could only check that a
-     * head arrived. This is the exact length, and the one line it costs. */
+    /* The count is inside the payload, so dispatch could only check that the head
+     * arrived. This checks the exact length. */
     if (args_len != sizeof(*in) + in->count) {
         return RPC_BAD_FRAME;
     }
@@ -55,14 +50,13 @@ static rpc_status_t relay_send(const void *args, size_t args_len, void *ret, siz
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
     if (dev->uart == NULL) {
         return RPC_NO_BACKEND;
     }
 
-    /* Straight into the reply frame. The library's out-parameter is the reply's
-     * own storage, so nothing is staged and nothing is copied afterwards. */
+    /* Straight into the reply frame, so nothing is copied. */
     size_t        rx_got = 0;
     tmc2209_err_t err    = tmc2209_uart_send(
         dev->uart, in->tx, in->count, (in->reply_len > 0) ? out->rx : NULL, in->reply_len, &rx_got);
@@ -71,7 +65,7 @@ static rpc_status_t relay_send(const void *args, size_t args_len, void *ret, siz
         tmc2209_invalidate_owned(dev);
     }
 
-    /* Always this shape. No bytes back is an answer, not a gap. */
+    /* Always this shape, including when no bytes came back. */
     out->outcome = (uint8_t)rpc_status_of_err(err);
     out->count   = (uint8_t)rx_got;
 

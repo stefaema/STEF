@@ -1,16 +1,11 @@
 /*
  * fake_devices.c: the device table, host side.
  *
- * `devices.h` names no ESP-IDF type, so the RPC bridges that look devices up
- * through it compile here unchanged. What they cannot have is the real
- * implementation, which installs a UART and configures GPIOs. This is the
- * other one: devices a test builds itself, wired to whatever backends the test
- * wants to lie about.
+ * `devices.h` names no ESP-IDF type, so the RPC bridges compile here unchanged,
+ * against devices a test builds itself with whatever backends it wants.
  *
- * A link-time seam rather than a function pointer. The bridges call
- * `devices_at()` either way; which `devices_at()` they reach is decided by
- * what got linked, and nothing in the production path pays for the test's
- * existence.
+ * A link-time seam: which devices_at() the bridges reach is decided by what got
+ * linked, so the production path carries nothing for the tests.
  */
 
 #include "fake_devices.h"

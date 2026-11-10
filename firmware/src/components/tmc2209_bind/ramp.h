@@ -1,9 +1,7 @@
 /*
  * ramp.h: what rate the next pulses carry, decided a chunk at a time.
  *
- * Freestanding on purpose. No ESP-IDF here, so the arithmetic that decides
- * where a run brakes is compiled and tested on the host, where a wrong brake
- * point is a failed assertion instead of a motor that arrives out of step.
+ * No ESP-IDF here, so the brake arithmetic is tested on the host.
  */
 
 #ifndef RAMP_H
@@ -48,13 +46,13 @@ void ramp_begin(ramp_t *r, const ramp_plan_t *plan);
 /**
  * @brief The next chunk, never longer than @p budget pulses.
  *
- * @p target_pps and @p stopping are passed rather than stored because they are
- * written by whoever commands the run and read here, wherever "here" runs.
+ * @p target_pps and @p stopping are passed in, since the commanding task writes
+ * them and this reads them from the interrupt.
  */
 void ramp_next(ramp_t *r, uint32_t index, uint32_t budget, uint32_t target_pps, bool stopping,
                ramp_chunk_t *out);
 
-/** @brief The next pulse of a chunk, carrying the fractional tick rather than dropping it. */
+/** @brief The next pulse of a chunk, carrying the fractional tick over. */
 static inline uint32_t ramp_period(ramp_t *r, const ramp_chunk_t *c)
 {
     uint32_t period = c->period_ticks;

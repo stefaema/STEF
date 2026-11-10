@@ -1,6 +1,5 @@
-# What the tmc2209 library cannot know: which drivers exist, on which pins, and
-# what to do with them when the PC goes quiet. The library takes backends; this
-# is where they are met against real peripherals.
+# Which drivers exist and on which pins, and the library's backends on real
+# peripherals.
 #
 # REQUIRES tmc2209 rather than PRIV_REQUIRES because devices.h hands out
 # tmc2209_t*, so anyone including it needs the library's headers too.

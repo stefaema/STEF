@@ -1,15 +1,10 @@
 /**
  * @file backends.h
- * @brief The library's abstract holes, filled with ESP-IDF.
+ * @brief The library's backends, implemented with ESP-IDF.
  *
- * `tmc2209_uart_t` wants bytes moved and `tmc2209_lines_t` wants a pin driven.
- * Neither says how, which is what lets the same library run against a mock in
- * `test/unit`. This is the other implementation: UART peripheral, GPIO matrix,
- * and nothing above the level of "the bytes went out" or "the pin is high".
- *
- * Deliberately no policy here. Which pin, which address and which driver
- * exists is board.h's answer; what a level means is the library's. This file
- * only knows how to make a peripheral do it.
+ * The UART peripheral and the GPIO matrix, with no policy. Which pin, address
+ * and driver exist is board.h's, and what a level means is the library's.
+ * `test/unit` runs the same library against a mock instead.
  */
 
 #ifndef BACKENDS_H
@@ -28,9 +23,8 @@
  * @brief Brings up the UART and every wired GPIO on @p board.
  *
  * Outputs come up in their resting state before they are driven: ENN high, so
- * the power stage is off from the first instruction, and STEP low. A board
- * that energised a motor because a pin floated during boot would be a board
- * you cannot leave plugged in.
+ * the power stage is off from the first instruction, and STEP low. This is to
+ * avoid a floating pin energising a motor during boot.
  *
  * @retval ESP_OK
  * @retval ESP_ERR_INVALID_STATE  already called

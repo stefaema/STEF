@@ -1,25 +1,14 @@
 /**
  * @file rpc_raw.c
- * @brief One method per public library call, and no decisions of its own.
+ * @brief One method per public library call.
  *
- * Raw is a projection of `tmc2209.h` onto the wire. Every handler here reads
- * its arguments as a struct, makes exactly one library call, and hands the
- * library somewhere in the reply to write. Where a handler looks like it is
- * deciding something, it is not: the check is one the library would have made
- * anyway, hoisted only because the frame has to be rejected before a device can
- * be named.
+ * Each handler reads its arguments as a struct, makes one library call, and
+ * gives the library a pointer into the reply frame to write to, so nothing is
+ * copied. The one decision of its own: moving and enabling are refused while
+ * the board is tripped.
  *
- * The out-parameter is why these are short. A library call that reports an
- * error and yields its value through a pointer can be given a pointer into the
- * reply frame, so the value never exists anywhere else and there is nothing to
- * copy once the call returns. Where a handler does stage a local, it is because
- * the library's struct and the wire's are laid out differently and one of them
- * has to be translated.
- *
- * A bridge, so it knows both libraries and nothing about ESP-IDF, and
- * `test/unit` compiles it against the mock driver. The paths worth testing are
- * exactly the ones a real driver will not produce on request: a corrupt CRC, a
- * silent reply, an `IFCNT` that does not advance.
+ * Knows both libraries and nothing of ESP-IDF, so `test/unit` builds it against
+ * the mock driver.
  */
 
 #include <stddef.h>
@@ -32,9 +21,8 @@
 #include "tmc2209.h"
 
 /*
- * A batch is the unit of work for both writes and bring-up: n datagrams and
- * one IFCNT check, so ten registers cost eleven transactions rather than
- * twenty.
+ * A batch is the unit of work for writes and bring-up: n datagrams and one
+ * IFCNT check.
  */
 static bool ops_arg(const rpc_raw_write_args *in, size_t args_len, tmc2209_regval_t *ops)
 {
@@ -62,7 +50,7 @@ static rpc_status_t raw_read(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_read(dev, (tmc2209_reg_t)in->reg, &out->value));
@@ -75,7 +63,7 @@ static rpc_status_t raw_poll_raw(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_poll_raw(dev, (tmc2209_reg_t)in->reg, &out->value));
@@ -83,8 +71,8 @@ static rpc_status_t raw_poll_raw(const void *args, void *ret)
 
 static rpc_status_t raw_write(const void *args, size_t args_len, void *ret, size_t *ret_len)
 {
-    const rpc_raw_write_args *in  = args;
-    rpc_raw_write_ret        *out = ret;
+    const rpc_raw_write_args *in = args;
+    (void)ret;
 
     tmc2209_regval_t ops[RPC_MAX_OPS];
     if (!ops_arg(in, args_len, ops)) {
@@ -93,19 +81,11 @@ static rpc_status_t raw_write(const void *args, size_t args_len, void *ret, size
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
-    size_t        failed_at = 0;
-    tmc2209_err_t err       = tmc2209_write(dev, ops, in->count, &failed_at);
-    if (err != TMC2209_OK) {
-        return rpc_status_of_err(err);
-    }
-
-    out->failed_at = (uint16_t)failed_at;
-
-    *ret_len = sizeof(*out);
-    return RPC_OK;
+    *ret_len = 0;
+    return rpc_status_of_err(tmc2209_write(dev, ops, in->count, NULL));
 }
 
 /* ── Conditions and verdicts ────────────────────────────────────────────── */
@@ -117,7 +97,7 @@ static rpc_status_t raw_poll_health(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_poll_health(dev, &out->conditions));
@@ -130,7 +110,7 @@ static rpc_status_t raw_clear_faults(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_clear_faults(dev, in->conditions));
@@ -143,7 +123,7 @@ static rpc_status_t raw_poll_load(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     tmc2209_load_t load = { 0 };
@@ -165,7 +145,7 @@ static rpc_status_t raw_poll_pins(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_poll_raw(dev, TMC2209_IOIN, &out->value));
@@ -178,14 +158,14 @@ static rpc_status_t raw_poll_version(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_poll_version(dev, &out->version));
 }
 
-/* MISMATCH is a result and not a transport failure, so it leaves here as
- * RPC_OK with the mask beside it. See rpc_raw_verify_config_ret. */
+/* MISMATCH leaves as RPC_OK with the mask beside it, to avoid discarding the
+ * mask. See rpc_raw_verify_config_ret. */
 static rpc_status_t raw_verify_config(const void *args, void *ret)
 {
     const rpc_raw_verify_config_args *in  = args;
@@ -193,7 +173,7 @@ static rpc_status_t raw_verify_config(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     tmc2209_err_t err = tmc2209_verify_config(dev, &out->mismatched);
@@ -214,7 +194,7 @@ static rpc_status_t raw_set_velocity(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_set_velocity(dev, in->velocity));
@@ -227,7 +207,7 @@ static rpc_status_t raw_set_current(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     tmc2209_ihold_irun_t c = {
@@ -253,16 +233,16 @@ static rpc_status_t raw_bringup(const void *args, size_t args_len, void *ret, si
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
-    tmc2209_gstat_t at_bringup = { false };
-    tmc2209_err_t   err        = tmc2209_bringup(dev, config, in->count, &at_bringup);
+    tmc2209_gstat_t found = { false };
+    tmc2209_err_t   err   = tmc2209_bringup(dev, config, in->count, &found);
     if (err != TMC2209_OK) {
         return rpc_status_of_err(err);
     }
 
-    out->gstat_at_bringup = tmc2209_gstat_encode(&at_bringup);
+    out->gstat_found = tmc2209_gstat_encode(&found);
 
     *ret_len = sizeof(*out);
     return RPC_OK;
@@ -275,7 +255,7 @@ static rpc_status_t raw_all_owned_valid(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     out->valid = (uint8_t)tmc2209_all_owned_valid(dev);
@@ -289,7 +269,7 @@ static rpc_status_t raw_invalidate_owned(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     tmc2209_invalidate_owned(dev);
@@ -305,7 +285,7 @@ static rpc_status_t raw_line_read(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     bool          level = false;
@@ -325,7 +305,7 @@ static rpc_status_t raw_line_write(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_line_write(dev, (tmc2209_line_t)in->line, in->level != 0U));
@@ -338,7 +318,7 @@ static rpc_status_t raw_enable(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     if (in->on != 0U && rpc_trip_reason() != RPC_TRIP_NONE) {
@@ -355,7 +335,7 @@ static rpc_status_t raw_is_enabled(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     bool          on  = false;
@@ -377,7 +357,7 @@ static rpc_status_t raw_move(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     if (rpc_trip_reason() != RPC_TRIP_NONE) {
@@ -403,7 +383,7 @@ static rpc_status_t raw_retarget(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_retarget(dev, in->cruise_pps));
@@ -416,7 +396,7 @@ static rpc_status_t raw_halt(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     return rpc_status_of_err(tmc2209_halt(dev, in->immediate != 0U));
@@ -429,7 +409,7 @@ static rpc_status_t raw_motion_report(const void *args, void *ret)
 
     tmc2209_t *dev = devices_at(in->idx);
     if (dev == NULL) {
-        return RPC_ARG;
+        return rpc_status_of_missing_device();
     }
 
     tmc2209_motion_report_t m   = { 0 };
@@ -440,7 +420,7 @@ static rpc_status_t raw_motion_report(const void *args, void *ret)
 
     out->emitted  = m.emitted;
     out->rate_pps = m.rate_pps;
-    out->running  = (uint8_t)m.running;
+    out->pulsing  = (uint8_t)m.pulsing;
     out->dir      = (uint8_t)m.dir;
     out->shaft    = (uint8_t)m.shaft;
 
@@ -450,7 +430,7 @@ static rpc_status_t raw_motion_report(const void *args, void *ret)
 const rpc_method_t rpc_raw_methods[RPC_RAW_COUNT] = {
     [RPC_RAW_READ]             = RPC_METHOD(raw_read),
     [RPC_RAW_POLL_RAW]         = RPC_METHOD(raw_poll_raw),
-    [RPC_RAW_WRITE]            = RPC_METHOD_VAR(raw_write),
+    [RPC_RAW_WRITE]            = RPC_METHOD_VAR_ACK(raw_write),
     [RPC_RAW_POLL_HEALTH]      = RPC_METHOD(raw_poll_health),
     [RPC_RAW_CLEAR_FAULTS]     = RPC_METHOD_ACK(raw_clear_faults),
     [RPC_RAW_POLL_LOAD]        = RPC_METHOD(raw_poll_load),

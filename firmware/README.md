@@ -8,8 +8,8 @@ shared single-wire UART, plus per-driver STEP/DIR/EN/DIAG.
 `portable/rpc` and `portable/tmc2209` are system agnostic, so using them takes
 two more components, `rpc_bind` and `tmc2209_bind` under `src/components/`,
 which hold everything specific to this project. The main application sets up
-the drivers and registers every `rpc` namespace: on its own it only does
-housekeeping, and otherwise serves the requests the PC host makes.
+the drivers and registers every `rpc` namespace. It serves the PC's requests,
+and stops every drive if the PC goes quiet during motion.
 
 ## The toolchain
 

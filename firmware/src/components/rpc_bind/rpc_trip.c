@@ -20,7 +20,7 @@ static bool anything_pulsing(void)
         }
 
         bool          pulsing = false;
-        tmc2209_err_t err     = tmc2209_is_running(dev, &pulsing);
+        tmc2209_err_t err     = tmc2209_is_pulsing(dev, &pulsing);
         if (pulsing || (err != TMC2209_OK && err != TMC2209_ERR_NO_BACKEND)) {
             return true;
         }

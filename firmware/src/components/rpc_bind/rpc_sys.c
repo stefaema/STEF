@@ -8,10 +8,29 @@
 #include "rpc_trip.h"
 #include "tmc2209.h"
 
-/* Copies @p src into a fixed field and zeroes the rest of it. The tail matters:
- * the field travels whole, so anything left in it from a previous reply would
- * be both a changing CRC for an unchanged answer and a look at memory the
- * caller was never offered. */
+/* clang-format off */
+/* NOLINTBEGIN(readability-redundant-casting) */
+static_assert((int)RPC_RESET_UNKNOWN    == (int)ESP_RST_UNKNOWN,    "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_POWERON    == (int)ESP_RST_POWERON,    "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_EXT        == (int)ESP_RST_EXT,        "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_SW         == (int)ESP_RST_SW,         "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_PANIC      == (int)ESP_RST_PANIC,      "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_INT_WDT    == (int)ESP_RST_INT_WDT,    "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_TASK_WDT   == (int)ESP_RST_TASK_WDT,   "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_WDT        == (int)ESP_RST_WDT,        "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_DEEPSLEEP  == (int)ESP_RST_DEEPSLEEP,  "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_BROWNOUT   == (int)ESP_RST_BROWNOUT,   "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_SDIO       == (int)ESP_RST_SDIO,       "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_USB        == (int)ESP_RST_USB,        "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_JTAG       == (int)ESP_RST_JTAG,       "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_EFUSE      == (int)ESP_RST_EFUSE,      "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_PWR_GLITCH == (int)ESP_RST_PWR_GLITCH, "rpc_reset_t drifted from ESP-IDF");
+static_assert((int)RPC_RESET_CPU_LOCKUP == (int)ESP_RST_CPU_LOCKUP, "rpc_reset_t drifted from ESP-IDF");
+/* NOLINTEND(readability-redundant-casting) */
+/* clang-format on */
+
+/* Copies @p src into a fixed field and zeroes the rest, to avoid leftovers from
+ * a previous reply changing the CRC or exposing memory. */
 static void set_str(char *dst, size_t cap, const char *src)
 {
     size_t n = 0;
@@ -38,8 +57,8 @@ static rpc_status_t sys_version(const void *args, void *ret)
 
     out->reset_reason = (uint8_t)esp_reset_reason();
 
-    /* From the header both ends compile, never from the build's own labels:
-     * what is compared cannot come from a name someone may rename. */
+    /* From the header both ends compile, to avoid comparing a build label someone
+     * may rename. */
     set_str(out->version, sizeof(out->version), FW_API_VERSION);
     set_str(out->backend, sizeof(out->backend), FW_API_BACKEND);
 

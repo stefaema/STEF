@@ -1,5 +1,7 @@
 #include "rpc_status.h"
 
+#include "devices.h"
+
 rpc_status_t rpc_status_of_err(tmc2209_err_t err)
 {
     switch (err) {
@@ -27,4 +29,9 @@ rpc_status_t rpc_status_of_err(tmc2209_err_t err)
 
     /* No default above, so a new library error is a compile warning. */
     return RPC_INTERNAL;
+}
+
+rpc_status_t rpc_status_of_missing_device(void)
+{
+    return devices_ready() ? RPC_ARG : RPC_NO_BACKEND;
 }

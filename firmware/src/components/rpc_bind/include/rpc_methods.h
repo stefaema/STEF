@@ -2,17 +2,11 @@
  * @file rpc_methods.h
  * @brief The method tables this image serves, for the root that registers them.
  *
- * The `rpc` component names no handler, so something has to. These are what it
- * is handed.
+ * Payload sizes are taken here, where the structs are visible, so the `rpc`
+ * component gets integers and names no type of ours.
  *
- * Each table is where its namespace's payload sizes are taken, since `sizeof`
- * is evaluated here in `rpc_bind` where those structs are visible. The component
- * receives integers and still names no type of ours.
- *
- * Split by namespace and not by file for a reason: `sys` reaches into ESP-IDF
- * for the app descriptor and the uptime, while `raw` and `relay` reach
- * only into `tmc2209.h`. That is what lets the second pair be compiled on the
- * host by `test/unit` and the first not.
+ * Split by namespace, since `sys` reaches into ESP-IDF while `raw` and `relay`
+ * only reach `tmc2209.h`, so `test/unit` can build those two on the host.
  */
 
 #ifndef RPC_METHODS_H

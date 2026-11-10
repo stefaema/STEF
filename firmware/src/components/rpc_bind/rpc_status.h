@@ -12,4 +12,7 @@
 /** @brief @p err as the status a reply carries. */
 rpc_status_t rpc_status_of_err(tmc2209_err_t err);
 
+/** @brief NO_BACKEND if the board never came up, ARG otherwise. */
+rpc_status_t rpc_status_of_missing_device(void);
+
 #endif /* RPC_STATUS_H */

@@ -1,17 +1,14 @@
 /*
- * ramp.c: the square of the rate is linear in the pulse index, and that is the
- * whole trick.
+ * ramp.c: the square of the rate is linear in the pulse index.
  *
- * A ramp is defined in time, dv/dt = a, but a pulse encoder counts pulses and
- * has no clock. With dn/dt = v that becomes v dv/dn = a, so d(v²)/dn = 2a: the
- * state advances by an addition, the brake distance is one division, and only
- * the period costs a square root.
+ * A ramp is dv/dt = a, but a pulse encoder counts pulses and has no clock. With
+ * dn/dt = v that becomes d(v²)/dn = 2a, so the state advances by an addition,
+ * the brake distance is one division, and only the period needs a square root.
  *
- * Paying for that root every pulse is what would not fit in an interrupt. So a
- * chunk of pulses shares one period, sized so the rate never moves more than
- * 1/32 of itself inside it. Nothing is approximated by that: v² is linear, so
- * a jump of K pulses lands exactly on the ramp. Only the period is held flat
- * between two exact points.
+ * A chunk of pulses shares one period, to avoid a square root per pulse in the
+ * interrupt. Chunks are sized so the rate moves less than 1/32 of itself inside
+ * one. v² stays exact, being linear; only the period is held flat between two
+ * exact points.
  */
 
 #include "ramp.h"
@@ -91,21 +88,18 @@ void ramp_begin(ramp_t *r, const ramp_plan_t *plan)
 void ramp_next(ramp_t *r, uint32_t index, uint32_t budget, uint32_t target_pps, bool stopping,
                ramp_chunk_t *out)
 {
-    /* Ramping under pull-in would leave the run unable to stop from where it is. */
-    if (target_pps < r->pullin_pps) {
-        target_pps = r->pullin_pps;
-    }
-
     const uint64_t step      = 2ULL * (uint64_t)r->accel_pps_s;
     const bool     bounded   = (r->pulses != 0U);
     const uint64_t remaining = bounded ? (uint64_t)(r->pulses - index) : (uint64_t)budget;
 
-    /* Where the down ramp starts is asked, never planned: pulses owed against what a stop costs. */
+    /* The brake point is recomputed each chunk: pulses owed against what a stop costs. */
     const uint64_t brake =
         (step != 0U && r->v_sq > r->pullin_sq) ? ((r->v_sq - r->pullin_sq) / step) : 0U;
 
-    const bool     braking = stopping || (bounded && remaining <= brake);
-    const uint64_t goal_sq = braking ? r->pullin_sq : squared(target_pps);
+    const bool     braking  = stopping || (bounded && remaining <= brake);
+    /* Already under pull-in means it can stop from where it is */
+    const uint64_t brake_sq = (r->v_sq < r->pullin_sq) ? r->v_sq : r->pullin_sq;
+    const uint64_t goal_sq  = braking ? brake_sq : squared(target_pps);
 
     /* Room to the nearest thing a chunk must not step over. */
     uint64_t room = (remaining < (uint64_t)budget) ? remaining : (uint64_t)budget;
@@ -128,7 +122,7 @@ void ramp_next(ramp_t *r, uint32_t index, uint32_t budget, uint32_t target_pps, 
         count = 1U;
     }
 
-    /* Sampled mid-chunk, so the staircase straddles the ramp instead of lagging behind it. */
+    /* Sampled mid-chunk, so the staircase straddles the ramp. */
     const uint64_t span = step * count;
     r->v                = rate_from_square(toward(r->v_sq, goal_sq, span / 2U), r->v);
     r->v_sq             = toward(r->v_sq, goal_sq, span);

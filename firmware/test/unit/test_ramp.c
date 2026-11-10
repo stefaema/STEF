@@ -1,10 +1,8 @@
 /*
  * test_ramp.c: the ramp, run on the host with the pulses counted.
  *
- * A backend cannot be asked on hardware whether it emitted one pulse too many,
- * or whether it braked a thousand pulses late: both look like a motor that
- * arrived somewhere near where it was sent. Here the chunks are summed and the
- * question has an answer.
+ * One pulse too many, or a brake a thousand pulses late, is invisible on
+ * hardware. Here the chunks are summed and checked.
  */
 
 #include "ramp.h"
@@ -267,7 +265,7 @@ static void test_a_lowered_target_is_ramped_down_to(void)
     TEST_ASSERT_UINT32_WITHIN(100U, 5000U, c.rate_pps);
 }
 
-static void test_a_target_under_pullin_is_held_at_pullin(void)
+static void test_a_target_under_pullin_is_ramped_down_to(void)
 {
     ramp_t r;
     begin(&r, 0U, 4000U, 20000U);
@@ -277,7 +275,23 @@ static void test_a_target_under_pullin_is_held_at_pullin(void)
         ramp_next(&r, 0U, 24U, 500U, false, &c);
     }
 
-    TEST_ASSERT_EQUAL_UINT32(4000U, c.rate_pps);
+    TEST_ASSERT_UINT32_WITHIN(20U, 500U, c.rate_pps);
+}
+
+static void test_a_halt_below_pullin_stops_without_speeding_up(void)
+{
+    ramp_t r;
+    begin(&r, 0U, 4000U, 20000U);
+
+    ramp_chunk_t c;
+    for (int i = 0; i < 1000; i++) {
+        ramp_next(&r, 0U, 24U, 500U, false, &c);
+    }
+    const uint32_t before = c.rate_pps;
+
+    ramp_next(&r, 0U, 24U, 500U, true, &c);
+    TEST_ASSERT_TRUE(c.last);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(before, c.rate_pps);
 }
 
 void run_ramp_tests(void)
@@ -294,5 +308,6 @@ void run_ramp_tests(void)
     RUN_TEST(test_a_graceful_halt_brakes_to_pullin_and_ends);
     RUN_TEST(test_a_halt_at_pullin_ends_at_once);
     RUN_TEST(test_a_lowered_target_is_ramped_down_to);
-    RUN_TEST(test_a_target_under_pullin_is_held_at_pullin);
+    RUN_TEST(test_a_target_under_pullin_is_ramped_down_to);
+    RUN_TEST(test_a_halt_below_pullin_stops_without_speeding_up);
 }

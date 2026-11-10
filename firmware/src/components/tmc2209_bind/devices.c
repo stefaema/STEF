@@ -55,10 +55,8 @@ bool devices_init(void)
         }
 
         /*
-         * A board that wires no STEP pin gets no pulse source and refuses
-         * every motion call with NO_BACKEND, while everything that does not
-         * emit pulses keeps working. That is the whole argument for backends
-         * being separate: a board missing a peripheral answers for what it has.
+         * A board that wires no STEP pin gets no pulse source. Every motion call
+         * then answers NO_BACKEND, and the rest keeps working.
          */
         ESP_LOGI(TAG, "%s at address %u, lines 0x%X, %s", d->name, d->addr,
                  backends_lines(i) ? backends_lines(i)->wired : 0U,

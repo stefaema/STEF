@@ -2,17 +2,13 @@
  * @file board.h
  * @brief Which pins, which addresses, which drivers exist.
  *
- * The library knows what a driver is and nothing about where it is. It takes
- * backends, and a backend needs a GPIO number, a UART, a strap address. That
- * knowledge has to live somewhere, and everywhere it leaks to is a place that
- * has to change when the hardware does.
+ * The library takes backends, and a backend needs GPIO numbers, a UART and a
+ * strap address. They live here only, so the layers above name a device by
+ * index and a line by role, and the same firmware serves a one-driver bench
+ * board or the three-motor carrier.
  *
- * So it lives here, once. Everything above names a device by string and a line
- * by role, which is what lets the same firmware serve a one-driver bench board
- * and the three-motor carrier without a recompile of anything but this table.
- *
- * The numbers themselves come from Kconfig, so a bench board that wires things
- * differently is `idf.py menuconfig` and not a patch.
+ * The numbers come from Kconfig, so a board wired differently is
+ * `idf.py menuconfig`.
  */
 
 #ifndef BOARD_H

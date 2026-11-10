@@ -256,9 +256,8 @@ esp_err_t backends_init(const board_t *board)
         /* TX and RX meet at PDN_UART, so every byte we send comes back. */
         .echoes = true,
 
-        /* Library policy rather than peripheral fact, and the board table's to
-           choose: how long a driver gets to answer, and how many times a
-           mangled datagram is worth sending again. */
+        /* Library policy, chosen in the board table: how long a driver gets to
+           answer, and how many times a mangled datagram is resent. */
         .timeout_ms = board->timeout_ms,
         .retries    = board->retries,
     };
@@ -281,8 +280,8 @@ esp_err_t backends_init(const board_t *board)
         };
     }
 
-    /* After the pins, because both peripherals behind a pulse source attach to
-       a pad that has to already exist and already rest low. */
+    /* After the pins, since both peripherals behind a pulse source attach to a
+       pad that must already exist and rest low. */
     err = backends_stepgen_init(board);
     if (err != ESP_OK) {
         return err;

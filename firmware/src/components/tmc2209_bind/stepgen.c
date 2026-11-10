@@ -1,13 +1,12 @@
 /*
- * stepgen.c: one RMT symbol per pulse, and a counter watching the pad.
+ * stepgen.c: one RMT symbol per pulse, and a PCNT unit counting the pad.
  *
- * One symbol per pulse is what makes a bounded run exact: the hardware cannot
- * emit a symbol the encoder never wrote. The count comes off PCNT rather than
- * off the encoder because the encoder runs ahead of the pad, so after a cut
- * mid-train its number is pulses encoded and PCNT's is pulses emitted.
+ * One symbol per pulse keeps a bounded run exact. The count comes off PCNT, to
+ * avoid counting symbols that were encoded but never emitted after a cut
+ * mid-train.
  *
- * What rate a symbol carries is ramp.c's answer, and it is asked once per chunk
- * of pulses rather than once per pulse. This file only shapes the symbol.
+ * ramp.c picks the rate, once per chunk of pulses. This file only shapes the
+ * symbol.
  */
 
 #include "backends.h"
@@ -26,14 +25,10 @@
 #define STEPGEN_RESOLUTION_HZ 1000000U
 #define STEPGEN_TICK_NS       (1000000000U / STEPGEN_RESOLUTION_HZ)
 
-/* A period is split evenly between the two halves of its symbol rather than
-   spent on the narrowest pulse the part will accept. The datasheet's floor is
-   around 100 ns and a fixed 2 tick pulse cleared it twenty times over, but a
-   narrow pulse is the first thing a long jumper wire and a poor ground return
-   take apart, and every reference driver for this part sends a square wave. So
-   the margin goes where it costs nothing: at the top rate the half is still a
-   microsecond, and at the bottom both halves carry the 15 bit duration field
-   instead of one, which is what doubles the slow end. */
+/* A period is split evenly between the two halves of its symbol, to avoid a
+   narrow pulse that a long jumper wire or a poor ground return can lose. At the
+   top rate each half is still a microsecond, and at the bottom both halves
+   carry the 15 bit duration field, which doubles the slow end. */
 #define STEPGEN_DURATION_MAX 32767U
 #define STEPGEN_MIN_PERIOD   2U
 #define STEPGEN_MAX_PPS      ((uint32_t)CONFIG_STEF_STEPGEN_MAX_PPS)
@@ -57,7 +52,7 @@ typedef struct {
     volatile uint32_t target_pps;
     volatile uint32_t cur_pps;
     volatile bool     stopping;
-    volatile bool     running;
+    volatile bool     pulsing;
 } stepgen_t;
 
 static stepgen_t         s_gen[BACKENDS_MAX_DRIVERS];
@@ -116,7 +111,7 @@ static bool on_run_done(rmt_channel_handle_t chan, const rmt_tx_done_event_data_
     (void)edata;
 
     stepgen_t *g = (stepgen_t *)arg;
-    g->running   = false;
+    g->pulsing   = false;
     g->cur_pps   = 0U;
 
     return false;
@@ -128,12 +123,11 @@ static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
 {
     stepgen_t *g = (stepgen_t *)ctx;
 
-    if (g->running) {
+    if (g->pulsing) {
         return -1;
     }
-    /* Below this the low half of a symbol outruns the 15-bit duration field,
-       and a rate quietly served as some other rate is what this backend
-       exists to make impossible. */
+    /* Below this the low half of a symbol outruns the 15-bit duration field.
+       Refused, to avoid serving a different rate than asked. */
     if (plan->pullin_pps < STEPGEN_MIN_PPS || plan->cruise_pps < STEPGEN_MIN_PPS) {
         ESP_LOGE(TAG, "rate below %u pps", (unsigned)STEPGEN_MIN_PPS);
         return -1;
@@ -154,7 +148,7 @@ static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
     g->target_pps = plan->cruise_pps;
     g->stopping   = false;
     g->cur_pps    = plan->pullin_pps;
-    g->running    = true;
+    g->pulsing    = true;
 
     const rmt_transmit_config_t cfg = {
         .loop_count = 0,
@@ -162,7 +156,7 @@ static int gen_run(void *ctx, const tmc2209_run_plan_t *plan)
     };
 
     if (rmt_transmit(g->chan, g->encoder, g, sizeof *g, &cfg) != ESP_OK) {
-        g->running = false;
+        g->pulsing = false;
         g->cur_pps = 0U;
         return -1;
     }
@@ -174,10 +168,10 @@ static int gen_retarget(void *ctx, uint32_t cruise_pps)
 {
     stepgen_t *g = (stepgen_t *)ctx;
 
-    if (!g->running) {
+    if (!g->pulsing) {
         return -1;
     }
-    /* A run already braking has one destination left, and it is not this one. */
+    /* A run already braking keeps braking. */
     if (g->stopping) {
         return -1;
     }
@@ -190,17 +184,16 @@ static int gen_retarget(void *ctx, uint32_t cruise_pps)
 }
 
 /*
- * The ramped form only asks: the encoder is already a pipeline of pulses the
- * hardware has not emitted yet, so the run ends when those are out and not
- * when the request lands. A bounded run whose tail is already encoded ignores
- * it, which is right, since the brake it would ask for is in that tail. The
- * immediate form cuts mid-symbol, which is why the count is not kept here.
+ * The ramped form only asks the encoder to brake, so the run ends once the
+ * pulses already in the pipeline are out. A bounded run whose tail is already
+ * encoded ignores it, since that tail holds the brake. The immediate form cuts
+ * mid-symbol, which is why the count is not kept here.
  */
 static int gen_halt(void *ctx, bool immediate)
 {
     stepgen_t *g = (stepgen_t *)ctx;
 
-    if (!g->running) {
+    if (!g->pulsing) {
         return 0;
     }
     if (!immediate) {
@@ -211,24 +204,22 @@ static int gen_halt(void *ctx, bool immediate)
         return -1;
     }
 
-    g->running = false;
+    g->pulsing = false;
     g->cur_pps = 0U;
 
     return (rmt_enable(g->chan) == ESP_OK) ? 0 : -1;
 }
 
 /*
- * The count comes off the counter unit, which watched the pin rather than the
- * encoder, so it survives a train cut between two edges. Whether a run is in
- * flight is read first: reported running against a count that has since become
- * final only costs one more poll, while the other order reports a finished run
- * short by whatever came out in between.
+ * The count comes off the counter unit, which watches the pin, so it survives
+ * a train cut between two edges. Whether a run is in flight is read first, to
+ * avoid reporting a finished run short of its last pulses.
  */
 static int gen_state(void *ctx, tmc2209_run_state_t *out)
 {
     stepgen_t *g = (stepgen_t *)ctx;
 
-    const bool     running = g->running;
+    const bool     pulsing = g->pulsing;
     const uint32_t rate    = g->cur_pps;
 
     int count = 0;
@@ -236,11 +227,11 @@ static int gen_state(void *ctx, tmc2209_run_state_t *out)
         return -1;
     }
 
-    /* The unit only ever counts up, so this is a reinterpretation and not a
-       clamp: an unbounded run past 2^31 pulses keeps counting, and wraps. */
+    /* The unit only counts up, so this is a reinterpretation: an unbounded run
+       past 2^31 pulses keeps counting, and wraps. */
     out->emitted  = (uint32_t)count;
     out->rate_pps = rate;
-    out->running  = running;
+    out->pulsing  = pulsing;
 
     return 0;
 }
@@ -248,9 +239,9 @@ static int gen_state(void *ctx, tmc2209_run_state_t *out)
 /* ── Bring-up ───────────────────────────────────────────────────────────── */
 
 /*
- * The counter taps the same pad the channel drives, through the loopback the
- * channel enables, so nothing about this needs a wire the board does not
- * already have. It is created after the channel for that reason.
+ * The counter taps the pad the channel drives, through the channel's
+ * loopback, so it needs no extra wire. It is created after the channel for
+ * that reason.
  */
 static esp_err_t configure_counter(stepgen_t *g, int step_pin)
 {
@@ -265,9 +256,9 @@ static esp_err_t configure_counter(stepgen_t *g, int step_pin)
         return err;
     }
 
-    /* The accumulation the flag above promises happens on reaching a limit,
-       and a limit is only noticed if it is watched. Without this the count
-       wraps at 10000 pulses, which is a third of a turn. */
+    /* Accumulation happens on reaching a limit, and only a watched limit is
+       noticed. Without this the count wraps at 10000 pulses, a third of a
+       turn. */
     err = pcnt_unit_add_watch_point(g->pcnt, STEPGEN_PCNT_HIGH);
     if (err != ESP_OK) {
         return err;
@@ -383,6 +374,7 @@ esp_err_t backends_stepgen_init(const board_t *board)
             .state        = gen_state,
             .ctx          = &s_gen[i],
             .max_pps      = STEPGEN_MAX_PPS,
+            .min_pps      = STEPGEN_MIN_PPS,
             /* Half of the shortest period this backend will encode. */
             .min_pulse_ns = (STEPGEN_MIN_PERIOD / 2U) * STEPGEN_TICK_NS,
         };

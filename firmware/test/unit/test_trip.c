@@ -66,7 +66,7 @@ static int gen_halt(void *ctx, bool immediate)
 
 static int gen_state(void *ctx, tmc2209_run_state_t *out)
 {
-    *out = (tmc2209_run_state_t){ .running = ((fake_gen_t *)ctx)->running };
+    *out = (tmc2209_run_state_t){ .pulsing = ((fake_gen_t *)ctx)->running };
     return 0;
 }
 

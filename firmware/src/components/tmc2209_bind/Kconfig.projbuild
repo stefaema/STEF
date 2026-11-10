@@ -30,19 +30,17 @@ menu "STEF Board"
         range 9600 500000
         default 115200
         help
-            The TMC2209 recovers the rate from the sync byte, so this is the
-            ESP32's choice rather than the driver's. 115200 is unambiguous on
-            a hand-wired board; raise it once the carrier board exists.
+            The TMC2209 recovers the rate from the sync byte, so the ESP32
+            picks it. 115200 is safe on a hand-wired board; raise it once the
+            carrier board exists.
 
     config STEF_TMC_UART_TRACE
         bool "Log every byte on the driver bus"
         default n
         help
-            Every datagram, both directions, at info level, so it lands on the
-            console and not on the link. A bad echo says the bytes did not
-            match, not what did arrive, so on a silent bus this is the only
-            thing that says whether anything came back at all. Costs a log
-            line per datagram.
+            Every datagram, both directions, at info level, so it goes to the
+            console. On a silent bus this is the only way to see whether
+            anything came back. Costs a log line per datagram.
 
     comment "Pulse generation"
 
@@ -51,13 +49,12 @@ menu "STEF Board"
         range 1000 300000
         default 100000
         help
-            Not a limit of the RMT peripheral, which reaches 333k. It is what
-            the board sustains with every driver running at once, since each
-            one refills its channel from an interrupt. A rate above this is
-            refused rather than clamped: a move that ran slower than believed
-            is a position error.
+            What the board sustains with every driver running at once, since
+            each one refills its channel from an interrupt. The RMT peripheral
+            itself reaches 333k. A rate above this is refused, to avoid a move
+            running slower than believed.
 
-            Pulses, not steps. One full step holds up to 256 of them.
+            In pulses. One full step holds up to 256 of them.
 
     comment "Which drivers exist"
 
@@ -69,8 +66,7 @@ menu "STEF Board"
     # Every driver on the wire needs a different address, and each STEP pin
     # spends one RMT channel and one PCNT unit. This part has four of each.
     #
-    # A pin left at -1 is not wired, and every call that needs it is refused
-    # rather than ignored.
+    # A pin left at -1 is not wired, and every call that needs it is refused.
     #
 
     menu "Driver 0"
