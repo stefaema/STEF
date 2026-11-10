@@ -67,9 +67,10 @@
 
 /** @brief Which of the three kinds of frame this is. First byte, always. */
 typedef enum {
-    RPC_FRAME_REQ = 0, /**< inbound, asking for a method */
-    RPC_FRAME_REP = 1, /**< outbound, answering a request */
-    RPC_FRAME_LOG = 2, /**< outbound, unprompted. Payload is the text, no terminator */
+    RPC_FRAME_REQ       = 0, /**< inbound, asking for a method */
+    RPC_FRAME_REP       = 1, /**< outbound, answering a request */
+    RPC_FRAME_LOG       = 2, /**< outbound, unprompted. Payload is the text, no terminator */
+    RPC_FRAME_KEEPALIVE = 3,
 } rpc_frame_t;
 
 /* ── What a byte means ──────────────────────────────────────────────────── */
@@ -135,9 +136,19 @@ typedef struct {
     rpc_status_t   status;
     uint8_t        _pad[2];
     uint16_t       id;      /**< the request this answers */
-    uint16_t       _pad2;
+    uint16_t       keepalive_within_ms;
 } rpc_rep_hdr_t;
 RPC_WIRE_SIZE(rpc_rep_hdr_t, RPC_HDR_LEN);
+
+#define RPC_KEEPALIVE_NONE 0xFFFFU
+
+typedef struct {
+    rpc_frame_id_t type;
+    uint8_t        _pad[3];
+    uint16_t       id;
+    uint16_t       _pad2;
+} rpc_keepalive_hdr_t;
+RPC_WIRE_SIZE(rpc_keepalive_hdr_t, RPC_HDR_LEN);
 
 /** @brief What a log line says before its text. */
 typedef struct {

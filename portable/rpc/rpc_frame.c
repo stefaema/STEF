@@ -43,16 +43,18 @@ size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
     return seal(b, payload_len);
 }
 
-size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status, size_t payload_len)
+size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
+                          uint16_t keepalive_within_ms, size_t payload_len)
 {
-    if (b == NULL) {
+    if (b == NULL || keepalive_within_ms == 0U) {
         return 0;
     }
 
     b->rep = (rpc_rep_hdr_t){
-        .type   = (uint8_t)RPC_FRAME_REP,
-        .status = (uint8_t)status,
-        .id     = id,
+        .type                = (uint8_t)RPC_FRAME_REP,
+        .status              = (uint8_t)status,
+        .id                  = id,
+        .keepalive_within_ms = keepalive_within_ms,
     };
 
     return seal(b, payload_len);
@@ -71,6 +73,20 @@ size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms, size_
     };
 
     return seal(b, payload_len);
+}
+
+size_t rpc_frame_seal_keepalive(rpc_buf_t *b, uint16_t id)
+{
+    if (b == NULL) {
+        return 0;
+    }
+
+    b->keepalive = (rpc_keepalive_hdr_t){
+        .type = (uint8_t)RPC_FRAME_KEEPALIVE,
+        .id   = id,
+    };
+
+    return seal(b, 0);
 }
 
 bool rpc_frame_open(const void *buf, size_t len, rpc_view_t *out)
@@ -94,7 +110,11 @@ bool rpc_frame_open(const void *buf, size_t len, rpc_view_t *out)
     }
 
     uint8_t type = bytes[0];
-    if (type != RPC_FRAME_REQ && type != RPC_FRAME_REP && type != RPC_FRAME_LOG) {
+    if (type != RPC_FRAME_REQ && type != RPC_FRAME_REP && type != RPC_FRAME_LOG &&
+        type != RPC_FRAME_KEEPALIVE) {
+        return false;
+    }
+    if (type == RPC_FRAME_REP && ((const rpc_rep_hdr_t *)buf)->keepalive_within_ms == 0U) {
         return false;
     }
 

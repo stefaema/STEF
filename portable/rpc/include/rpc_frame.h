@@ -37,10 +37,11 @@
  * here is what makes their alignment the compiler's problem.
  */
 typedef union {
-    rpc_req_hdr_t req;
-    rpc_rep_hdr_t rep;
-    rpc_log_hdr_t log;
-    uint8_t       bytes[RPC_MAX_FRAME];
+    rpc_req_hdr_t       req;
+    rpc_rep_hdr_t       rep;
+    rpc_log_hdr_t       log;
+    rpc_keepalive_hdr_t keepalive;
+    uint8_t             bytes[RPC_MAX_FRAME];
 } rpc_buf_t;
 
 /** @brief Where @p b's payload begins. Aligned for any field it will hold. */
@@ -72,10 +73,13 @@ size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
                           size_t payload_len);
 
 /** @brief Closes a reply frame around a payload of return values. */
-size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status, size_t payload_len);
+size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
+                          uint16_t keepalive_within_ms, size_t payload_len);
 
 /** @brief Closes a log frame around its text, which carries no terminator. */
 size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms, size_t payload_len);
+
+size_t rpc_frame_seal_keepalive(rpc_buf_t *b, uint16_t id);
 
 /* ── Reading ────────────────────────────────────────────────────────────── */
 

@@ -34,6 +34,7 @@ void test_frame_headers_are_all_one_length(void)
     TEST_ASSERT_EQUAL_size_t(8, sizeof(rpc_req_hdr_t));
     TEST_ASSERT_EQUAL_size_t(8, sizeof(rpc_rep_hdr_t));
     TEST_ASSERT_EQUAL_size_t(8, sizeof(rpc_log_hdr_t));
+    TEST_ASSERT_EQUAL_size_t(8, sizeof(rpc_keepalive_hdr_t));
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN, sizeof(rpc_req_hdr_t));
 }
 
@@ -67,11 +68,11 @@ void test_frame_reply_header_is_where_it_says(void)
     rpc_buf_t b;
     memset(&b, 0xAA, sizeof(b));
 
-    size_t len = rpc_frame_seal_rep(&b, 0x0709, A_STATUS, 0);
+    size_t len = rpc_frame_seal_rep(&b, 0x0709, A_STATUS, 0x0302, 0);
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + RPC_CRC_LEN, len);
 
     const uint8_t want[RPC_HDR_LEN] = {
-        RPC_FRAME_REP, A_STATUS, 0x00, 0x00, 0x09, 0x07, 0x00, 0x00,
+        RPC_FRAME_REP, A_STATUS, 0x00, 0x00, 0x09, 0x07, 0x02, 0x03,
     };
     TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
 }
@@ -90,6 +91,48 @@ void test_frame_log_header_is_where_it_says(void)
     TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
 }
 
+void test_frame_keepalive_header_is_where_it_says(void)
+{
+    rpc_buf_t b;
+    memset(&b, 0xAA, sizeof(b));
+
+    size_t len = rpc_frame_seal_keepalive(&b, 0x0B0A);
+    TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + RPC_CRC_LEN, len);
+
+    const uint8_t want[RPC_HDR_LEN] = {
+        RPC_FRAME_KEEPALIVE, 0x00, 0x00, 0x00, 0x0A, 0x0B, 0x00, 0x00,
+    };
+    TEST_ASSERT_EQUAL_MEMORY(want, b.bytes, sizeof(want));
+}
+
+void test_frame_keepalive_opens_with_its_id(void)
+{
+    rpc_buf_t b;
+
+    size_t len = rpc_frame_seal_keepalive(&b, 42);
+
+    rpc_view_t v;
+    TEST_ASSERT_TRUE(rpc_frame_open(&b, len, &v));
+    TEST_ASSERT_EQUAL_UINT8(RPC_FRAME_KEEPALIVE, v.type);
+    TEST_ASSERT_EQUAL_size_t(0, v.payload_len);
+
+    const rpc_keepalive_hdr_t *h = v.hdr;
+    TEST_ASSERT_EQUAL_UINT16(42, h->id);
+}
+
+void test_frame_reply_carries_its_keepalive_deadline(void)
+{
+    rpc_buf_t b;
+
+    size_t len = rpc_frame_seal_rep(&b, 3, RPC_OK, 500, 0);
+
+    rpc_view_t v;
+    TEST_ASSERT_TRUE(rpc_frame_open(&b, len, &v));
+
+    const rpc_rep_hdr_t *h = v.hdr;
+    TEST_ASSERT_EQUAL_UINT16(500, h->keepalive_within_ms);
+}
+
 /*
  * Two identical calls have to produce two identical frames. They would not if a
  * header's padding were left holding whatever the previous frame put in the
@@ -104,8 +147,8 @@ void test_frame_padding_is_written_not_inherited(void)
     memset(&clean, 0x00, sizeof(clean));
     memset(&dirty, 0xFF, sizeof(dirty));
 
-    size_t a = rpc_frame_seal_rep(&clean, 9, A_STATUS, 0);
-    size_t b = rpc_frame_seal_rep(&dirty, 9, A_STATUS, 0);
+    size_t a = rpc_frame_seal_rep(&clean, 9, A_STATUS, RPC_KEEPALIVE_NONE, 0);
+    size_t b = rpc_frame_seal_rep(&dirty, 9, A_STATUS, RPC_KEEPALIVE_NONE, 0);
 
     TEST_ASSERT_EQUAL_size_t(a, b);
     TEST_ASSERT_EQUAL_MEMORY(clean.bytes, dirty.bytes, a);
@@ -120,7 +163,7 @@ void test_frame_carries_a_payload_back_unchanged(void)
     const uint8_t payload[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02 };
     memcpy(rpc_payload(&b), payload, sizeof(payload));
 
-    size_t len = rpc_frame_seal_rep(&b, 7, RPC_OK, sizeof(payload));
+    size_t len = rpc_frame_seal_rep(&b, 7, RPC_OK, RPC_KEEPALIVE_NONE, sizeof(payload));
     TEST_ASSERT_EQUAL_size_t(RPC_HDR_LEN + sizeof(payload) + RPC_CRC_LEN, len);
 
     rpc_view_t v;
@@ -156,8 +199,34 @@ void test_frame_refuses_a_payload_that_does_not_fit(void)
 {
     rpc_buf_t b;
 
-    TEST_ASSERT_EQUAL_size_t(0, rpc_frame_seal_rep(&b, 1, RPC_OK, RPC_MAX_PAYLOAD + 1U));
-    TEST_ASSERT_GREATER_THAN(0, rpc_frame_seal_rep(&b, 1, RPC_OK, RPC_MAX_PAYLOAD));
+    TEST_ASSERT_EQUAL_size_t(
+        0, rpc_frame_seal_rep(&b, 1, RPC_OK, RPC_KEEPALIVE_NONE, RPC_MAX_PAYLOAD + 1U));
+    TEST_ASSERT_GREATER_THAN(
+        0, rpc_frame_seal_rep(&b, 1, RPC_OK, RPC_KEEPALIVE_NONE, RPC_MAX_PAYLOAD));
+}
+
+void test_frame_refuses_to_seal_a_zero_keepalive_deadline(void)
+{
+    rpc_buf_t b;
+
+    TEST_ASSERT_EQUAL_size_t(0, rpc_frame_seal_rep(&b, 1, RPC_OK, 0, 0));
+}
+
+void test_frame_rejects_a_reply_with_a_zero_keepalive_deadline(void)
+{
+    rpc_buf_t b;
+
+    size_t len  = rpc_frame_seal_rep(&b, 1, RPC_OK, RPC_KEEPALIVE_NONE, 0);
+    size_t body = len - RPC_CRC_LEN;
+
+    b.rep.keepalive_within_ms = 0;
+
+    uint16_t crc      = crc16_ccitt(b.bytes, body);
+    b.bytes[body]     = (uint8_t)(crc & 0xFFU);
+    b.bytes[body + 1] = (uint8_t)((crc >> 8) & 0xFFU);
+
+    rpc_view_t v;
+    TEST_ASSERT_FALSE(rpc_frame_open(&b, len, &v));
 }
 
 void test_frame_rejects_corrupt_frames(void)
@@ -226,10 +295,15 @@ void run_rpc_frame_tests(void)
     RUN_TEST(test_frame_request_header_is_where_it_says);
     RUN_TEST(test_frame_reply_header_is_where_it_says);
     RUN_TEST(test_frame_log_header_is_where_it_says);
+    RUN_TEST(test_frame_keepalive_header_is_where_it_says);
+    RUN_TEST(test_frame_keepalive_opens_with_its_id);
+    RUN_TEST(test_frame_reply_carries_its_keepalive_deadline);
     RUN_TEST(test_frame_padding_is_written_not_inherited);
     RUN_TEST(test_frame_carries_a_payload_back_unchanged);
     RUN_TEST(test_frame_with_no_payload_reports_none);
     RUN_TEST(test_frame_refuses_a_payload_that_does_not_fit);
+    RUN_TEST(test_frame_refuses_to_seal_a_zero_keepalive_deadline);
+    RUN_TEST(test_frame_rejects_a_reply_with_a_zero_keepalive_deadline);
     RUN_TEST(test_frame_rejects_corrupt_frames);
     RUN_TEST(test_frame_rejects_a_runt);
     RUN_TEST(test_frame_rejects_unknown_frame_type);
