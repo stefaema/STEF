@@ -93,6 +93,7 @@ def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes
 
 
 def seal_keepalive(request_id: int) -> bytes:
+    """Return a keepalive frame, sealed by the firmware's own code."""
     buf = fw_api.rpc_buf_t()
     length = fw_api.rpc_frame_seal_keepalive(buf, request_id)
     return bytes(buf.bytes[:length])

@@ -248,6 +248,7 @@ class RequestBroker:
         pending.event.set()
 
     def _schedule_renewal(self, within_ms: int) -> None:
+        """Start, keep or stop the keepalives, as the deadline on a reply says."""
         with self._lock:
             if within_ms == fw_api.RPC_KEEPALIVE_NONE:
                 self._renew_every = None
@@ -258,12 +259,14 @@ class RequestBroker:
                 self._renew_at = time.monotonic() + self._renew_every
 
     def _renewal_wait(self) -> float | None:
+        """Return how long the loop may wait for a job before a keepalive is due."""
         with self._lock:
             if self._renew_at is None:
                 return None
             return max(0.0, self._renew_at - time.monotonic())
 
     def _renew(self) -> None:
+        """Send one keepalive, waiting at most one interval for its reply."""
         with self._lock:
             every = self._renew_every
             if every is None:
