@@ -107,12 +107,12 @@ static rpc_status_t sys_devices(const void *args, size_t args_len, void *ret, si
     return RPC_OK;
 }
 
-static rpc_status_t sys_trip_set(const void *args, void *ret)
+static rpc_status_t sys_trip(const void *args, void *ret)
 {
-    const rpc_sys_trip_set_args *in = args;
+    const rpc_sys_trip_args *in = args;
     (void)ret;
 
-    rpc_trip_set(RPC_TRIP_REQUESTED, in->detail, in->immediate != 0U);
+    rpc_trip(RPC_TRIP_REQUESTED, in->detail, in->immediate != 0U);
     return RPC_OK;
 }
 
@@ -133,6 +133,6 @@ const rpc_method_t rpc_sys_methods[RPC_SYS_COUNT] = {
     [RPC_SYS_STATE]   = RPC_METHOD_GET(sys_state),
     [RPC_SYS_DEVICES] = RPC_METHOD_VAR_GET(
         sys_devices, sizeof(rpc_sys_devices_ret) + (RPC_MAX_DEVICES * sizeof(rpc_dev_info_t))),
-    [RPC_SYS_TRIP_SET] = RPC_METHOD_ACK(sys_trip_set),
-    [RPC_SYS_UNTRIP]   = RPC_METHOD_GET(sys_untrip),
+    [RPC_SYS_TRIP]   = RPC_METHOD_ACK(sys_trip),
+    [RPC_SYS_UNTRIP] = RPC_METHOD_GET(sys_untrip),
 };

@@ -72,7 +72,7 @@ uint16_t rpc_keepalive_within_ms(uint32_t now_ms)
     return watching(now_ms) ? (uint16_t)RPC_KEEPALIVE_WITHIN_MS : (uint16_t)RPC_KEEPALIVE_NONE;
 }
 
-void rpc_trip_set(rpc_trip_reason_t reason, uint8_t detail, bool immediate)
+void rpc_trip(rpc_trip_reason_t reason, uint8_t detail, bool immediate)
 {
     if (s_reason == RPC_TRIP_NONE) {
         s_reason = reason;
@@ -106,7 +106,7 @@ bool rpc_untrip(void)
 void rpc_trip_update(uint32_t now_ms)
 {
     if (watching(now_ms) && now_ms - s_heard_ms > RPC_KEEPALIVE_WITHIN_MS) {
-        rpc_trip_set(RPC_TRIP_KEEPALIVE, 0, false);
+        rpc_trip(RPC_TRIP_KEEPALIVE, 0, false);
     }
     release_once_still();
 }

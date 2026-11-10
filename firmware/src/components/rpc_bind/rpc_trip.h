@@ -21,7 +21,7 @@ void rpc_keepalive_heard(uint32_t now_ms);
 uint16_t rpc_keepalive_within_ms(uint32_t now_ms);
 
 /** @brief Halts every drive and releases them once nothing moves. Keeps the first reason. */
-void rpc_trip_set(rpc_trip_reason_t reason, uint8_t detail, bool immediate);
+void rpc_trip(rpc_trip_reason_t reason, uint8_t detail, bool immediate);
 
 /** @brief Clears the trip. False while a halted drive is still moving. */
 bool rpc_untrip(void);
@@ -32,7 +32,7 @@ void rpc_trip_update(uint32_t now_ms);
 /** @brief Why the board is tripped, or RPC_TRIP_NONE. */
 rpc_trip_reason_t rpc_trip_reason(void);
 
-/** @brief What `sys.trip_set` was given. */
+/** @brief What `sys.trip` was given. */
 uint8_t rpc_trip_detail(void);
 
 #endif /* RPC_TRIP_H */

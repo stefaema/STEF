@@ -220,7 +220,7 @@ static void test_a_tripped_board_asks_for_no_keepalive(void)
 {
     trip_setup();
     start_run();
-    rpc_trip_set(RPC_TRIP_REQUESTED, 0, false);
+    rpc_trip(RPC_TRIP_REQUESTED, 0, false);
     TEST_ASSERT_EQUAL_UINT16(RPC_KEEPALIVE_NONE, rpc_keepalive_within_ms(0));
 }
 
@@ -228,7 +228,7 @@ static void test_an_immediate_trip_releases_at_once(void)
 {
     trip_setup();
     start_run();
-    rpc_trip_set(RPC_TRIP_REQUESTED, 7, true);
+    rpc_trip(RPC_TRIP_REQUESTED, 7, true);
 
     TEST_ASSERT_TRUE(g_gen.halted_immediately);
     TEST_ASSERT_FALSE(enabled());
@@ -240,7 +240,7 @@ static void test_a_trip_stops_a_set_velocity(void)
 {
     trip_setup();
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, 1000));
-    rpc_trip_set(RPC_TRIP_REQUESTED, 0, false);
+    rpc_trip(RPC_TRIP_REQUESTED, 0, false);
 
     uint32_t v = 1;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
@@ -251,8 +251,8 @@ static void test_a_trip_stops_a_set_velocity(void)
 static void test_the_first_reason_is_kept(void)
 {
     trip_setup();
-    rpc_trip_set(RPC_TRIP_KEEPALIVE, 0, true);
-    rpc_trip_set(RPC_TRIP_REQUESTED, 9, true);
+    rpc_trip(RPC_TRIP_KEEPALIVE, 0, true);
+    rpc_trip(RPC_TRIP_REQUESTED, 9, true);
 
     TEST_ASSERT_EQUAL(RPC_TRIP_KEEPALIVE, rpc_trip_reason());
     TEST_ASSERT_EQUAL_UINT8(0, rpc_trip_detail());
@@ -262,7 +262,7 @@ static void test_untripping_waits_for_the_release(void)
 {
     trip_setup();
     start_run();
-    rpc_trip_set(RPC_TRIP_REQUESTED, 0, false);
+    rpc_trip(RPC_TRIP_REQUESTED, 0, false);
 
     TEST_ASSERT_FALSE(rpc_untrip());
     TEST_ASSERT_EQUAL(RPC_TRIP_REQUESTED, rpc_trip_reason());
@@ -276,7 +276,7 @@ static void test_untripping_waits_for_the_release(void)
 static void test_a_tripped_board_refuses_to_move_or_enable(void)
 {
     trip_setup();
-    rpc_trip_set(RPC_TRIP_REQUESTED, 0, true);
+    rpc_trip(RPC_TRIP_REQUESTED, 0, true);
 
     const rpc_raw_move_args move = { .idx = 0, .pulses = 10, .pullin_pps = 100, .cruise_pps = 100 };
     TEST_ASSERT_EQUAL(RPC_REFUSED, raw_call(RPC_RAW_MOVE, &move, sizeof(move)));
@@ -291,7 +291,7 @@ static void test_a_tripped_board_refuses_to_move_or_enable(void)
 static void test_an_untripped_board_moves_again(void)
 {
     trip_setup();
-    rpc_trip_set(RPC_TRIP_REQUESTED, 0, true);
+    rpc_trip(RPC_TRIP_REQUESTED, 0, true);
     TEST_ASSERT_TRUE(rpc_untrip());
 
     const rpc_raw_enable_args on = { .idx = 0, .on = 1 };
