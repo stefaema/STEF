@@ -145,12 +145,12 @@ RPC_WIRE_SIZE(rpc_op_t, 8);
  * has not been agreed yet, so its reply shape can never change.
  */
 typedef enum {
-    RPC_SYS_VERSION  = 0,
-    RPC_SYS_STATE    = 1, /**< what the firmware is doing, and why it tripped */
-    RPC_SYS_DEVICES  = 2, /**< the board table: what exists and what it has */
-    RPC_SYS_TRIP_SET = 3, /**< stop and release every drive, then refuse motion */
-    RPC_SYS_UNTRIP   = 4, /**< allow motion again. The drives stay released */
-    RPC_SYS_COUNT    = 5,
+    RPC_SYS_VERSION = 0,
+    RPC_SYS_STATE   = 1, /**< what the firmware is doing, and why it tripped */
+    RPC_SYS_DEVICES = 2, /**< the board table: what exists and what it has */
+    RPC_SYS_TRIP    = 3, /**< stop and release every drive, then refuse motion */
+    RPC_SYS_UNTRIP  = 4, /**< allow motion again. The drives stay released */
+    RPC_SYS_COUNT   = 5,
 } rpc_sys_method_t;
 
 /**
@@ -182,7 +182,7 @@ RPC_WIRE_SIZE(rpc_sys_version_ret, 100);
 /**
  * @brief What `sys.state` answers. Takes no arguments.
  *
- * Reported. The one mode the PC can set is a trip, through `sys.trip_set`.
+ * Reported. The one mode the PC can set is a trip, through `sys.trip`.
  * It does not announce that it is about to run
  * diagnostics; it asks what is happening and is refused per call if the answer
  * makes the call unsafe. So this is the whole of the mode system from the
@@ -193,7 +193,7 @@ typedef struct {
     uint16_t             device_count;
     rpc_mode_id_t        mode;
     rpc_trip_reason_id_t trip_reason;  /**< RPC_TRIP_NONE unless the board is tripped */
-    uint8_t              trip_detail;  /**< what `sys.trip_set` was given, else 0 */
+    uint8_t              trip_detail;  /**< what `sys.trip` was given, else 0 */
     uint8_t              _pad[3];
 } rpc_sys_state_ret;
 RPC_WIRE_SIZE(rpc_sys_state_ret, 12);
@@ -222,7 +222,7 @@ typedef struct {
 RPC_WIRE_SIZE(rpc_sys_devices_ret, 4);
 
 /**
- * @brief What `sys.trip_set` takes. Answers with the status alone.
+ * @brief What `sys.trip` takes. Answers with the status alone.
  *
  * Every drive is halted and its VACTUAL set to 0, and ENN drops once nothing
  * moves. A board that is already tripped keeps its first reason.
@@ -231,8 +231,8 @@ typedef struct {
     uint8_t    detail;     /**< kept for the PC to read back. The firmware gives it no meaning */
     rpc_bool_t immediate;  /**< halt at the next pulse instead of ramping down */
     uint8_t    _pad[2];
-} rpc_sys_trip_set_args;
-RPC_WIRE_SIZE(rpc_sys_trip_set_args, 4);
+} rpc_sys_trip_args;
+RPC_WIRE_SIZE(rpc_sys_trip_args, 4);
 
 /**
  * @brief What `sys.untrip` answers. Takes no arguments.
@@ -564,7 +564,7 @@ typedef enum {
 typedef enum {
     RPC_TRIP_NONE      = 0, /**< not tripped */
     RPC_TRIP_KEEPALIVE = 1, /**< a drive was moving and no keepalive came in time */
-    RPC_TRIP_REQUESTED = 2, /**< the PC called `sys.trip_set` */
+    RPC_TRIP_REQUESTED = 2, /**< the PC called `sys.trip` */
 } rpc_trip_reason_t;
 
 /**

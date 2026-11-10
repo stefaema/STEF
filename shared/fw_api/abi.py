@@ -120,8 +120,8 @@ class RpcSysMethod(enum.IntEnum):
     STATE = 1
     RPC_SYS_DEVICES = 2
     DEVICES = 2
-    RPC_SYS_TRIP_SET = 3
-    TRIP_SET = 3
+    RPC_SYS_TRIP = 3
+    TRIP = 3
     RPC_SYS_UNTRIP = 4
     UNTRIP = 4
     RPC_SYS_COUNT = 5
@@ -132,7 +132,7 @@ rpc_sys_method_t = RpcSysMethod
 RPC_SYS_VERSION = RpcSysMethod.RPC_SYS_VERSION
 RPC_SYS_STATE = RpcSysMethod.RPC_SYS_STATE
 RPC_SYS_DEVICES = RpcSysMethod.RPC_SYS_DEVICES
-RPC_SYS_TRIP_SET = RpcSysMethod.RPC_SYS_TRIP_SET
+RPC_SYS_TRIP = RpcSysMethod.RPC_SYS_TRIP
 RPC_SYS_UNTRIP = RpcSysMethod.RPC_SYS_UNTRIP
 RPC_SYS_COUNT = RpcSysMethod.RPC_SYS_COUNT
 
@@ -730,7 +730,7 @@ class rpc_sys_version_ret(ctypes.Structure):
 class rpc_sys_state_ret(ctypes.Structure):
     """What `sys.state` answers. Takes no arguments.
 
-    Reported. The one mode the PC can set is a trip, through `sys.trip_set`.
+    Reported. The one mode the PC can set is a trip, through `sys.trip`.
     It does not announce that it is about to run
     diagnostics; it asks what is happening and is refused per call if the answer
     makes the call unsafe. So this is the whole of the mode system from the
@@ -772,8 +772,8 @@ class rpc_sys_devices_ret(ctypes.Structure):
     ]
 
 
-class rpc_sys_trip_set_args(ctypes.Structure):
-    """What `sys.trip_set` takes. Answers with the status alone.
+class rpc_sys_trip_args(ctypes.Structure):
+    """What `sys.trip` takes. Answers with the status alone.
 
     Every drive is halted and its VACTUAL set to 0, and ENN drops once nothing
     moves. A board that is already tripped keeps its first reason.
@@ -1239,7 +1239,7 @@ SIZEOF = {
     "rpc_sys_state_ret": 12,
     "rpc_dev_info_t": 20,
     "rpc_sys_devices_ret": 4,
-    "rpc_sys_trip_set_args": 4,
+    "rpc_sys_trip_args": 4,
     "rpc_sys_untrip_ret": 4,
     "rpc_relay_send_args": 4,
     "rpc_relay_send_ret": 36,
@@ -1306,7 +1306,7 @@ SEMANTIC = {
         "has_uart": "rpc_bool_t",
         "has_stepgen": "rpc_bool_t",
     },
-    rpc_sys_trip_set_args: {"immediate": "rpc_bool_t"},
+    rpc_sys_trip_args: {"immediate": "rpc_bool_t"},
     rpc_sys_untrip_ret: {"reason": "rpc_trip_reason_id_t"},
     rpc_relay_send_args: {"idx": "rpc_dev_id_t"},
     rpc_relay_send_ret: {"outcome": "rpc_status_t"},
@@ -1390,7 +1390,7 @@ DOC = {
     "rpc_ns_t.RPC_NS_FILM": "the firmware assembles it, from an outcome you name",
     "rpc_sys_method_t.RPC_SYS_STATE": "what the firmware is doing, and why it tripped",
     "rpc_sys_method_t.RPC_SYS_DEVICES": "the board table: what exists and what it has",
-    "rpc_sys_method_t.RPC_SYS_TRIP_SET": "stop and release every drive, then refuse motion",
+    "rpc_sys_method_t.RPC_SYS_TRIP": "stop and release every drive, then refuse motion",
     "rpc_sys_method_t.RPC_SYS_UNTRIP": "allow motion again. The drives stay released",
     "rpc_mode_t.RPC_MODE_IDLE": "nothing in flight. raw and relay are permitted",
     "rpc_mode_t.RPC_MODE_SCANNING": "a run owns the transport; raw and relay are refused",
@@ -1398,7 +1398,7 @@ DOC = {
     "rpc_mode_t.RPC_MODE_TRIPPED": "halted and released. Moving and enabling are refused",
     "rpc_trip_reason_t.RPC_TRIP_NONE": "not tripped",
     "rpc_trip_reason_t.RPC_TRIP_KEEPALIVE": "a drive was moving and no keepalive came in time",
-    "rpc_trip_reason_t.RPC_TRIP_REQUESTED": "the PC called `sys.trip_set`",
+    "rpc_trip_reason_t.RPC_TRIP_REQUESTED": "the PC called `sys.trip`",
     "tmc2209_err_t.TMC2209_ERR_ARG": "caller passed something impossible",
     "tmc2209_err_t.TMC2209_ERR_TX_TIMEOUT": "Port accepted fewer bytes than it was given.",
     "tmc2209_err_t.TMC2209_ERR_RX_TIMEOUT": "port delivered fewer bytes than were asked for",
@@ -1447,10 +1447,10 @@ DOC = {
     "rpc_view_t.hdr": "cast to the header @c type names",
     "rpc_view_t.payload": "aligned, and empty when @c payload_len is 0",
     "rpc_sys_state_ret.trip_reason": "RPC_TRIP_NONE unless the board is tripped",
-    "rpc_sys_state_ret.trip_detail": "what `sys.trip_set` was given, else 0",
+    "rpc_sys_state_ret.trip_detail": "what `sys.trip` was given, else 0",
     "rpc_dev_info_t.addr": "set by the MS1/MS2 straps",
-    "rpc_sys_trip_set_args.detail": "kept for the PC to read back. The firmware gives it no meaning",
-    "rpc_sys_trip_set_args.immediate": "halt at the next pulse instead of ramping down",
+    "rpc_sys_trip_args.detail": "kept for the PC to read back. The firmware gives it no meaning",
+    "rpc_sys_trip_args.immediate": "halt at the next pulse instead of ramping down",
     "rpc_sys_untrip_ret.reason": "what was cleared, or RPC_TRIP_NONE",
     "rpc_relay_send_args.reply_len": "bytes to wait for. 0 when the datagram has no reply",
     "rpc_relay_send_args.count": "how many of @c tx follow",
