@@ -16,6 +16,8 @@ static bool pulsing(tmc2209_t *dev)
     return tmc2209_is_running(dev, &running) == TMC2209_OK && running;
 }
 
+/* An uncached VACTUAL counts as zero, so a board that was never brought up does
+   not trip when the PC disconnects. */
 static bool velocity_set(tmc2209_t *dev)
 {
     uint32_t v = 0;
@@ -90,7 +92,7 @@ void rpc_trip_set(rpc_trip_reason_t reason, uint8_t detail, bool immediate)
     release_once_still();
 }
 
-bool rpc_trip_clear(void)
+bool rpc_untrip(void)
 {
     release_once_still();
     if (!s_released) {

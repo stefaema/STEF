@@ -1,3 +1,5 @@
+/* test_trip.c: the keepalive deadline and the trip, against a fake pulse source. */
+
 #include <stdbool.h>
 #include <string.h>
 
@@ -117,7 +119,7 @@ static void trip_setup(void)
     rpc_reset_registry();
     rpc_register(RPC_NS_RAW, rpc_raw_methods, RPC_RAW_COUNT);
 
-    TEST_ASSERT_TRUE(rpc_trip_clear());
+    TEST_ASSERT_TRUE(rpc_untrip());
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, true));
 }
 
@@ -256,17 +258,17 @@ static void test_the_first_reason_is_kept(void)
     TEST_ASSERT_EQUAL_UINT8(0, rpc_trip_detail());
 }
 
-static void test_clearing_waits_for_the_release(void)
+static void test_untripping_waits_for_the_release(void)
 {
     trip_setup();
     start_run();
     rpc_trip_set(RPC_TRIP_REQUESTED, 0, false);
 
-    TEST_ASSERT_FALSE(rpc_trip_clear());
+    TEST_ASSERT_FALSE(rpc_untrip());
     TEST_ASSERT_EQUAL(RPC_TRIP_REQUESTED, rpc_trip_reason());
 
     g_gen.running = false;
-    TEST_ASSERT_TRUE(rpc_trip_clear());
+    TEST_ASSERT_TRUE(rpc_untrip());
     TEST_ASSERT_EQUAL(RPC_TRIP_NONE, rpc_trip_reason());
     TEST_ASSERT_FALSE(enabled());
 }
@@ -286,11 +288,11 @@ static void test_a_tripped_board_refuses_to_move_or_enable(void)
     TEST_ASSERT_EQUAL(RPC_OK, raw_call(RPC_RAW_ENABLE, &off, sizeof(off)));
 }
 
-static void test_a_cleared_board_moves_again(void)
+static void test_an_untripped_board_moves_again(void)
 {
     trip_setup();
     rpc_trip_set(RPC_TRIP_REQUESTED, 0, true);
-    TEST_ASSERT_TRUE(rpc_trip_clear());
+    TEST_ASSERT_TRUE(rpc_untrip());
 
     const rpc_raw_enable_args on = { .idx = 0, .on = 1 };
     TEST_ASSERT_EQUAL(RPC_OK, raw_call(RPC_RAW_ENABLE, &on, sizeof(on)));
@@ -310,7 +312,7 @@ void run_trip_tests(void)
     RUN_TEST(test_an_immediate_trip_releases_at_once);
     RUN_TEST(test_a_trip_stops_a_set_velocity);
     RUN_TEST(test_the_first_reason_is_kept);
-    RUN_TEST(test_clearing_waits_for_the_release);
+    RUN_TEST(test_untripping_waits_for_the_release);
     RUN_TEST(test_a_tripped_board_refuses_to_move_or_enable);
-    RUN_TEST(test_a_cleared_board_moves_again);
+    RUN_TEST(test_an_untripped_board_moves_again);
 }
