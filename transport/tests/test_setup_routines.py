@@ -26,7 +26,7 @@ class Raw:
 
     def bringup(self, **values):
         self._record("bringup", **values)
-        return fw_api.dataclass_for(fw_api.rpc_raw_bringup_ret)(gstat_at_bringup=1)
+        return fw_api.dataclass_for(fw_api.rpc_raw_bringup_ret)(gstat_found=1)
 
     def verify_config(self, **values):
         self._record("verify_config", **values)

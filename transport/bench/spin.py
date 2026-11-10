@@ -128,7 +128,7 @@ class Spin(Test[Any]):
         raw = self.sub.firmware().raw
         idx = self.values["idx"]
 
-        if raw.motion_report(idx=idx).running:
+        if raw.motion_report(idx=idx).pulsing:
             raw.halt(idx=idx, immediate=False)
             time.sleep(SETTLE_MARGIN_S)
         raw.set_velocity(idx=idx, velocity=0)
@@ -252,14 +252,14 @@ class OneTurn(Spin):
         said = self.report if valid else self.warn
         said(
             f"{profile} is on the driver, GSTAT was "
-            f"{hex_word(found.gstat_at_bringup)} when it was claimed",
+            f"{hex_word(found.gstat_found)} when it was claimed",
             Result(
                 level=Level.OK if valid else Level.WARN,
                 summary=f"{len(ops)} owned registers written and agreed",
                 note="GSTAT as found is the only look anyone gets at what the driver "
                 "went through before this firmware owned it.",
                 fields=(("all_owned_valid", "true" if valid else "false"),)
-                + flag_rows(fw_api.tmc2209_gstat_decode(found.gstat_at_bringup)),
+                + flag_rows(fw_api.tmc2209_gstat_decode(found.gstat_found)),
             ),
         )
 
@@ -426,12 +426,12 @@ class OneTurn(Spin):
         time.sleep(TURN_SECONDS / 2)
         self.halfway = midway = self.raw.motion_report(idx=self.idx)
 
-        said = self.report if midway.running else self.warn
+        said = self.report if midway.pulsing else self.warn
         said(
             f"midway: {midway.emitted} of {plan['pulses']} pulses out at "
-            f"{midway.rate_pps} pps, {'running' if midway.running else 'already stopped'}",
+            f"{midway.rate_pps} pps, {'running' if midway.pulsing else 'already stopped'}",
             Result(
-                level=Level.OK if midway.running else Level.WARN,
+                level=Level.OK if midway.pulsing else Level.WARN,
                 summary=f"{midway.emitted} pulses emitted, {midway.rate_pps} pps",
                 note="Counted off the pulse counter watching the pin, not off the "
                 "encoder, so this is what left the pad. DIR and shaft are the ones "
@@ -524,7 +524,7 @@ class OneTurn(Spin):
         ]
 
         concerns = []
-        if midway.running and unseen:
+        if midway.pulsing and unseen:
             concerns.append(
                 "the firmware emitted pulses the driver never saw, because "
                 + " and ".join(unseen)
@@ -542,7 +542,7 @@ class OneTurn(Spin):
         # A run in flight should have the driver reporting nothing at all, so at rest
         # is the only state where standstill and open load go without saying. And
         # standstill needs no second mention once it has been read as pulses missing.
-        if not midway.running:
+        if not midway.pulsing:
             accounted = AT_REST
         elif unseen:
             accounted = fw_api.TMC2209_STANDSTILL
@@ -563,7 +563,7 @@ class OneTurn(Spin):
             Result(
                 level=Level.WARN if concerns else Level.OK,
                 summary="the pulses are not arriving at the driver"
-                if midway.running and unseen
+                if midway.pulsing and unseen
                 else f"conditions: {named_conditions(moving) or 'nothing reported'}",
                 note="The count the firmware reports comes off a counter watching the "
                 "ESP32's own pad, so it proves the pulse train exists and says "
@@ -586,18 +586,18 @@ class OneTurn(Spin):
         )
         final = raw.motion_report(idx=idx)
 
-        if final.running:
+        if final.pulsing:
             raw.halt(idx=idx, immediate=False)
             time.sleep(SETTLE_MARGIN_S)
             final = raw.motion_report(idx=idx)
 
         short_by = plan["pulses"] - final.emitted
-        exact = not final.running and short_by == 0
+        exact = not final.pulsing and short_by == 0
         shown = Result(
             level=Level.OK if exact else Level.WARN,
-            summary="running is false and the count is exact"
+            summary="pulsing is false and the count is exact"
             if exact
-            else f"running={final.running}, short by {short_by}",
+            else f"pulsing={final.pulsing}, short by {short_by}",
             note="A bounded run emits what it was asked for and not one more, so "
             "any difference here is pulses that left the pad uncounted or never "
             "left it. The count survives the end of the run and stays readable "
@@ -616,7 +616,7 @@ class OneTurn(Spin):
         said = self.report if exact else self.warn
         said(
             f"stopped after {final.emitted} of {plan['pulses']} pulses"
-            if not final.running
+            if not final.pulsing
             else "still running after being halted",
             shown,
         )
@@ -685,14 +685,14 @@ class VelocityTurn(Spin):
             idx=idx, ihold=SPIN_IHOLD, irun=SPIN_IRUN, iholddelay=SPIN_IHOLDDELAY
         )
         self.report(
-            f"{profile} is on the driver, GSTAT was {hex_word(found.gstat_at_bringup)}",
+            f"{profile} is on the driver, GSTAT was {hex_word(found.gstat_found)}",
             Result(
                 level=Level.OK,
                 summary=f"{len(ops)} owned registers written, IRUN {SPIN_IRUN}",
                 note="VACTUAL is one of the owned registers and the profile writes it "
                 "as zero, so the driver is standing still by configuration before "
                 "anything below asks it to move.",
-                fields=flag_rows(fw_api.tmc2209_gstat_decode(found.gstat_at_bringup)),
+                fields=flag_rows(fw_api.tmc2209_gstat_decode(found.gstat_found)),
             ),
         )
 

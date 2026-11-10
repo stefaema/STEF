@@ -39,6 +39,8 @@ SPIN_IHOLDDELAY = 8
 # Grace beyond the calculated turn, for the report to catch the last pulse.
 SETTLE_MARGIN_S = 0.5
 
+STEPGEN_MIN_PPS = 16  # slowest rate the backend encodes; pull-in floors here
+
 # The slowest rate the backend encodes is 16 pps. A little above it, one pulse
 # is 25 ms high and 25 ms low, against an RPC round trip of roughly 12 ms: slow
 # enough to sample over the link, fast enough not to hold the routine up.
@@ -193,7 +195,7 @@ def plan(microsteps: int) -> dict[str, int]:
     return {
         "pulses": pulses,
         "cruise_pps": cruise,
-        "pullin_pps": max(1, cruise // PULLIN_SHARE),
+        "pullin_pps": max(STEPGEN_MIN_PPS, cruise // PULLIN_SHARE),
         "accel_pps_s": cruise * RAMP_STEEPNESS,
     }
 
@@ -288,7 +290,7 @@ def report_table(report: Any, commanded: int, elapsed: float) -> Table:
     rows = [
         ("emitted", f"{report.emitted} of {commanded}"),
         ("rate_pps", str(report.rate_pps)),
-        ("running", "yes" if report.running else "no"),
+        ("pulsing", "yes" if report.pulsing else "no"),
         ("dir", "high" if report.dir else "low"),
         ("shaft", "true" if report.shaft else "false"),
         ("turned", f"{report.emitted / commanded:.1%}" if commanded else "unbounded"),

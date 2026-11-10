@@ -112,7 +112,7 @@ class BaselineBringup(Test[Any]):
     @step(BRING_UP, hazard="rewrites every owned register")
     def bring_up(self) -> None:
         name = self.values["profile"]
-        found = self.raw.bringup(idx=self.idx, ops=list(self.ops)).gstat_at_bringup
+        found = self.raw.bringup(idx=self.idx, ops=list(self.ops)).gstat_found
         self.report(
             f"the driver holds {name}, and GSTAT was {hex_word(found)} when it was claimed",
             Result(

@@ -100,14 +100,14 @@ def seal_keepalive(request_id: int) -> bytes:
 
 
 def encode(frame: bytes) -> bytes:
-    """Return the frame as bytes with no zero in them, delimiter appended."""
+    """Return the frame as bytes with no zero in them, between two delimiters."""
     src = (ctypes.c_uint8 * len(frame)).from_buffer_copy(frame)
     capacity = cobs_encoded_max(len(frame))
     dst = (ctypes.c_uint8 * capacity)()
     written = fw_api.cobs_encode(src, len(frame), dst, capacity)
     if written == 0:
         raise FramingError(f"cobs_encode refused {len(frame)} bytes")
-    return bytes(dst[:written]) + DELIMITER
+    return DELIMITER + bytes(dst[:written]) + DELIMITER
 
 
 def open_frame(run: bytes) -> Frame | None:

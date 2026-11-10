@@ -60,8 +60,9 @@ def test_the_encoding_carries_no_delimiter_of_its_own():
     encoded = fw.framing.encode(frame)
 
     assert b"\x00" in frame
+    assert encoded.startswith(b"\x00")
     assert encoded.endswith(b"\x00")
-    assert b"\x00" not in encoded[:-1]
+    assert b"\x00" not in encoded[1:-1]
 
 
 def test_a_corrupted_frame_does_not_open():
