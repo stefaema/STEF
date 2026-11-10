@@ -33,7 +33,7 @@
 /**
  * @brief Storage for one frame, aligned so its structs may be read in place.
  *
- * Every header is read through its own type, and naming the three alternatives
+ * Every header is read through its own type, and naming every alternative
  * here is what makes their alignment the compiler's problem.
  */
 typedef union {
@@ -72,13 +72,15 @@ typedef struct {
 size_t rpc_frame_seal_req(rpc_buf_t *b, uint16_t id, uint8_t ns, uint8_t method,
                           size_t payload_len);
 
-/** @brief Closes a reply frame around a payload of return values. */
+/** @brief Closes a reply frame around a payload of return values. Refuses a
+    @p keepalive_within_ms of 0. */
 size_t rpc_frame_seal_rep(rpc_buf_t *b, uint16_t id, rpc_status_t status,
                           uint16_t keepalive_within_ms, size_t payload_len);
 
 /** @brief Closes a log frame around its text, which carries no terminator. */
 size_t rpc_frame_seal_log(rpc_buf_t *b, uint8_t level, uint32_t uptime_ms, size_t payload_len);
 
+/** @brief Closes a keepalive frame, which has no payload. */
 size_t rpc_frame_seal_keepalive(rpc_buf_t *b, uint16_t id);
 
 /* ── Reading ────────────────────────────────────────────────────────────── */
@@ -95,8 +97,9 @@ size_t rpc_frame_seal_keepalive(rpc_buf_t *b, uint16_t id);
  * @param len  its length
  * @param out  untouched on failure
  *
- * @return false if the frame is too short or too long, the CRC disagrees, or
- *         the type is not one of @ref rpc_frame_t
+ * @return false if the frame is too short or too long, the CRC disagrees, the
+ *         type is not one of @ref rpc_frame_t, or a reply's keepalive_within_ms
+ *         is 0
  */
 bool rpc_frame_open(const void *buf, size_t len, rpc_view_t *out);
 

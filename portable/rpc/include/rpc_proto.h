@@ -65,12 +65,12 @@
 #define RPC_WIRE_SIZE(type, n) \
     static_assert(sizeof(type) == (n), #type " is not " #n " bytes on the wire")
 
-/** @brief Which of the three kinds of frame this is. First byte, always. */
+/** @brief Which kind of frame this is. First byte, always. */
 typedef enum {
     RPC_FRAME_REQ       = 0, /**< inbound, asking for a method */
     RPC_FRAME_REP       = 1, /**< outbound, answering a request */
     RPC_FRAME_LOG       = 2, /**< outbound, unprompted. Payload is the text, no terminator */
-    RPC_FRAME_KEEPALIVE = 3,
+    RPC_FRAME_KEEPALIVE = 3, /**< inbound, saying the caller is still there. Answered by a reply */
 } rpc_frame_t;
 
 /* ── What a byte means ──────────────────────────────────────────────────── */
@@ -114,45 +114,49 @@ typedef uint8_t rpc_status_t;
 
 /* ── Headers ────────────────────────────────────────────────────────────── */
 /*
- * The type byte leads all three, so a receiver can tell them apart before it
+ * The type byte leads every header, so a receiver can tell them apart before it
  * knows which struct it is holding. Everything after that is arranged for
  * alignment rather than for reading order.
  */
 
 /** @brief What a request says before its arguments. */
 typedef struct {
-    rpc_frame_id_t type;    /**< @ref RPC_FRAME_REQ */
-    rpc_ns_id_t    ns;      /**< namespace index */
-    uint8_t        method;  /**< numbering is per namespace */
+    rpc_frame_id_t type; /**< @ref RPC_FRAME_REQ */
+    rpc_ns_id_t    ns; /**< namespace index */
+    uint8_t        method; /**< numbering is per namespace */
     uint8_t        _pad;
-    uint16_t       id;      /**< echoed in the reply, so a late answer is recognisable */
+    uint16_t       id; /**< echoed in the reply, so a late answer is recognisable */
     uint16_t       _pad2;
 } rpc_req_hdr_t;
 RPC_WIRE_SIZE(rpc_req_hdr_t, RPC_HDR_LEN);
 
 /** @brief What a reply says before its return values. */
 typedef struct {
-    rpc_frame_id_t type;    /**< @ref RPC_FRAME_REP */
+    rpc_frame_id_t type; /**< @ref RPC_FRAME_REP */
     rpc_status_t   status;
     uint8_t        _pad[2];
-    uint16_t       id;      /**< the request this answers */
-    uint16_t       keepalive_within_ms;
+    uint16_t       id; /**< the request this answers */
+    uint16_t       keepalive_within_ms; /**< how soon the responder needs a keepalive, or
+                                             @ref RPC_KEEPALIVE_NONE. Never 0 */
 } rpc_rep_hdr_t;
 RPC_WIRE_SIZE(rpc_rep_hdr_t, RPC_HDR_LEN);
 
+/** The responder needs no keepalive. It is the field's largest value, so it also
+    reads as the longest wait. */
 #define RPC_KEEPALIVE_NONE 0xFFFFU
 
+/** @brief What a keepalive says. It carries no payload. */
 typedef struct {
-    rpc_frame_id_t type;
+    rpc_frame_id_t type; /**< @ref RPC_FRAME_KEEPALIVE */
     uint8_t        _pad[3];
-    uint16_t       id;
+    uint16_t       id; /**< echoed in the reply */
     uint16_t       _pad2;
 } rpc_keepalive_hdr_t;
 RPC_WIRE_SIZE(rpc_keepalive_hdr_t, RPC_HDR_LEN);
 
 /** @brief What a log line says before its text. */
 typedef struct {
-    rpc_frame_id_t  type;   /**< @ref RPC_FRAME_LOG */
+    rpc_frame_id_t  type; /**< @ref RPC_FRAME_LOG */
     rpc_log_level_t level;
     uint16_t        _pad;
     uint32_t        uptime_ms;
