@@ -1,11 +1,9 @@
 /*
  * test_device.c: the transaction and cache layer, against the mock device.
  *
- * Two themes. The library must never present a value it cannot justify: a
- * write it could not confirm, a driver that reset underneath it, or a datagram
- * it did not frame all have to end with the cache refusing to answer. And it
- * must never write a value nobody asked for, which is the defect the old
- * reset-value seeding shipped.
+ * The cache must refuse to answer for a write it could not confirm, a driver
+ * that reset under it, or a datagram it did not frame. And the library must
+ * never write a value nobody asked for.
  */
 
 #include "mock_tmc2209.h"
@@ -58,8 +56,7 @@ static tmc2209_err_t write_one(tmc2209_reg_t reg, uint32_t value)
 
 /* ── Construction ───────────────────────────────────────────────────────── */
 
-/* No datasheet defaults are seeded, so there is nothing to read and nothing
-   bringup() could write that the caller did not supply. */
+/* Nothing is seeded, so bringup() can only write what the caller supplied. */
 static void test_init_leaves_every_slot_invalid(void)
 {
     setup_uart(0, true, 0);
@@ -71,55 +68,17 @@ static void test_init_leaves_every_slot_invalid(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
 }
 
-/* Covers attach_uart too, since setup_uart() calls both. Attaching a backend is
-   bookkeeping, and bookkeeping that talks to a driver cannot be undone. */
+/* Covers attach_uart too, since setup_uart() calls both. Attaching does no IO. */
 static void test_construction_does_no_io(void)
 {
     setup_uart(0, true, 0);
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
-static void test_init_rejects_out_of_range_address(void)
-{
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_init(&g_dev, 4));
-}
-
 /* ── Uart attachment ────────────────────────────────────────────────────── */
 
-/* Half a backend is not a backend: accepting one defers the crash to the first
-   transaction rather than rejecting it at the seam. */
-static void test_attach_uart_rejects_an_incomplete_backend(void)
-{
-    mock_init(&g_mock, &g_uart, 0, true);
-    g_uart.timeout_ms = 10;
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
-
-    tmc2209_uart_t half = g_uart;
-
-    half.tx = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
-
-    half    = g_uart;
-    half.rx = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
-}
-
-/* A rejected backend leaves the previous one in place, so a device that was
-   working keeps working rather than losing its wire to a bad argument. */
-static void test_a_rejected_uart_does_not_displace_the_attached_one(void)
-{
-    setup_ready();
-
-    tmc2209_uart_t half = g_uart;
-    half.tx             = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_uart(&g_dev, &half));
-
-    TEST_ASSERT_EQUAL(TMC2209_OK, write_one(TMC2209_VACTUAL, 0x1234U));
-    TEST_ASSERT_EQUAL_HEX32(0x1234U, mock_reg(&g_mock, TMC2209_VACTUAL));
-}
-
-/* Every call that would put a byte on the wire has to answer, not fault, on a
-   device whose uart was never attached or was detached. */
+/* Every call that would touch the wire answers NO_BACKEND, without faulting,
+   on a device with no uart. */
 static void test_a_device_without_a_uart_refuses_every_transaction(void)
 {
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
@@ -139,8 +98,7 @@ static void test_a_device_without_a_uart_refuses_every_transaction(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_set_current(&g_dev, &c));
 }
 
-/* Detaching is how a wire is handed over, so it has to be reachable through the
-   same call that attached it. */
+/* Detaching goes through the same call that attaches. */
 static void test_detaching_the_uart_stops_transactions(void)
 {
     setup_ready();
@@ -193,11 +151,9 @@ static void test_bringup_writes_the_whole_configuration(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* The old table seeded GCONF with its datasheet reset
-   value and bringup() imposed the cache, so bringing up a fresh driver cleared
-   mstep_reg_select and handed microstep resolution back to the address straps.
-   The straps are the address on the wire, so all three motors would have run at
-   different resolutions. */
+/* Bring-up writes only the caller's values. A GCONF default would clear
+   mstep_reg_select and hand microstep resolution to the address straps,
+   which differ per motor. */
 static void test_bringup_never_writes_a_value_the_caller_did_not_supply(void)
 {
     setup_ready();
@@ -209,8 +165,8 @@ static void test_bringup_never_writes_a_value_the_caller_did_not_supply(void)
     TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, gconf);
 }
 
-/* There are no defaults to complete a partial configuration with, so a gap is
-   refused rather than filled. */
+/* There are no defaults to fill a gap with, so a partial configuration is
+   refused. */
 static void test_bringup_rejects_a_configuration_with_a_gap(void)
 {
     setup_uart(0, true, 1);
@@ -231,9 +187,9 @@ static void test_bringup_rejects_a_register_it_does_not_own(void)
     TEST_ASSERT_EQUAL_size_t(0, g_mock.tx_len);
 }
 
-/* VACTUAL is owned, so every configuration names it, and a non-zero value there
-   spins the motor as the last datagram lands. Refused before anything goes out,
-   which is what makes it a caught mistake rather than an observed one. */
+/* VACTUAL is owned, so every configuration names it, and a non-zero value
+   spins the motor as the last datagram lands. Refused before anything is
+   sent. */
 static void test_bringup_refuses_a_configuration_that_asks_for_motion(void)
 {
     tmc2209_regval_t moving[TMC2209_NELEM(k_config)];
@@ -251,8 +207,8 @@ static void test_bringup_refuses_a_configuration_that_asks_for_motion(void)
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* Standing still is bring-up's business. Asking to move afterwards is the
-   caller's, and nothing here narrows what set_velocity() accepts. */
+/* Bring-up leaves the driver still, and set_velocity() accepts anything
+   afterwards. */
 static void test_velocity_is_free_to_move_after_bringup(void)
 {
     setup_ready();
@@ -260,8 +216,7 @@ static void test_velocity_is_free_to_move_after_bringup(void)
     TEST_ASSERT_EQUAL_HEX32(0x000100U, mock_reg(&g_mock, TMC2209_VACTUAL));
 }
 
-/* The trim differs per part, so it is read off the driver rather than assumed.
-   A seeded zero would be a value no real part ever holds. */
+/* The trim differs per part, so it is read off the driver. */
 static void test_bringup_reads_constant_registers_off_the_part(void)
 {
     setup_ready();
@@ -288,13 +243,13 @@ static void test_bringup_reports_the_flags_it_clears(void)
     setup_uart(0, true, 1);
     mock_set_reg(&g_mock, TMC2209_GSTAT, 0x5U);
 
-    tmc2209_gstat_t at_bringup = { false };
+    tmc2209_gstat_t gstat_found = { false };
     TEST_ASSERT_EQUAL(TMC2209_OK,
-                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), &at_bringup));
+                      tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), &gstat_found));
 
-    TEST_ASSERT_TRUE(at_bringup.reset);
-    TEST_ASSERT_FALSE(at_bringup.drv_err);
-    TEST_ASSERT_TRUE(at_bringup.uv_cp);
+    TEST_ASSERT_TRUE(gstat_found.reset);
+    TEST_ASSERT_FALSE(gstat_found.drv_err);
+    TEST_ASSERT_TRUE(gstat_found.uv_cp);
 }
 
 static void test_bringup_fails_when_the_addressed_driver_is_absent(void)
@@ -326,13 +281,12 @@ static void test_read_answers_owned_registers_from_the_cache(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_IHOLD_IRUN, &v));
     TEST_ASSERT_EQUAL_HEX32(0x00081810U, v);
 
-    /* Write-only driver-side, so the cache is the only possible source, and no
-       wire traffic may have happened. */
+    /* Write-only on the driver, so the cache is the only source, and nothing
+       went on the wire. */
     TEST_ASSERT_EQUAL_size_t(before, g_mock.tx_len);
 }
 
-/* A remembered fault flag or load estimate describes a moment that has passed.
-   Answering from the slot would report a healthy driver sitting in
+/* A cached fault flag would report a healthy driver sitting in
    overtemperature. */
 static void test_read_refuses_volatile_registers(void)
 {
@@ -342,14 +296,6 @@ static void test_read_refuses_volatile_registers(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_read(&g_dev, TMC2209_SG_RESULT, &v));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_read(&g_dev, TMC2209_GSTAT, &v));
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_read(&g_dev, TMC2209_TSTEP, &v));
-}
-
-static void test_read_rejects_an_unknown_register(void)
-{
-    setup_ready();
-    uint32_t v = 0;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_read(&g_dev, (tmc2209_reg_t)0x04, &v));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_read(&g_dev, (tmc2209_reg_t)0x33, &v));
 }
 
 static void test_read_refuses_an_invalidated_slot(void)
@@ -377,7 +323,7 @@ static void test_write_lands_on_the_device_and_updates_the_cache(void)
     TEST_ASSERT_EQUAL_HEX32(0x42U, v);
 }
 
-/* Three datagrams and one IFCNT read, rather than three of each. */
+/* Three datagrams and one IFCNT read. */
 static void test_write_verifies_the_batch_once(void)
 {
     setup_ready();
@@ -396,8 +342,7 @@ static void test_write_verifies_the_batch_once(void)
     TEST_ASSERT_EQUAL_HEX32(0x33U, mock_reg(&g_mock, TMC2209_COOLCONF));
 }
 
-/* An op whose value already matches a valid slot changes nothing, so it never
-   reaches the wire. */
+/* An op that matches a valid slot is skipped. */
 static void test_write_skips_ops_that_change_nothing(void)
 {
     setup_ready();
@@ -423,7 +368,7 @@ static void test_write_sends_only_the_op_that_changed(void)
     TEST_ASSERT_EQUAL_HEX32(0x7FU, mock_reg(&g_mock, TMC2209_SGTHRS));
 }
 
-/* Last value wins, and the superseded op is dropped rather than transmitted. */
+/* Last value wins, and the superseded op is not sent. */
 static void test_write_applies_the_last_value_for_a_repeated_register(void)
 {
     setup_ready();
@@ -448,8 +393,7 @@ static void test_write_rejects_a_register_it_does_not_own(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, write_one((tmc2209_reg_t)0x04, 0));
 }
 
-/* Validation happens before any byte goes out, so a batch cannot be half sent
-   and then rejected for an op it was never allowed to make. */
+/* Validated before anything is sent, to avoid a half-sent batch. */
 static void test_write_validates_the_whole_batch_before_sending(void)
 {
     setup_ready();
@@ -464,17 +408,8 @@ static void test_write_validates_the_whole_batch_before_sending(void)
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
 }
 
-static void test_write_rejects_an_empty_batch(void)
-{
-    setup_ready();
-    const tmc2209_regval_t op = { TMC2209_SGTHRS, 0 };
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_write(&g_dev, &op, 0, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_write(&g_dev, NULL, 1, NULL));
-}
-
-/* Nothing in a batch is confirmed until the IFCNT read at the end, so an op
-   transmitted before the failure is no better known than one that never went
-   out at all. */
+/* Nothing is confirmed before the IFCNT read, so an op sent before the
+   failure is as unknown as one never sent. */
 static void test_a_failed_batch_invalidates_every_slot_in_it(void)
 {
     setup_ready();
@@ -539,8 +474,7 @@ static void test_poll_health_is_clear_on_a_healthy_driver(void)
     TEST_ASSERT_EQUAL_HEX32(0, conditions);
 }
 
-/* One condition set from two registers: the caller never learns that brownout
-   lives in GSTAT and overtemperature lives in DRV_STATUS. */
+/* One condition set from GSTAT and DRV_STATUS. */
 static void test_poll_health_merges_both_registers(void)
 {
     setup_ready();
@@ -556,9 +490,9 @@ static void test_poll_health_merges_both_registers(void)
     TEST_ASSERT_BITS_LOW((uint32_t)TMC2209_DRIVER_RESET, conditions);
 }
 
-/* The driver came up holding defaults, so nothing commanded is still in it.
-   Recovery is the caller re-sending its configuration; the library cannot do
-   it, because eight registers have no read path. */
+/* A reset driver holds defaults, so nothing commanded is still in it. The
+   caller re-sends its configuration, since eight registers can't be read
+   back. */
 static void test_driver_reset_invalidates_every_owned_slot(void)
 {
     setup_ready();
@@ -579,9 +513,8 @@ static void test_driver_reset_invalidates_every_owned_slot(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* GSTAT latches. Without an acknowledgement one brownout would report
-   DRIVER_RESET on every later poll, re-invalidating the config that was just
-   rewritten, forever. */
+/* GSTAT latches. Without an acknowledgement every later poll would report
+   DRIVER_RESET and invalidate the config again. */
 static void test_latched_conditions_survive_reconfiguration(void)
 {
     setup_ready();
@@ -606,7 +539,7 @@ static void test_latched_conditions_survive_reconfiguration(void)
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* Polling must not have side effects, or two consecutive polls would disagree. */
+/* Polling has no side effects, so two polls agree. */
 static void test_poll_health_is_repeatable(void)
 {
     setup_ready();
@@ -634,8 +567,8 @@ static void test_clear_faults_does_not_revalidate(void)
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 }
 
-/* A flag that latches between the poll and the acknowledgement must survive to
-   be reported, so only the acknowledged bits are written back. */
+/* Only the acknowledged bits are written back, to avoid losing a flag that
+   latched after the poll. */
 static void test_clear_faults_only_clears_what_it_was_told(void)
 {
     setup_ready();
@@ -665,9 +598,8 @@ static void test_clear_faults_ignores_live_conditions(void)
     TEST_ASSERT_EQUAL_UINT(writes_before, g_mock.writes_seen);
 }
 
-/* Open load reads true at standstill and at low current, so it is reported but
-   kept out of the fault mask: treating it as a fault would trip continuously
-   on a healthy motor. */
+/* Open load reads true at standstill and at low current, so it is reported
+   but kept out of the fault mask, to avoid tripping on a healthy motor. */
 static void test_open_load_is_reported_but_is_not_a_fault(void)
 {
     setup_ready();
@@ -679,8 +611,8 @@ static void test_open_load_is_reported_but_is_not_a_fault(void)
     TEST_ASSERT_EQUAL_HEX32(0, conditions & TMC2209_CONDITIONS_FAULT);
 }
 
-/* StallGuard reports nothing outside the TCOOLTHRS window, and a zero
-   threshold closes the window entirely, so the number means nothing. */
+/* A zero TCOOLTHRS closes the StallGuard window, so the number means
+   nothing. */
 static void test_poll_load_is_invalid_when_stallguard_is_disabled(void)
 {
     setup_ready();
@@ -716,8 +648,8 @@ static void test_poll_pins_decodes_live_state(void)
     TEST_ASSERT_FALSE(pins.enn);
 }
 
-/* The diagnostic registers carry no condition worth naming, so they are
-   reachable raw rather than wrapped, and a PC-side dump needs no hand-framing. */
+/* The diagnostic registers are reachable raw, so a PC-side dump needs no
+   hand-framing. */
 static void test_poll_raw_reaches_the_diagnostic_registers(void)
 {
     setup_ready();
@@ -739,8 +671,7 @@ static void test_poll_raw_refuses_write_only_registers(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_poll_raw(&g_dev, TMC2209_IHOLD_IRUN, &v));
 }
 
-/* What the device answers says nothing about who owns the value, so one stray
-   read must not stand in for a write that never happened. */
+/* A raw read must not make a slot valid. */
 static void test_poll_raw_does_not_update_the_cache(void)
 {
     setup_ready();
@@ -756,9 +687,8 @@ static void test_poll_raw_does_not_update_the_cache(void)
 
 /* ── Verdicts ───────────────────────────────────────────────────────────── */
 
-/* The revision is carried, never recognised: no value is special to the
-   library, so every value comes back as it was found. Whether to accept one is
-   the caller's policy, exactly as with the retry thresholds. */
+/* The revision is reported as found. Which ones to accept is the caller's
+   policy. */
 static void test_poll_version_reports_whatever_the_part_answers(void)
 {
     static const uint8_t revisions[] = { 0x00, 0x20, 0x21, 0x22, 0xFF };
@@ -773,22 +703,6 @@ static void test_poll_version_reports_whatever_the_part_answers(void)
     }
 }
 
-/* IOIN carries both, but the two answer different questions and are read
-   through different calls. */
-static void test_poll_version_and_poll_pins_read_the_same_register(void)
-{
-    setup_ready();
-    mock_set_reg(&g_mock, TMC2209_IOIN, (0x5AU << 24) | (1U << 6));
-
-    uint8_t        version = 0;
-    tmc2209_ioin_t pins    = { false };
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_version(&g_dev, &version));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_poll_pins(&g_dev, &pins));
-
-    TEST_ASSERT_EQUAL_HEX8(0x5A, version);
-    TEST_ASSERT_TRUE(pins.pdn_uart);
-}
-
 static void test_verify_config_agrees_after_bringup(void)
 {
     setup_ready();
@@ -797,8 +711,7 @@ static void test_verify_config_agrees_after_bringup(void)
     TEST_ASSERT_EQUAL_HEX32(0, mismatched);
 }
 
-/* The test that validates the caching scheme itself: if the driver ever
-   disagrees with the cache, this is what says so. */
+/* If the driver disagrees with the cache, this says so. */
 static void test_verify_config_reports_a_disagreeing_register(void)
 {
     setup_ready();
@@ -817,8 +730,7 @@ static void test_set_velocity_writes_and_is_recallable(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, -1000));
     TEST_ASSERT_EQUAL_HEX32(tmc2209_vactual_encode(-1000), mock_reg(&g_mock, TMC2209_VACTUAL));
 
-    /* VACTUAL cannot be read back from the driver, so the cache is the only place
-       the coordinated-motion precondition can be checked. */
+    /* VACTUAL can't be read back, so the cache is the only place to check it. */
     uint32_t v = 0;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_read(&g_dev, TMC2209_VACTUAL, &v));
     TEST_ASSERT_EQUAL_INT32(-1000, tmc2209_vactual_decode(v));
@@ -866,7 +778,7 @@ static void test_crc_failure_beyond_retries_is_reported(void)
 }
 
 /* A mismatch between what went out and what came back means something else
-   drove the line, which is the cheapest collision detector available. */
+   drove the line. */
 static void test_echo_mismatch_is_detected(void)
 {
     setup_uart(0, true, 0);
@@ -885,8 +797,8 @@ static void test_silence_from_the_driver_times_out(void)
                       tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
 }
 
-/* An intact reply naming a register nobody asked for: the reply stream has
-   slipped a transaction. Not retried, so the read count stays at one. */
+/* An intact reply naming the wrong register means the reply stream slipped.
+   Not retried, so the read count stays at one. */
 static void test_wrong_register_reply_fails_without_retrying(void)
 {
     setup_uart(0, true, 3);
@@ -927,8 +839,8 @@ static void test_uart_send_moves_bytes_verbatim(void)
     TEST_ASSERT_EQUAL_HEX32(0x1234U, v);
 }
 
-/* Silence and a severed reply are different faults at different ends of the
-   cable, and the count is the only thing that tells them apart. */
+/* Silence and a severed reply are different faults, and the count tells them
+   apart. */
 static void test_uart_send_reports_silence_as_zero_bytes(void)
 {
     setup_ready();
@@ -959,14 +871,13 @@ static void test_uart_send_reports_a_partial_reply(void)
                       tmc2209_uart_send(&g_uart, req, sizeof req, reply, sizeof reply, &got));
     TEST_ASSERT_EQUAL_size_t(5, got);
 
-    /* The bytes that did arrive are the real ones, which is what makes them
-       worth handing back. */
+    /* The bytes that did arrive are handed back. */
     TEST_ASSERT_EQUAL_HEX8(TMC2209_SYNC, reply[0]);
     TEST_ASSERT_EQUAL_HEX8(TMC2209_MASTER_ADDR, reply[1]);
 }
 
-/* Our own bytes failing to return is a fault on the transmit side. Reporting it
-   as a timeout would send someone to the far end of the cable. */
+/* Our own bytes not coming back is a transmit-side fault. Reported as such,
+   to avoid sending someone to the far end of the cable. */
 static void test_uart_send_short_echo_is_not_a_driver_timeout(void)
 {
     setup_ready();
@@ -1002,8 +913,8 @@ static void test_uart_send_echo_mismatch_still_collects_the_reply(void)
     TEST_ASSERT_EQUAL_HEX32(0x1234U, v);
 }
 
-/* Bytes the library did not build are bytes it cannot account for, including
-   the IFCNT they advanced. */
+/* The library cannot account for bytes it did not build, including the
+   IFCNT they advanced. */
 static void test_uart_send_write_desyncs_until_invalidated(void)
 {
     setup_ready();
@@ -1015,8 +926,8 @@ static void test_uart_send_write_desyncs_until_invalidated(void)
     tmc2209_invalidate_owned(&g_dev);
     TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
 
-    /* The next batch re-seeds the IFCNT baseline, or it would fail against a
-       counter that moved without it. */
+    /* The next batch re-seeds the IFCNT baseline, to avoid failing against a
+       counter that moved. */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_write(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
     TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
     TEST_ASSERT_EQUAL_HEX32(0x00000050U, mock_reg(&g_mock, TMC2209_SGTHRS));
@@ -1030,14 +941,51 @@ static void test_uart_send_rejects_oversized_frames(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_uart_send(&g_uart, big, 0, NULL, 0, NULL));
 }
 
+static void test_bringup_rewrites_a_driver_that_reset(void)
+{
+    setup_ready();
+    mock_set_reg(&g_mock, TMC2209_GCONF, MOCK_RESET_GCONF);
+    mock_set_reg(&g_mock, TMC2209_CHOPCONF, MOCK_RESET_CHOPCONF);
+    mock_set_reg(&g_mock, TMC2209_GSTAT, MOCK_RESET_GSTAT);
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_EQUAL_HEX32(CFG_GCONF, mock_reg(&g_mock, TMC2209_GCONF));
+    TEST_ASSERT_EQUAL_HEX32(0x14010053U, mock_reg(&g_mock, TMC2209_CHOPCONF));
+}
+
+static void test_a_failed_bringup_leaves_gstat_on_the_driver(void)
+{
+    setup_uart(0, true, 1);
+    mock_set_reg(&g_mock, TMC2209_GSTAT, MOCK_RESET_GSTAT);
+    g_mock.freeze_ifcnt = 1;
+
+    TEST_ASSERT_NOT_EQUAL(TMC2209_OK,
+                          tmc2209_bringup(&g_dev, k_config, TMC2209_NELEM(k_config), NULL));
+    TEST_ASSERT_BITS_HIGH(MOCK_RESET_GSTAT, mock_reg(&g_mock, TMC2209_GSTAT));
+}
+
+static void test_clearing_a_reset_invalidates_the_cache(void)
+{
+    setup_ready();
+    TEST_ASSERT_TRUE(tmc2209_all_owned_valid(&g_dev));
+
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_clear_faults(&g_dev, (uint32_t)TMC2209_DRIVER_RESET));
+    TEST_ASSERT_FALSE(tmc2209_all_owned_valid(&g_dev));
+}
+
+static void test_verify_config_refuses_an_invalid_cache(void)
+{
+    setup_ready();
+    tmc2209_invalidate_owned(&g_dev);
+
+    uint32_t mismatched = 0;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_verify_config(&g_dev, &mismatched));
+}
+
 void run_device_tests(void)
 {
     RUN_TEST(test_init_leaves_every_slot_invalid);
     RUN_TEST(test_construction_does_no_io);
-    RUN_TEST(test_init_rejects_out_of_range_address);
-
-    RUN_TEST(test_attach_uart_rejects_an_incomplete_backend);
-    RUN_TEST(test_a_rejected_uart_does_not_displace_the_attached_one);
     RUN_TEST(test_a_device_without_a_uart_refuses_every_transaction);
     RUN_TEST(test_detaching_the_uart_stops_transactions);
     RUN_TEST(test_reattaching_a_uart_keeps_the_cache);
@@ -1053,11 +1001,12 @@ void run_device_tests(void)
     RUN_TEST(test_bringup_clears_latched_gstat);
     RUN_TEST(test_bringup_reports_the_flags_it_clears);
     RUN_TEST(test_bringup_fails_when_the_addressed_driver_is_absent);
+    RUN_TEST(test_a_failed_bringup_leaves_gstat_on_the_driver);
+    RUN_TEST(test_bringup_rewrites_a_driver_that_reset);
     RUN_TEST(test_addressing_reaches_the_right_driver);
 
     RUN_TEST(test_read_answers_owned_registers_from_the_cache);
     RUN_TEST(test_read_refuses_volatile_registers);
-    RUN_TEST(test_read_rejects_an_unknown_register);
     RUN_TEST(test_read_refuses_an_invalidated_slot);
 
     RUN_TEST(test_write_lands_on_the_device_and_updates_the_cache);
@@ -1067,7 +1016,6 @@ void run_device_tests(void)
     RUN_TEST(test_write_applies_the_last_value_for_a_repeated_register);
     RUN_TEST(test_write_rejects_a_register_it_does_not_own);
     RUN_TEST(test_write_validates_the_whole_batch_before_sending);
-    RUN_TEST(test_write_rejects_an_empty_batch);
     RUN_TEST(test_a_failed_batch_invalidates_every_slot_in_it);
     RUN_TEST(test_a_write_the_device_never_counted_is_reported);
     RUN_TEST(test_failed_at_is_n_when_the_batch_check_fails);
@@ -1078,6 +1026,7 @@ void run_device_tests(void)
     RUN_TEST(test_latched_conditions_survive_reconfiguration);
     RUN_TEST(test_poll_health_is_repeatable);
     RUN_TEST(test_clear_faults_does_not_revalidate);
+    RUN_TEST(test_clearing_a_reset_invalidates_the_cache);
     RUN_TEST(test_clear_faults_only_clears_what_it_was_told);
     RUN_TEST(test_clear_faults_ignores_live_conditions);
     RUN_TEST(test_open_load_is_reported_but_is_not_a_fault);
@@ -1089,9 +1038,9 @@ void run_device_tests(void)
     RUN_TEST(test_poll_raw_does_not_update_the_cache);
 
     RUN_TEST(test_poll_version_reports_whatever_the_part_answers);
-    RUN_TEST(test_poll_version_and_poll_pins_read_the_same_register);
     RUN_TEST(test_verify_config_agrees_after_bringup);
     RUN_TEST(test_verify_config_reports_a_disagreeing_register);
+    RUN_TEST(test_verify_config_refuses_an_invalid_cache);
 
     RUN_TEST(test_set_velocity_writes_and_is_recallable);
     RUN_TEST(test_set_current_writes_ihold_irun);

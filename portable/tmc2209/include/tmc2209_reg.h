@@ -2,15 +2,12 @@
  * @file tmc2209_reg.h
  * @brief The register table, its classification, and the field codecs.
  *
- * Two independent questions are answered here and must be kept apart.
- *
- * Access (@ref TMC2209_ACCESS_READ, @ref TMC2209_ACCESS_WRITE) is the driver's.
- * Eight registers are write-only driver-side, so asking the device what they
- * hold is a question it cannot answer.
+ * Access (@ref TMC2209_ACCESS_READ, @ref TMC2209_ACCESS_WRITE) is what the driver
+ * permits. Eight registers are write-only, so the device cannot be asked what
+ * they hold.
  *
  * Class (@ref tmc2209_class_t) is who can change the value, which decides
  * whether a remembered value is still true.
- *
  */
 
 #ifndef TMC2209_REG_H
@@ -100,13 +97,8 @@ tmc2209_class_t tmc2209_reg_class_at(int slot);
 /**
  * @brief What tmc2209_poll_health() reports, as a bitmask.
  *
- * The caller asks whether the driver is healthy without learning
- * that brownout lives in GSTAT and overtemperature lives in DRV_STATUS.
- *
- * The two halves behave differently in time, which the caller must know.
- * Latched conditions report that something *happened* and stay asserted until
- * tmc2209_clear_faults() acknowledges them. Live conditions report what is
- * *true now* and clear themselves when the situation passes.
+ * One mask over GSTAT and DRV_STATUS. Latched conditions stay asserted until
+ * tmc2209_clear_faults() acknowledges them. Live conditions clear themselves.
  */
 /* clang-format off */
 typedef enum {
@@ -149,7 +141,7 @@ typedef struct {
 
 /* ── Field enums ────────────────────────────────────────────────────────── */
 
-/** @brief CHOPCONF.mres, named for the microstep count and not the raw code. */
+/** @brief CHOPCONF.mres, named for the microstep count. */
 typedef enum {
     /* clang-format off */
     TMC2209_MRES_256 = 0, TMC2209_MRES_128, TMC2209_MRES_64, TMC2209_MRES_32,
@@ -262,14 +254,12 @@ typedef struct {
 tmc2209_ioin_t tmc2209_ioin_decode(uint32_t raw);
 
 /**
- * Driver revision byte in IOIN: what this library was written and tested
- * against. A TMC2209 of a later revision is still a TMC2209,
- * so nothing here compares against this. It is published so a caller
- * that does want to demand the tested revision has the number to demand.
+ * Driver revision byte in IOIN that this library was tested against. Nothing
+ * here compares against it, and a caller that wants to demand it can.
  */
 #define TMC2209_LIB_IOIN_VERSION 0x21u
 
-/** VACTUAL, a signed 24-bit velocity. Sign-extended, not a plain count. */
+/** VACTUAL, a signed 24-bit velocity, sign-extended. */
 int32_t  tmc2209_vactual_decode(uint32_t raw);
 uint32_t tmc2209_vactual_encode(int32_t v);
 
@@ -278,11 +268,8 @@ uint32_t tmc2209_vactual_encode(int32_t v);
 /**
  * @brief MSCURACT, the sine-table entries for the current microstep position.
  *
- * These are the entries the driver read out of its internal sine table for the
- * microstep position it is presently at, unscaled by the current setting.
- * A pure function of MSCNT: identical values whether the motor is spinning,
- * stalled, or unplugged. Both fields are 9-bit signed, which is the only reason
- * a decoder is worth having.
+ * Unscaled by the current setting and a function of MSCNT alone, so it reads the
+ * same spinning, stalled or unplugged. Both fields are 9-bit signed.
  */
 typedef struct {
     int16_t cur_a;   /**< -255..255 */

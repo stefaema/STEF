@@ -1,12 +1,9 @@
 /*
- * tmc2209_uart.c: bytes on the wire, and nothing about what they mean.
+ * tmc2209_uart.c: bytes on the wire, and the transactions made of them.
  *
- * The backend moves bytes and reports whether they moved. What it cannot know
- * is what a transaction is: that a read request is answered by a reply and not
- * by our own echo, that the echo has to be consumed before the reply can be
- * read at all, and that a CRC failure is worth one more attempt while a reply
- * about the wrong register is not.
- *
+ * The backend moves bytes. This file knows what a transaction is: our own echo
+ * comes back first and is consumed, then the reply is read, and a CRC failure is
+ * retried while a reply about the wrong register is not.
  */
 
 #include "tmc2209.h"
@@ -72,7 +69,7 @@ static tmc2209_err_t uart_rx(const tmc2209_uart_t *uart, uint8_t *buf, size_t le
     return ((size_t)n == len) ? TMC2209_OK : TMC2209_ERR_RX_TIMEOUT;
 }
 
-/* Echo is evidence, not litter. Short and altered are both "not what we sent". */
+/* The echo is checked: short and altered are both "not what we sent". */
 static tmc2209_err_t verify_echo(const tmc2209_uart_t *uart, const uint8_t *sent, size_t len)
 {
     if (!uart->echoes) {

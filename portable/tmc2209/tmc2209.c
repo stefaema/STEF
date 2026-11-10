@@ -1,17 +1,18 @@
 /*
  * tmc2209.c: the device itself, meaning lifecycle, registers and the cache.
  *
- * Everything here is a question about what the driver holds rather than about
- * how bytes reach it. A transaction is one call away, in tmc2209_uart_priv.h,
- * and what this file adds on top is the part a datagram cannot answer alone:
- * whether a write landed, whether a remembered value is still true, and which
- * registers a caller is allowed to ask about at all.
+ * Transactions are in tmc2209_uart_priv.h. This file adds whether a write
+ * landed, whether a remembered value is still true, and which registers a
+ * caller may ask about.
  */
 
 #include "tmc2209.h"
 #include "tmc2209_uart_priv.h"
 
+#include <assert.h>
 #include <string.h>
+
+static_assert(TMC2209_REG_COUNT <= 32, "tmc2209_t.valid holds one bit per slot");
 
 /* ── Cache bookkeeping ──────────────────────────────────────────────────── */
 
@@ -123,7 +124,7 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr)
 }
 
 tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, size_t n,
-                              tmc2209_gstat_t *at_bringup)
+                              tmc2209_gstat_t *gstat_found)
 {
     if (!dev || !config || n == 0) {
         return TMC2209_ERR_ARG;
@@ -160,20 +161,20 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, si
     /* Baseline for every later write check. Mandatory. */
     dev->ifcnt = tmc2209_ifcnt_decode(raw);
 
-    err = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_GSTAT, &raw);
+    uint32_t seen = 0;
+    err           = tmc2209_uart_read_reg(dev->uart, dev->addr, TMC2209_GSTAT, &seen);
     if (err != TMC2209_OK) {
         return err;
     }
 
-    /* Only chance to see these flags: the clear below discards them. */
-    if (at_bringup) {
-        *at_bringup = tmc2209_gstat_decode(raw);
+    tmc2209_gstat_t gstat = tmc2209_gstat_decode(seen);
+    if (gstat_found) {
+        *gstat_found = gstat;
     }
 
-    /* Bring-up starts from clean flags; raw is already the mask of what was seen. */
-    err = clear_gstat(dev, raw);
-    if (err != TMC2209_OK) {
-        return err;
+    /* Avoids skipping registers a reset put back to defaults */
+    if (gstat.reset) {
+        tmc2209_invalidate_owned(dev);
     }
 
     /* Constant registers are only read at bring-up as they don't practically change. */
@@ -189,7 +190,13 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, si
     }
 
     /* Bring-up is after-init setup = group write of initial config. */
-    return tmc2209_write(dev, config, n, NULL);
+    err = tmc2209_write(dev, config, n, NULL);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+
+    /* Cleared last, to avoid losing the flags if the write fails */
+    return clear_gstat(dev, seen);
 }
 
 tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
@@ -374,11 +381,15 @@ tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions)
         mask |= 1U << 2;
     }
 
+    /* Avoids trusting the cache once the reset flag is gone */
+    if (mask & (1U << 0)) {
+        tmc2209_invalidate_owned(dev);
+    }
+
     tmc2209_uart_lock(dev->uart);
     tmc2209_err_t err = clear_gstat(dev, mask);
     tmc2209_uart_unlock(dev->uart);
 
-    /* Cache stays invalid until owned config is written again, this just clears fault flags */
     return err;
 }
 
@@ -478,6 +489,10 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
     if (!dev->uart) {
         return TMC2209_ERR_NO_BACKEND;
     }
+    /* Nothing to compare against */
+    if (!tmc2209_all_owned_valid(dev)) {
+        return TMC2209_ERR_INVALID_SLOT;
+    }
 
     uint32_t      bad = 0;
     tmc2209_err_t err = TMC2209_OK;
@@ -486,7 +501,7 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched)
     for (int slot = 0; slot < TMC2209_REG_COUNT && err == TMC2209_OK; slot++) {
         /* Only owned registers the driver answers for; the other eight are W-O. */
         if (tmc2209_reg_class_at(slot) != TMC2209_CLASS_OWNED ||
-            !(tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ) || !(dev->valid & (1U << slot))) {
+            !(tmc2209_reg_access_at(slot) & TMC2209_ACCESS_READ)) {
             continue;
         }
         uint32_t raw = 0;

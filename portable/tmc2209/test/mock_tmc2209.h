@@ -1,16 +1,13 @@
 /*
  * mock_tmc2209.h: a fake TMC2209 behind the uart interface.
  *
- * A scripted byte queue would test the framing but make the transaction tests
- * unreadable, because every expectation would be a hand-assembled datagram.
- * So the mock models the device instead: it holds registers, echoes what it
- * receives, answers reads, and counts writes in IFCNT the way the driver
- * does. Tests then say "the register should now hold X" rather than "byte 4
- * should be 0x17".
+ * The mock models the device, to avoid tests made of hand-assembled datagrams.
+ * It holds registers, echoes what it receives, answers reads, and counts writes
+ * in IFCNT the way the driver does, so a test says "the register should now
+ * hold X".
  *
- * The fault flags are the point of the whole exercise. Each one is consumed
- * by the next transaction, so a test can inject exactly one corrupted CRC and
- * assert that the retry path recovers.
+ * Each fault flag is consumed by the next transaction, so a test can inject
+ * exactly one corrupted CRC and assert that the retry recovers.
  */
 
 #ifndef MOCK_TMC2209_H
@@ -22,11 +19,10 @@
 #define MOCK_OUT_CAP 64
 #define MOCK_LOG_CAP 512
 
-/* Datasheet power-on values. These belong to the device model, not to the
-   library: GCONF's depends on OTP bits and CHOPCONF's on the address straps,
-   so neither is a property the library may assume. FACTORY_CONF is given a
-   non-zero trim precisely because a real part never reads back zero, which is
-   what makes "read it, do not seed it" testable. */
+/* Datasheet power-on values, owned by the device model: GCONF's depends on OTP
+   bits and CHOPCONF's on the address straps. FACTORY_CONF has a non-zero trim,
+   as a real part does, so a test can tell a value read off the part from a
+   seeded zero. */
 /* clang-format off */
 #define MOCK_RESET_IOIN         0x21000000U   /* revision byte; the mock picks one, like a part woUld */
 #define MOCK_RESET_GCONF        0x00000101U
@@ -61,9 +57,9 @@ typedef struct {
     unsigned wrong_reg;       /* answer with a different register id */
     unsigned freeze_ifcnt;    /* accept a write without counting it */
 
-    /* Truncation models a link that drops bytes mid-datagram, which is a
-       different fault from silence and has to be told apart from it. Each
-       keeps only the first n bytes of what it would otherwise deliver. */
+    /* Truncation models a link that drops bytes mid-datagram, a different fault
+       from silence. Each keeps only the first n bytes of what it would
+       otherwise deliver. */
     unsigned truncate_echo;
     size_t   echo_keep;
     unsigned truncate_reply;
@@ -72,8 +68,8 @@ typedef struct {
 /* clang-format on */
 
 /* Zeroes the mock, seeds the power-on register values a real part would show,
-   and wires the returned backend to it. Leaves timeout_ms and retries at zero:
-   they are the caller's policy, not the device model's. */
+   and wires the returned backend to it. Leaves timeout_ms and retries at zero,
+   since they are the caller's policy. */
 void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes);
 
 uint32_t mock_reg(const mock_dev_t *m, tmc2209_reg_t reg);

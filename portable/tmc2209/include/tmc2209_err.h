@@ -30,7 +30,7 @@ typedef enum {
     TMC2209_ERR_MISMATCH,     /**< the device disagrees with the cache */
     TMC2209_ERR_BUSY,         /**< A run is in flight and this call would disturb it. **/
     TMC2209_ERR_IDLE,         /**< no run is in flight and this call needs one */
-    TMC2209_ERR_RATE,         /**< a rate beyond what this stepgen can emit. */
+    TMC2209_ERR_RATE,         /**< a rate this stepgen cannot emit. */
 } tmc2209_err_t;
 /* clang-format on */
 

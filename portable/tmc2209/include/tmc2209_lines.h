@@ -38,8 +38,7 @@ typedef enum {
 /**
  * @brief The level on a pin, electrical and with no polarity applied.
  *
- * A bool would imply a default direction that only the wiring knows; these two
- * names say exactly what the field is.
+ * Named levels, since a bool would imply a polarity only the wiring knows.
  */
 typedef enum {
     TMC2209_LOW  = 0,
@@ -75,8 +74,8 @@ typedef struct tmc2209_lines {
     void *ctx;
 
     /** One bit per @ref tmc2209_line_t, via TMC2209_LINE_BIT. A line left out
-        is one this board does not connect, and every call naming it is
-        refused rather than silently moving some other pin. */
+        is not connected on this board, and every call naming it is
+        refused. */
     tmc2209_line_mask_t wired;
 } tmc2209_lines_t;
 

@@ -22,15 +22,14 @@ A driver is reached through three near-independent channels (UART, lines and ste
 
 ## Boundaries
 
-- The three backends are interfaces, not implementations. The library emits
-  bytes and asks for levels and edges; what carries them is the caller's.
+- The three backends are interfaces the caller implements. The library emits
+  bytes and asks for levels and edges.
 
-- Only `tmc2209.h` may cross the three. A move sets DIR on the lines, writes
-  `GCONF.shaft` over UART, then starts the pulse train, and no backend could
-  have done that.
+- Only `tmc2209.h` crosses the three. A move sets DIR on the lines, writes
+  `GCONF.shaft` over UART, then starts the pulse train.
 
 - Pulses become microsteps only at the device layer, where `CHOPCONF.mres` is
-  cached. Below it, a pulse is a pulse.
+  cached.
 
 - `tmc2209_reg.h` keeps two questions apart: **access** is what the driver
   permits, **class** is who can change the value, which is what decides whether

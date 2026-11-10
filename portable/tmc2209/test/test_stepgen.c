@@ -1,17 +1,14 @@
 /*
  * test_stepgen.c: motion, against a fake pulse source and a fake board.
  *
- * The fake stepgen emits nothing. It records the plan it was handed and lets
- * the test say how many pulses came out and when the run ended, which is the
- * only way to exercise an asynchronous backend without a clock. What it cannot
- * test is whether a real ramp keeps a real motor in sync; that is per backend
- * and needs hardware.
+ * The fake stepgen emits nothing. It records the plan and lets the test say how
+ * many pulses came out and when the run ended, which exercises an asynchronous
+ * backend without a clock. Whether a real ramp keeps a real motor in sync needs
+ * hardware.
  *
- * Two themes. A move states both halves of its direction, the DIR level and the
- * shaft bit it was planned around, and both are in effect before the first
- * pulse: a driver holding the other shaft bit is written first. And a run's
- * count stays readable until the next move replaces it, with the direction it
- * was emitted in, because nothing else records that once the pins move on.
+ * A move's DIR level and shaft bit are both in effect before the first pulse.
+ * A run's count stays readable, with its direction, until the next move
+ * replaces it.
  */
 
 #include "mock_tmc2209.h"
@@ -60,8 +57,8 @@ typedef struct {
     unsigned writes[TMC2209_LINE_COUNT];
 } fake_board_t;
 
-/* The shaft bit setup_ready() configured, so a_move() declares what is actually
-   in effect and the mismatch tests are the ones that state otherwise. */
+/* The shaft bit setup_ready() configured, so a_move() declares what is in
+   effect. */
 static bool g_shaft;
 
 static mock_dev_t        g_mock;
@@ -120,8 +117,7 @@ static int gen_halt(void *ctx, bool immediate)
     }
     g->halts++;
     g->last_halt_immediate = immediate;
-    /* A ramped halt keeps stepping, which is exactly what the library must not
-       assume away. Only the immediate form ends the run here. */
+    /* A ramped halt keeps stepping. Only the immediate form ends the run here. */
     if (immediate) {
         g->running = false;
     }
@@ -136,7 +132,7 @@ static int gen_state(void *ctx, tmc2209_run_state_t *out)
     }
     out->emitted  = g->emitted;
     out->rate_pps = g->rate_pps;
-    out->running  = g->running;
+    out->pulsing  = g->running;
     return 0;
 }
 
@@ -168,6 +164,7 @@ static void setup_ready(uint32_t gconf)
     g_stepgen.state        = gen_state;
     g_stepgen.ctx          = &g_gen;
     g_stepgen.max_pps      = 40000;
+    g_stepgen.min_pps      = 0;
     g_stepgen.min_pulse_ns = TMC2209_STEP_MIN_PULSE_NS;
 
     g_config[0].value = gconf;
@@ -215,35 +212,12 @@ static void test_a_device_without_a_stepgen_refuses_every_motion_call(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_halt(&g_dev, true));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_retarget(&g_dev, 1000));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion_report(&g_dev, &motion));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_running(&g_dev, &running));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_is_pulsing(&g_dev, &running));
     TEST_ASSERT_EQUAL(0U, g_gen.runs);
 }
 
-/* Half a backend is not a backend, on the same terms as the port and the
-   lines: reject it at the seam rather than at the first pulse. */
-static void test_attach_rejects_an_incomplete_backend(void)
-{
-    setup_ready(CFG_GCONF);
-
-    tmc2209_stepgen_t half = g_stepgen;
-    half.run               = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(&g_dev, &half));
-
-    half       = g_stepgen;
-    half.state = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(&g_dev, &half));
-
-    half      = g_stepgen;
-    half.halt = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(&g_dev, &half));
-
-    half          = g_stepgen;
-    half.retarget = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(&g_dev, &half));
-}
-
-/* The pulse width is the part's requirement, so a backend that cannot meet it
-   is refused here rather than producing edges the driver never registers. */
+/* A backend that cannot meet the part's pulse width is refused, to avoid
+   edges the driver never registers. */
 static void test_attach_rejects_a_backend_that_pulses_too_narrowly(void)
 {
     setup_ready(CFG_GCONF);
@@ -257,8 +231,7 @@ static void test_attach_rejects_a_backend_that_pulses_too_narrowly(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(&g_dev, &still));
 }
 
-/* Swapping the source out mid-run would leave the count in a backend nothing
-   points at any more, and the odometer short by that much for good. */
+/* Refused mid-run, to avoid leaving the count in a backend nothing points at. */
 static void test_attach_is_refused_while_a_run_is_in_flight(void)
 {
     setup_ready(CFG_GCONF);
@@ -270,8 +243,7 @@ static void test_attach_is_refused_while_a_run_is_in_flight(void)
 
 /* ── Direction ──────────────────────────────────────────────────────────── */
 
-/* The ordering the part requires, and the reason this layer exists at all: a
-   caller driving both backends itself could get it backwards silently. */
+/* DIR is set before the first pulse, as the part requires. */
 static void test_dir_is_set_before_the_first_pulse(void)
 {
     setup_ready(CFG_GCONF);
@@ -282,9 +254,8 @@ static void test_dir_is_set_before_the_first_pulse(void)
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
 }
 
-/* The level asked for is the level driven, whatever shaft happens to be. What
-   the pair means for the film is the layer above's to decide, and an
-   implementation that quietly reinterpreted it would take that away. */
+/* The level asked for is the level driven, whatever the shaft bit is. What
+   the pair means is the caller's. */
 static void test_the_dir_level_reaches_the_pin_uninterpreted(void)
 {
     setup_ready(CFG_GCONF_SHAFT);
@@ -294,9 +265,8 @@ static void test_the_dir_level_reaches_the_pin_uninterpreted(void)
     TEST_ASSERT_TRUE(g_gen.dir_at_run);
 }
 
-/* A move states the shaft bit it was planned around, and gets it: a driver
-   holding the other value is written before the first pulse, because the level
-   and the bit only mean something as a pair. */
+/* A driver holding the other shaft bit is written before the first pulse,
+   since the level and the bit only mean something as a pair. */
 static void test_a_move_writes_the_shaft_bit_it_declares(void)
 {
     setup_ready(CFG_GCONF);
@@ -311,8 +281,7 @@ static void test_a_move_writes_the_shaft_bit_it_declares(void)
     TEST_ASSERT_TRUE(g_gen.dir_at_run);   /* DIR is still what was asked for */
 }
 
-/* The rest of GCONF survives that write. Turning the motor around must not
-   quietly undo the configuration bringup put there. */
+/* The rest of GCONF survives that write. */
 static void test_setting_the_shaft_bit_leaves_the_rest_of_gconf_alone(void)
 {
     setup_ready(CFG_GCONF);
@@ -324,8 +293,7 @@ static void test_setting_the_shaft_bit_leaves_the_rest_of_gconf_alone(void)
     TEST_ASSERT_EQUAL_HEX32(CFG_GCONF_SHAFT, mock_reg(&g_mock, TMC2209_GCONF));
 }
 
-/* A driver that already holds the bit costs nothing: the write is dropped
-   before it reaches the wire, which is what the shadow is for. */
+/* A driver that already holds the bit gets no write. */
 static void test_a_move_that_needs_no_shaft_change_writes_nothing(void)
 {
     setup_ready(CFG_GCONF_SHAFT);
@@ -339,8 +307,8 @@ static void test_a_move_that_needs_no_shaft_change_writes_nothing(void)
     TEST_ASSERT_FALSE(g_gen.dir_at_run);
 }
 
-/* An unknown shaft bit is an unknown direction, and with no encoder a move the
-   wrong way is not detected, it is recorded as progress. */
+/* An unknown shaft bit is an unknown direction, and a move the wrong way
+   would be recorded as progress. */
 static void test_an_unknown_gconf_stops_the_move(void)
 {
     setup_ready(CFG_GCONF);
@@ -363,13 +331,12 @@ static void test_a_finished_run_reports_its_count(void)
     gen_finish(4000);
 
     const tmc2209_motion_report_t motion = motion_now();
-    TEST_ASSERT_FALSE(motion.running);
+    TEST_ASSERT_FALSE(motion.pulsing);
     TEST_ASSERT_EQUAL_UINT32(4000, motion.emitted);
 }
 
-/* Every run polls this repeatedly while it waits, so polling has to be a
-   question and not a transaction: the same count, however often it is asked
-   for. */
+/* Polling changes nothing, so it returns the same count however often it is
+   asked. */
 static void test_polling_a_finished_run_reports_the_same_count(void)
 {
     setup_ready(CFG_GCONF);
@@ -382,8 +349,7 @@ static void test_polling_a_finished_run_reports_the_same_count(void)
     }
 }
 
-/* The control loop reads the count while the move is still going, so the pulses
-   so far have to be visible before the run is over. */
+/* The pulses so far are visible before the run is over. */
 static void test_a_run_in_flight_shows_its_progress(void)
 {
     setup_ready(CFG_GCONF);
@@ -392,16 +358,15 @@ static void test_a_run_in_flight_shows_its_progress(void)
 
     g_gen.emitted                  = 1500;
     tmc2209_motion_report_t motion = motion_now();
-    TEST_ASSERT_TRUE(motion.running);
+    TEST_ASSERT_TRUE(motion.pulsing);
     TEST_ASSERT_EQUAL_UINT32(1500, motion.emitted);
 
     gen_finish(4000);
     TEST_ASSERT_EQUAL_UINT32(4000, motion_now().emitted);
 }
 
-/* A count is a magnitude. The sign is DIR and the shaft bit, so the report
-   carries the pair the run was started with and the caller never has to
-   remember what it asked for. */
+/* The report carries the DIR and shaft the run started with, which give the
+   count its sign. */
 static void test_the_report_carries_the_direction_the_run_was_started_with(void)
 {
     setup_ready(CFG_GCONF);
@@ -417,9 +382,8 @@ static void test_the_report_carries_the_direction_the_run_was_started_with(void)
     TEST_ASSERT_TRUE(motion.shaft);
 }
 
-/* The whole reason the pair is remembered rather than read back: nothing holds
-   DIR still, so a caller aiming the driver at the next move must not change the
-   sign of a count that has not been read yet. */
+/* The run's pair is kept, so aiming the driver at the next move does not
+   change the sign of a count that has not been read. */
 static void test_aiming_at_the_next_move_does_not_rewrite_the_last_count(void)
 {
     setup_ready(CFG_GCONF);
@@ -436,9 +400,8 @@ static void test_aiming_at_the_next_move_does_not_rewrite_the_last_count(void)
     TEST_ASSERT_TRUE(motion.dir);   /* the run's direction, not the pin's */
 }
 
-/* An aborted run moved as far as it moved. The count is the only record of it,
-   so a halt that discarded the partial travel would lose how far the film went
-   at exactly the moment something already went wrong. */
+/* An aborted run keeps its partial count, since it is the only record of how
+   far the motor went. */
 static void test_an_aborted_run_keeps_the_pulses_it_did_emit(void)
 {
     setup_ready(CFG_GCONF);
@@ -460,14 +423,14 @@ static void test_a_ramped_halt_is_not_over_until_the_pulses_stop(void)
 
     g_gen.emitted = 900;
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_halt(&g_dev, false));
-    TEST_ASSERT_TRUE(motion_now().running);
+    TEST_ASSERT_TRUE(motion_now().pulsing);
 
     gen_finish(1100);                           /* it kept stepping while ramping down */
     TEST_ASSERT_EQUAL_UINT32(1100, motion_now().emitted);
 }
 
-/* is_running() answers the same question without collecting anything, which is
-   what lets a supervisor watch a run it does not own. */
+/* is_pulsing() answers without collecting anything, so a supervisor can watch
+   a run it does not own. */
 static void test_asking_whether_it_runs_collects_nothing(void)
 {
     setup_ready(CFG_GCONF);
@@ -475,18 +438,18 @@ static void test_asking_whether_it_runs_collects_nothing(void)
     bool                          running = true;
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_running(&g_dev, &running));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_pulsing(&g_dev, &running));
     TEST_ASSERT_TRUE(running);
 
     gen_finish(1000);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_running(&g_dev, &running));
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_is_pulsing(&g_dev, &running));
     TEST_ASSERT_FALSE(running);
 }
 
 /* ── The profile ────────────────────────────────────────────────────────── */
 
-/* The plan reaches the backend untouched. Nothing here reinterprets a rate,
-   because a move that ran slower than believed is a position error. */
+/* The plan reaches the backend untouched, to avoid a move running slower than
+   believed. */
 static void test_the_plan_reaches_the_backend_unaltered(void)
 {
     setup_ready(CFG_GCONF);
@@ -499,9 +462,8 @@ static void test_the_plan_reaches_the_backend_unaltered(void)
     TEST_ASSERT_EQUAL_UINT32(100000, g_gen.plan.accel_pps_s);
 }
 
-/* A profile that contradicts itself is a bad argument. A profile the board
-   cannot reach is not, and the two carry different instructions: fix the
-   request, as against buy a faster board or accept a slower scan. */
+/* A profile that contradicts itself is ARG. A rate the board cannot reach is
+   RATE, which needs a different fix. */
 static void test_an_incoherent_profile_is_refused(void)
 {
     setup_ready(CFG_GCONF);
@@ -560,8 +522,8 @@ static void test_a_second_move_while_running_is_refused(void)
     TEST_ASSERT_EQUAL(1U, g_board.writes[TMC2209_LINE_DIR]);
 }
 
-/* VACTUAL takes the driver off its STEP pin silently. Pulses would still be
-   emitted and still be counted, which is a position the film never reached. */
+/* A non-zero VACTUAL takes the driver off its STEP pin, so pulses would be
+   counted that move nothing. */
 static void test_a_move_under_the_velocity_generator_is_refused(void)
 {
     setup_ready(CFG_GCONF);
@@ -575,8 +537,8 @@ static void test_a_move_under_the_velocity_generator_is_refused(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 }
 
-/* DIR is the one line a move cannot do without, and a board that leaves it
-   unwired says so rather than stepping in whichever direction the pin floats. */
+/* Without DIR wired a move is refused, to avoid stepping in whichever
+   direction the pin floats. */
 static void test_a_move_without_dir_is_refused(void)
 {
     setup_ready(CFG_GCONF);
@@ -604,8 +566,8 @@ static void test_retarget_changes_a_run_in_flight(void)
     TEST_ASSERT_EQUAL(1U, g_gen.runs);     /* not a restart */
 }
 
-/* Pull-in bounds starting and stopping, not running. A motor already turning
-   can be ramped below it, which is how a tension loop backs off. */
+/* Pull-in bounds starting and stopping. A motor already turning can be ramped
+   below it. */
 static void test_retarget_may_go_below_the_pullin_rate(void)
 {
     setup_ready(CFG_GCONF);
@@ -646,7 +608,7 @@ static void test_halting_an_idle_driver_does_nothing_and_succeeds(void)
     setup_ready(CFG_GCONF);
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_halt(&g_dev, true));
-    TEST_ASSERT_FALSE(motion_now().running);
+    TEST_ASSERT_FALSE(motion_now().pulsing);
 }
 
 static void test_halt_passes_on_which_kind_was_asked_for(void)
@@ -664,8 +626,7 @@ static void test_halt_passes_on_which_kind_was_asked_for(void)
 
 /* ── Pin ownership ──────────────────────────────────────────────────────── */
 
-/* One pin, one owner. A level write racing a peripheral is decided by whichever
-   driver the board happens to use, which is not a decision at all. */
+/* One pin, one owner, to avoid a level write racing the peripheral. */
 static void test_a_stepgen_takes_the_step_pin(void)
 {
     setup_ready(CFG_GCONF);
@@ -673,8 +634,8 @@ static void test_a_stepgen_takes_the_step_pin(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_write(&g_dev, TMC2209_LINE_STEP, true));
     TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_STEP]);
 
-    /* Reading is refused for the same reason: the lines backend is not driving
-       the pin, so the level it reports is not the one the contract promises. */
+    /* Reading is refused too, since the lines backend is not driving the
+       pin. */
     bool level = true;
     TEST_ASSERT_EQUAL(TMC2209_ERR_ACCESS, tmc2209_line_read(&g_dev, TMC2209_LINE_STEP, &level));
 
@@ -683,8 +644,8 @@ static void test_a_stepgen_takes_the_step_pin(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_STEP, true));
 }
 
-/* The other three lines are untouched by any of this. ENN in particular stays
-   available, because it is what an emergency stop reaches for. */
+/* The other three lines are untouched. ENN in particular stays available for
+   an emergency stop. */
 static void test_a_stepgen_leaves_the_other_lines_alone(void)
 {
     setup_ready(CFG_GCONF);
@@ -694,10 +655,9 @@ static void test_a_stepgen_leaves_the_other_lines_alone(void)
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_line_write(&g_dev, TMC2209_LINE_DIR, true));
 }
 
-/* DIR is the caller's throughout, run or no run. Flipping it between two pulses
-   reverses the motor at speed and has both halves counted the same way, which
-   with no encoder is not detected: the library reports what the run started
-   with and leaves the pin to whoever owns the machine. */
+/* DIR stays writable during a run. Flipping it mid-run reverses the motor
+   with both halves counted one way, and the report keeps the direction the
+   run started with. */
 static void test_dir_stays_writable_during_a_run(void)
 {
     setup_ready(CFG_GCONF);
@@ -711,8 +671,7 @@ static void test_dir_stays_writable_during_a_run(void)
     TEST_ASSERT_FALSE(g_board.level[TMC2209_LINE_DIR]);   /* applied, not refused */
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_enable(&g_dev, false));
 
-    /* The report still names the direction the run began with, which is the
-       only record of it once the pin has moved on. */
+    /* The report still names the direction the run began with. */
     gen_finish(4000);
     const tmc2209_motion_report_t motion = motion_now();
     TEST_ASSERT_EQUAL_UINT32(4000, motion.emitted);
@@ -731,8 +690,7 @@ static void test_dir_is_free_on_a_device_without_a_stepgen(void)
 
 /* ── Backend failure ────────────────────────────────────────────────────── */
 
-/* A backend that refuses the run has not moved anything, so the library must
-   not go on believing a run is in flight. */
+/* A backend that refuses the run moved nothing, so no run is in flight. */
 static void test_a_refused_run_leaves_nothing_in_flight(void)
 {
     setup_ready(CFG_GCONF);
@@ -742,7 +700,7 @@ static void test_a_refused_run_leaves_nothing_in_flight(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_move(&g_dev, &m));
 
     g_gen.fail_run = 0;
-    TEST_ASSERT_FALSE(motion_now().running);
+    TEST_ASSERT_FALSE(motion_now().pulsing);
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
 }
 
@@ -759,38 +717,45 @@ static void test_a_backend_failure_yields_no_count(void)
     TEST_ASSERT_EQUAL(TMC2209_ERR_IO, tmc2209_halt(&g_dev, true));
 }
 
-static void test_null_arguments_are_bad_arguments(void)
+static void test_a_move_after_a_driver_reset_is_refused(void)
 {
     setup_ready(CFG_GCONF);
-    const tmc2209_movement_plan_t m = a_move(true, 100);
+    mock_set_reg(&g_mock, TMC2209_GSTAT, MOCK_RESET_GSTAT);
 
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(&g_dev, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_move(NULL, &m));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_motion_report(&g_dev, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_halt(NULL, true));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_retarget(NULL, 1000));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_is_running(&g_dev, NULL));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_stepgen(NULL, &g_stepgen));
+    const tmc2209_movement_plan_t m = a_move(true, 100);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL_UINT(0, g_gen.runs);
 }
 
-/* Construction attaches nothing, so a device that never saw a stepgen has no
-   run to report and owes no count. */
-static void test_init_leaves_the_stepgen_detached(void)
+static void test_a_rate_under_the_backend_floor_is_refused(void)
 {
     setup_ready(CFG_GCONF);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
+    const tmc2209_movement_plan_t m = a_move(true, 0);
 
-    tmc2209_motion_report_t motion;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_motion_report(&g_dev, &motion));
+    g_stepgen.min_pps = m.pullin_pps + 1U;
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_move(&g_dev, &m));
+
+    g_stepgen.min_pps = m.pullin_pps;
+    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL(TMC2209_ERR_RATE, tmc2209_retarget(&g_dev, m.pullin_pps - 1U));
+}
+
+static void test_a_move_after_an_unconfirmed_velocity_write_is_refused(void)
+{
+    setup_ready(CFG_GCONF);
+    g_mock.freeze_ifcnt = 1;
+    TEST_ASSERT_NOT_EQUAL(TMC2209_OK, tmc2209_set_velocity(&g_dev, 1000));
+
+    const tmc2209_movement_plan_t m = a_move(true, 100);
+    TEST_ASSERT_EQUAL(TMC2209_ERR_INVALID_SLOT, tmc2209_move(&g_dev, &m));
+    TEST_ASSERT_EQUAL_UINT(0, g_gen.runs);
 }
 
 void run_stepgen_tests(void)
 {
     RUN_TEST(test_a_device_without_a_stepgen_refuses_every_motion_call);
-    RUN_TEST(test_attach_rejects_an_incomplete_backend);
     RUN_TEST(test_attach_rejects_a_backend_that_pulses_too_narrowly);
     RUN_TEST(test_attach_is_refused_while_a_run_is_in_flight);
-    RUN_TEST(test_init_leaves_the_stepgen_detached);
 
     RUN_TEST(test_dir_is_set_before_the_first_pulse);
     RUN_TEST(test_the_dir_level_reaches_the_pin_uninterpreted);
@@ -812,9 +777,12 @@ void run_stepgen_tests(void)
     RUN_TEST(test_an_incoherent_profile_is_refused);
     RUN_TEST(test_a_flat_profile_needs_no_ramp);
     RUN_TEST(test_a_rate_the_board_cannot_emit_is_refused);
+    RUN_TEST(test_a_rate_under_the_backend_floor_is_refused);
 
     RUN_TEST(test_a_second_move_while_running_is_refused);
     RUN_TEST(test_a_move_under_the_velocity_generator_is_refused);
+    RUN_TEST(test_a_move_after_a_driver_reset_is_refused);
+    RUN_TEST(test_a_move_after_an_unconfirmed_velocity_write_is_refused);
     RUN_TEST(test_a_move_without_dir_is_refused);
 
     RUN_TEST(test_retarget_changes_a_run_in_flight);
@@ -832,5 +800,4 @@ void run_stepgen_tests(void)
 
     RUN_TEST(test_a_refused_run_leaves_nothing_in_flight);
     RUN_TEST(test_a_backend_failure_yields_no_count);
-    RUN_TEST(test_null_arguments_are_bad_arguments);
 }

@@ -19,11 +19,9 @@ typedef struct {
 
 /* Order defines the cache slot, and therefore the validity bit.
  *
- * Access and class are independent. VACTUAL is write-only driver-side yet
- * OWNED, because the driver refusing to read it back says nothing about who
- * changes it. GSTAT is readable and writable yet VOLATILE, because the
- * hardware sets its flags. Getting those two backwards is the bug this column
- * exists to prevent.
+ * Access and class are independent. VACTUAL is write-only yet OWNED, since only
+ * the firmware changes it. GSTAT is read/write yet VOLATILE, since the hardware
+ * sets its flags.
  */
 static const reg_info_t k_regs[TMC2209_REG_COUNT] = {
     { TMC2209_GCONF,        R | W, OWN, "GCONF"        },
@@ -287,8 +285,7 @@ uint32_t tmc2209_vactual_encode(int32_t v)
 
 /* ── Diagnostic-only decoders ───────────────────────────────────────────── */
 
-/* 9-bit two's complement, which is the awkward part and the reason these
-   registers get decoders at all. */
+/* 9-bit two's complement, the reason these registers have decoders. */
 static int16_t sign_extend_9(uint32_t field)
 {
     uint32_t v = field & 0x1FFU;

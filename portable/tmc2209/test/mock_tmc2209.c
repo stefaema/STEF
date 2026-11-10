@@ -71,8 +71,8 @@ static int mock_tx(void *ctx, const uint8_t *buf, size_t len, uint32_t timeout_m
         push(m, echo, n);
     }
 
-    /* Only frames addressed to us get acted on, which is what makes the
-       shared-bus addressing testable. */
+    /* Only frames addressed to us get acted on, so shared-bus addressing can be
+       tested. */
     if (len >= 3 && buf[0] == TMC2209_SYNC && buf[1] == m->addr) {
         if (len == TMC2209_WRITE_LEN && (buf[2] & 0x80U)) {
             uint8_t reg = (uint8_t)(buf[2] & 0x7FU);
@@ -127,10 +127,8 @@ void mock_init(mock_dev_t *m, tmc2209_uart_t *uart, uint8_t addr, bool echoes)
     m->addr   = addr;
     m->echoes = echoes;
 
-    /* Power-on state the library will find. The reset values live here, in the
-       device model, rather than in the register table: they describe what a
-       driver holds before anyone configures it, which is the mock's business and
-       not something the library should carry defaults for. */
+    /* Power-on state the library will find. The reset values belong to the
+       device model, since the library carries no defaults. */
     m->regs[TMC2209_IOIN]         = MOCK_RESET_IOIN;
     m->regs[TMC2209_GCONF]        = MOCK_RESET_GCONF;
     m->regs[TMC2209_GSTAT]        = MOCK_RESET_GSTAT;

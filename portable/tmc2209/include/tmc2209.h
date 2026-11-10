@@ -1,30 +1,17 @@
 /**
  * @file tmc2209.h
- * @brief The device object, and the component's public face.
+ * @brief The device object and the component's public API.
  *
- * A TMC2209 is reached through three unrelated channels: a UART link carrying
- * register datagrams, four control lines, and a source of STEP pulses. Each has
- * its own backend header, and none of the three knows the other two exist. A
- * caller has one driver and wants one thing to call.
+ * A TMC2209 is reached through three backends: a UART for register datagrams,
+ * four control lines, and a STEP pulse source. @ref tmc2209_t holds the three
+ * of them, the driver's address and the register cache, so every call takes one
+ * device.
  *
- * That thing is @ref tmc2209_t. It carries the three backends, the driver's
- * address on the wire, and the register cache, so every call in the component
- * takes a device and no caller ever assembles an operation out of three parts.
- * Which is also what lets a call cross the subsystems that a backend cannot: a
- * move sets DIR on the lines, writes GCONF.shaft over UART, and only then
- * starts the pulse train.
+ * Implemented in tmc2209_uart.c (transactions), tmc2209_lines.c (lines),
+ * tmc2209_stepgen.c (motion) and tmc2209.c (lifecycle, registers and cache).
  *
- * So the whole API is declared here, and implemented in one file per subsystem:
- * tmc2209_uart.c for transactions, tmc2209_lines.c for the lines,
- * tmc2209_stepgen.c for motion, and tmc2209.c for the device itself, meaning
- * lifecycle, registers and the cache. What the backend headers never mention is
- * @ref tmc2209_t, which is what keeps a backend implementable without ever
- * opening this header.
- *
- * Lifecycle: tmc2209_init(), then attach whichever backends the board has, then
- * tmc2209_bringup() to claim the driver and put a known configuration in it.
- * Attaching is optional per backend, and a configuration-only caller attaches
- * the uart alone.
+ * Lifecycle: tmc2209_init(), attach the backends the board has, then
+ * tmc2209_bringup(). A configuration-only caller attaches the uart alone.
  *
  * Not thread-safe: one device, one owner.
  */
@@ -82,9 +69,8 @@ tmc2209_err_t tmc2209_init(tmc2209_t *dev, uint8_t addr);
 /**
  * @brief Gives the device the channel it speaks on.
  *
- * The wire is shared: one link carries up to four drivers, told apart by the
- * address handed to tmc2209_init(), so several devices attach the same @p uart
- * and inherit its timeout and retry policy along with it.
+ * One link carries up to four drivers, told apart by address, so several
+ * devices can attach the same @p uart and share its timeout and retry policy.
  *
  * @param dev   initialised device
  * @param uart  borrowed, must outlive @p dev. NULL detaches
@@ -97,23 +83,21 @@ tmc2209_err_t tmc2209_attach_uart(tmc2209_t *dev, const tmc2209_uart_t *uart);
 /**
  * @brief Claims a reachable driver and writes @p config to it.
  *
- * Probes the driver, seeds the IFCNT baseline, clears GSTAT, reads the
- * CONSTANT registers off this particular part, and writes the configuration.
+ * Probes the driver, seeds the IFCNT baseline, reads GSTAT and the CONSTANT
+ * registers, writes @p config and clears GSTAT.
  *
- * @p config must cover all @ref TMC2209_OWNED_COUNT owned registers. A partial
- * configuration is rejected.
+ * @p config must cover all @ref TMC2209_OWNED_COUNT owned registers.
  *
  * Returns with the driver holding @p config and standing still.
  *
- * GSTAT as found is handed back through @p at_bringup before it is cleared,
- * which is the only chance to see what the driver went through before this
- * firmware owned it. It says nothing about why the *controller* restarted;
- * that is esp_reset_reason()'s answer.
+ * A reset found in GSTAT invalidates the cache, to avoid skipping registers.
+ * GSTAT is cleared last, to avoid losing it if the write fails. It says nothing
+ * about why the controller restarted.
  *
  * @param dev         device with a uart attached
  * @param config      one entry per owned register, in any order
  * @param n           length of @p config
- * @param at_bringup  GSTAT as found, before it is cleared. NULL to discard
+ * @param gstat_found GSTAT as found, before it is cleared. NULL to discard
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG         null argument, or @p config does not cover
@@ -125,16 +109,15 @@ tmc2209_err_t tmc2209_attach_uart(tmc2209_t *dev, const tmc2209_uart_t *uart);
  * @return any transport error from the underlying reads and writes
  */
 tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, size_t n,
-                              tmc2209_gstat_t *at_bringup);
+                              tmc2209_gstat_t *gstat_found);
 
 /* ── Values ─────────────────────────────────────────────────────────────── */
 
 /**
  * @brief Reads a register from the cache.
  *
- * Serves owned and constant registers. Volatile registers are refused: the
- * driver changes them, so a remembered copy describes a moment that has
- * passed. tmc2209_poll_health() and friends are the way to obtain those.
+ * Serves owned and constant registers. Volatile registers are refused, to avoid
+ * answering with a stale copy; poll them instead.
  *
  * @param dev  device
  * @param reg  register to look up
@@ -143,39 +126,28 @@ tmc2209_err_t tmc2209_bringup(tmc2209_t *dev, const tmc2209_regval_t *config, si
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
  * @retval TMC2209_ERR_ACCESS  volatile register; there is no cached value
- * @retval TMC2209_ERR_INVALID_SLOT   slot is invalid; nothing here can be believed
+ * @retval TMC2209_ERR_INVALID_SLOT   the slot is invalid
  */
 tmc2209_err_t tmc2209_read(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
 
 /**
- * @brief Writes a batch of owned registers and verifies that it landed.
+ * @brief Writes a batch of owned registers and verifies it landed.
  *
- * The array is the unit of work: @p n datagrams followed by one IFCNT check,
- * so a ten-register configuration costs eleven transactions rather than
- * twenty. Every op is validated before any byte goes out.
+ * @p n datagrams, then one IFCNT check. Every op is validated before anything
+ * is sent.
  *
- * Behaviour worth knowing at a call site:
- *
- *   - **Ordering.** Applied in order. A register named twice takes its last
- *     value, and the superseded ops are dropped rather than transmitted.
- *   - **Skipping.** An op whose value already matches a valid slot is dropped.
- *     A batch may therefore put zero datagrams on the wire.
- *   - **Failure.** Any failure invalidates *every* slot in the batch, including
- *     ops transmitted before the failure. Nothing in a batch is confirmed until
- *     the IFCNT read at the end, so an early abort leaves even the transmitted
- *     ops unverified. Recovery is to re-send the batch.
- *   - **During a run, at the caller's risk.** A batch is not refused while
- *     STEP pulses are in flight, and three registers will corrupt the run without
- *     saying so: GCONF.shaft reverses the motor at speed, CHOPCONF.mres changes
- *     what a pulse is worth halfway through, and a non-zero VACTUAL takes the
- *     driver off its STEP pin with the count still rising.
+ *   - A register named twice takes its last value.
+ *   - An op that matches a valid slot is skipped, so a batch may send nothing.
+ *   - Any failure invalidates every slot in the batch, sent or not, since
+ *     nothing is confirmed before the IFCNT check. Recover by re-sending.
+ *   - Not refused during a run. GCONF.shaft, CHOPCONF.mres and a non-zero
+ *     VACTUAL all corrupt a run in flight.
  *
  * @param dev        device
  * @param ops        registers and values, 1..n
  * @param n          length of @p ops
- * @param failed_at  diagnostic only: which op the library was on when it gave
- *                   up, or @p n when no single op is at fault. NULL to discard.
- *                   This is not where the state boundary is; see Failure above
+ * @param failed_at  which op the library was on when it gave up, or @p n when
+ *                   no single op is at fault. NULL to discard
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG      null argument, empty batch, or a register not
@@ -191,15 +163,10 @@ tmc2209_err_t tmc2209_write(tmc2209_t *dev, const tmc2209_regval_t *ops, size_t 
 /* ── Conditions ─────────────────────────────────────────────────────────── */
 
 /**
- * @brief Reads GSTAT and DRV_STATUS, and reports what is wrong.
+ * @brief Reads GSTAT and DRV_STATUS and reports the conditions found.
  *
- * One condition set from two registers.
- *
- * TMC2209_DRIVER_RESET invalidates every owned slot as sync was lost with the driver.
- * Configuration backup should be handled outside the library.
- *
- * Purely observational: the latched half of @ref tmc2209_condition_t therefore stays
- * asserted across polls until tmc2209_clear_faults() acknowledges it.
+ * TMC2209_DRIVER_RESET invalidates every owned slot. Latched conditions stay
+ * reported until tmc2209_clear_faults() acknowledges them.
  *
  * @param dev         device
  * @param conditions  bitmask of @ref tmc2209_condition_t, 0 when healthy
@@ -214,18 +181,11 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
 /**
  * @brief Acknowledges latched conditions so they stop being reported.
  *
- * GSTAT flags are latched in the driver: once set they stay set until a 1 is
- * written back.
+ * Pass back what tmc2209_poll_health() returned. Clears only the latched bits
+ * passed in, to avoid losing a fault that latched after the poll.
  *
- * Pass back the conditions received from `tmc2209_poll_health()`. Only the bits
- * in @ref TMC2209_CONDITIONS_LATCHED are acted on; live conditions are ignored,
- * so handing the whole set straight back is the intended use. Acknowledging
- * only what was actually seen is also what makes this safe against a fault that
- * latches between the poll and the acknowledgement: it survives to be reported.
- *
- * This validates nothing. Clearing `TMC2209_DRIVER_RESET` says the reset was
- * noticed, not that the configuration was rewritten; only a successful
- * `tmc2209_write()` covering the owned registers does that (see `tmc2209_bringup()`).
+ * Clearing TMC2209_DRIVER_RESET invalidates every owned slot. Only a successful
+ * write of the owned registers makes them valid again (see tmc2209_bringup()).
  *
  * @param dev         device
  * @param conditions  conditions to acknowledge; 0 does nothing and touches no wire
@@ -239,11 +199,10 @@ tmc2209_err_t tmc2209_poll_health(tmc2209_t *dev, uint32_t *conditions);
 tmc2209_err_t tmc2209_clear_faults(tmc2209_t *dev, uint32_t conditions);
 
 /**
- * @brief Reads the StallGuard load estimate, with whether it can be believed at first glance
+ * @brief Reads the StallGuard load estimate and whether it is usable.
  *
- * SG_RESULT is only meaningful inside the TCOOLTHRS speed window, so a raw
- * number on its own cannot be acted on. This checks what
- * it can: TCOOLTHRS of zero means StallGuard is disabled outright.
+ * SG_RESULT means something only inside the TCOOLTHRS window. Usable is false
+ * when TCOOLTHRS is zero, which disables StallGuard. Nothing else is checked.
  *
  * @param dev  device
  * @param out  load estimate and its validity
@@ -258,9 +217,8 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
 /**
  * @brief Reads the live input pin states.
  *
- * Returns the decoded struct rather than a condition, because pin-level detail
- * is exactly what a bring-up caller is asking for. IOIN also carries the
- * driver revision; tmc2209_poll_version() is the way to ask for that.
+ * Returns IOIN decoded. The driver revision in it is read with
+ * tmc2209_poll_version().
  *
  * @param dev  device
  * @param out  decoded pin state
@@ -273,16 +231,11 @@ tmc2209_err_t tmc2209_poll_load(tmc2209_t *dev, tmc2209_load_t *out);
 tmc2209_err_t tmc2209_poll_pins(tmc2209_t *dev, tmc2209_ioin_t *out);
 
 /**
- * @brief Reads the revision of the driver answering at this address.
+ * @brief Reads the revision of the driver at this address.
  *
- * The IOIN version field is a compatibility generation, not a model number:
- * @ref TMC2209_LIB_IOIN_VERSION is the first revision of the TMC2209, and a
- * TMC2208 answering 0x20 is a side effect rather than the field's purpose.
- * A later revision would report a different number and still be a TMC2209.
- *
- * Reported rather than judged. Which revisions an installation accepts is a
- * policy question, so the caller compares against @ref TMC2209_LIB_IOIN_VERSION,
- * or against a set of its own, and decides.
+ * The IOIN version field is a compatibility generation.
+ * @ref TMC2209_LIB_IOIN_VERSION is the first TMC2209 revision, and a TMC2208
+ * also answers 0x20. The caller decides which revisions it accepts.
  *
  * @param dev      device
  * @param version  the revision byte, untouched on failure
@@ -297,9 +250,8 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
 /**
  * @brief Reads any readable register off the device, uninterpreted.
  *
- * The path for MSCNT, MSCURACT, PWM_SCALE and PWM_AUTO, which carry no
- * condition worth naming, and for a diagnostic that dumps the whole device.
- * Does not update the cache.
+ * For registers with no decoded call (MSCNT, MSCURACT, PWM_SCALE, PWM_AUTO) and
+ * for dumping the device. Does not update the cache.
  *
  * @param dev  device
  * @param reg  register to read
@@ -308,7 +260,7 @@ tmc2209_err_t tmc2209_poll_version(tmc2209_t *dev, uint8_t *version);
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG     null argument, or a register not in the table
  * @retval TMC2209_ERR_NO_BACKEND  no uart attached
- * @retval TMC2209_ERR_ACCESS  write-only driver-side; there is nothing to read
+ * @retval TMC2209_ERR_ACCESS  the register is write-only
  * @return any transport error from the read
  */
 tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out);
@@ -318,8 +270,8 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
 /**
  * @brief Checks the cache against the driver for the registers that read back.
  *
- * Only GCONF and CHOPCONF can be checked, since the other eight owned
- * registers are write-only.
+ * Only GCONF and CHOPCONF can be checked. The other eight owned registers are
+ * write-only.
  *
  * @param dev         device
  * @param mismatched  bitmask of slots that disagree, 0 when all agree.
@@ -328,6 +280,7 @@ tmc2209_err_t tmc2209_poll_raw(tmc2209_t *dev, tmc2209_reg_t reg, uint32_t *out)
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG       null device
  * @retval TMC2209_ERR_NO_BACKEND  no uart attached
+ * @retval TMC2209_ERR_INVALID_SLOT  the owned cache is not valid
  * @retval TMC2209_ERR_MISMATCH  the device disagrees with the cache
  * @return any transport error from the reads
  */
@@ -338,12 +291,10 @@ tmc2209_err_t tmc2209_verify_config(tmc2209_t *dev, uint32_t *mismatched);
 /**
  * @brief Sets the internal velocity generator. Immediate and verified.
  *
- * A non-zero value takes the driver off its STEP pin, silently and with no
- * fault raised, so it must be returned to zero before coordinated motion.
+ * A non-zero value takes the driver off its STEP pin with no fault raised. Set
+ * it back to zero before tmc2209_move().
  *
- * VACTUAL is write-only driver-side, so the value can only ever be checked
- * against the cache. That is authoritative while the slot is valid, and
- * TMC2209_DRIVER_RESET is what ends the guarantee.
+ * VACTUAL is write-only, so the cache is the only record of it.
  *
  * @param dev  device
  * @param v    signed 24-bit velocity; 0 returns control to the STEP pin
@@ -367,9 +318,8 @@ tmc2209_err_t tmc2209_set_current(tmc2209_t *dev, const tmc2209_ihold_irun_t *c)
 /**
  * @brief Gives the device its control lines.
  *
- * Optional, and one set per driver. Every line call on a device without them
- * reports TMC2209_ERR_NO_BACKEND, so a configuration-only caller needs no stub
- * backend.
+ * Optional, one set per driver. Without them every line call answers
+ * TMC2209_ERR_NO_BACKEND.
  *
  * @param dev    initialised device
  * @param lines  borrowed, must outlive @p dev. NULL detaches
@@ -383,14 +333,12 @@ tmc2209_err_t tmc2209_attach_lines(tmc2209_t *dev, const tmc2209_lines_t *lines)
 bool tmc2209_line_is_wired(const tmc2209_t *dev, tmc2209_line_t line);
 
 /**
- * @brief Reads the level presently on a line.
+ * @brief Reads the level on a line.
  *
- * Electrical, uninterpreted. An output answers with the level being driven,
- * which is what makes this the read-back after a write.
+ * Electrical, no polarity applied. An output answers with the level being
+ * driven.
  *
- * This and IOIN observe the same pins from opposite ends of the trace, one
- * from the ESP32 and one from the driver, so a disagreement between them is
- * evidence neither reading can produce alone. See tmc2209_poll_pins().
+ * IOIN reads the same pins from the driver's side. See tmc2209_poll_pins().
  *
  * @param dev    device
  * @param line   line to read
@@ -407,10 +355,8 @@ tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool 
 /**
  * @brief Drives a line to a level.
  *
- * Electrical and immediate: no polarity applied, no sequencing, no
- * preconditions checked. Driving STEP low then high is one microstep only if
- * each level was held for the part's minimum pulse width, which nothing here
- * measures and nothing here waits for.
+ * Electrical and immediate. No polarity, no sequencing, no checks, and no wait
+ * for the minimum pulse width.
  *
  * @param dev    device
  * @param line   an output line
@@ -420,13 +366,8 @@ tmc2209_err_t tmc2209_line_read(const tmc2209_t *dev, tmc2209_line_t line, bool 
  * @retval TMC2209_ERR_ARG         null device, or a line outside the enum
  * @retval TMC2209_ERR_NO_BACKEND  no lines backend attached
  * @retval TMC2209_ERR_UNWIRED     this board does not connect the line
- * @retval TMC2209_ERR_ACCESS   the line is an input, in practice DIAG, or it is
- *                              STEP on a device that has a stepgen attached and
- *                              therefore no longer owns the pin
- * @retval TMC2209_ERR_BUSY     DIR while a run is in flight. The odometer
- *                              records one direction per run, so a level
- *                              flipped mid-train would be counted as travel in
- *                              whichever direction the run started
+ * @retval TMC2209_ERR_ACCESS   the line is an input (DIAG), or STEP while a
+ *                              stepgen owns it
  * @retval TMC2209_ERR_IO       the backend failed for its own reasons
  */
 tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level);
@@ -434,16 +375,10 @@ tmc2209_err_t tmc2209_line_write(tmc2209_t *dev, tmc2209_line_t line, bool level
 /**
  * @brief Enables or disables the power stage.
  *
- * ENN's polarity is a property of the part, so it is applied here and the
- * caller says what it wants rather than what level achieves it.
+ * Applies ENN's active-low polarity and checks nothing. A driver with
+ * CHOPCONF.toff at zero enables and still holds no current.
  *
- * Nothing is checked and nothing is refused. A driver whose CHOPCONF.toff is
- * zero enables and still holds no current, which is a fact worth learning from
- * a poll rather than from a rejected call.
- *
- * Worth knowing when reading DRV_STATUS afterwards: open load and cs_actual
- * describe a power stage that is driving. A disabled driver reports them
- * anyway, and they mean nothing.
+ * DRV_STATUS open load and cs_actual mean nothing while disabled.
  *
  * @param dev  device
  * @param on   true drives ENN low
@@ -455,8 +390,8 @@ tmc2209_err_t tmc2209_enable(tmc2209_t *dev, bool on);
 /**
  * @brief Reads back whether the power stage is enabled.
  *
- * The ESP32's view. IOIN.enn is the driver's, and tmc2209_poll_pins() is how
- * to ask for it.
+ * The controller's view of ENN. The driver's view is IOIN.enn, read with
+ * tmc2209_poll_pins().
  *
  * @param dev  device
  * @param on   true when ENN is low, untouched on failure
@@ -470,21 +405,14 @@ tmc2209_err_t tmc2209_is_enabled(const tmc2209_t *dev, bool *on);
 /**
  * @brief What one move is asked to do.
  *
- * @ref tmc2209_run_plan_t plus the two bits a pulse source cannot know. DIR is a
- * line, STEP is a rate, and the two must agree before the first edge goes out,
- * which is the whole reason this struct exists rather than the caller driving
- * both backends itself.
- *
- * Both @p dir and @p shaft are stated rather than derived. The two together
- * decide which way the motor turns, and which combination is forward depends on
- * how the motor is mounted, so that mapping belongs above. What this guarantees
- * is that the stated pair is the pair in effect when the first edge goes out.
+ * @ref tmc2209_run_plan_t plus DIR and GCONF.shaft, so both are in effect before
+ * the first edge. Which dir/shaft pair is forward depends on how the motor is
+ * mounted, so the caller decides.
  */
 typedef struct {
     bool     dir;          /**< level to drive on DIR, electrical and uninterpreted */
-    bool     shaft;        /**< GCONF.shaft this move was planned around. Written to the
-                                driver when it holds the other value, so the pair always
-                                takes effect together */
+    bool     shaft;        /**< GCONF.shaft for this move, written first if the
+                                driver holds the other value */
     uint32_t pulses;       /**< microsteps to emit. 0 runs until halted */
     uint32_t pullin_pps;   /**< rate of the first and last pulse */
     uint32_t cruise_pps;   /**< rate held between the ramps */
@@ -494,19 +422,15 @@ typedef struct {
 /**
  * @brief What the pulse source is doing, and what it has done.
  *
- * One run's worth. There is no odometer here and none in @ref tmc2209_t:
- * accumulating runs into a position is a decision about what the pulses meant,
- * and that decision belongs to the caller.
+ * One run's worth. Adding runs up into a position is the caller's job.
  *
- * It needs a sign, so @p dir and @p shaft come back with the count.
- * They are what the run was started with, not what the pins hold now: nothing
- * holds either of them still, so by the time a count is collected the driver
- * may already be aimed at the next move.
+ * @p dir and @p shaft are the ones the run started with, which give the count
+ * its sign. The pins may already be set for the next move.
  */
 typedef struct {
     uint32_t emitted;    /**< pulses of the current run, or of the last one */
     uint32_t rate_pps;   /**< rate presently being emitted */
-    bool     running;    /**< a run is in flight */
+    bool     pulsing;    /**< a run is in flight */
     bool     dir;        /**< DIR the counted run was started with */
     bool     shaft;      /**< GCONF.shaft the counted run was started with */
 } tmc2209_motion_report_t;
@@ -514,17 +438,16 @@ typedef struct {
 /**
  * @brief Gives the device its source of STEP pulses.
  *
- * One per driver, like the lines and unlike the shared wire. Attaching one hands
- * STEP over: `tmc2209_line_write()` on STEP is refused from then on, because a
- * peripheral bound to a pin and a GPIO write to the same pin are two owners and
- * not two views.
+ * One per driver. Attaching one hands STEP over, so tmc2209_line_write() on
+ * STEP is refused from then on, to avoid two owners of one pin.
  *
  * @param dev      initialised device, with no run in flight
  * @param stepgen  borrowed, must outlive @p dev. NULL detaches
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG   null device, a backend missing any of its four
- *                           calls, or one declaring max_pps of 0
+ *                           calls, or one declaring max_pps of 0 or a
+ *                           min_pps above its max_pps
  * @retval TMC2209_ERR_RATE  the backend cannot guarantee
  *                           @ref TMC2209_STEP_MIN_PULSE_NS
  * @retval TMC2209_ERR_BUSY  a run is in flight on the backend being replaced
@@ -532,41 +455,35 @@ typedef struct {
 tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *stepgen);
 
 /**
- * @brief Whether STEP pulses are presently going out.
+ * @brief Whether STEP pulses are going out.
  *
- * Asks the backend and reports, touching nothing else. This is what a
- * supervisor watches with.
+ * Asks the backend and touches nothing else. Pulsing means a run in flight on
+ * the stepgen backend. A driver turning on VACTUAL is not pulsing.
  *
  * @param dev      device with a stepgen
- * @param running  true while a run is in flight, untouched on failure
+ * @param pulsing  true while a run is in flight, untouched on failure
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG         null argument
  * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
  * @retval TMC2209_ERR_IO          the backend failed
  */
-tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
+tmc2209_err_t tmc2209_is_pulsing(const tmc2209_t *dev, bool *pulsing);
 
 /**
- * @brief Starts a move. Returns as soon as the pulses are on their way.
+ * @brief Starts a move and returns once the pulses are on their way.
  *
- * Non-blocking. Sets DIR, then starts the train, in that order and never the other.
- * tmc2209_motion_report() is how the caller learns the run ended.
+ * Sets DIR, then starts the train. tmc2209_motion_report() says when the run
+ * ended.
  *
- * A backend reports one run at a time, so the count belongs to whoever collects
- * it before the next move starts. Nothing here enforces that: a caller who
- * needs the total is the caller who reads it.
+ * The backend holds one run's count, so collect it before the next move.
  *
- * @p m.shaft is applied, not assumed: a driver holding the other value is
- * written first, which costs one verified datagram and costs nothing when it
- * already agrees. The cached GCONF has to be valid for that, since the
- * register's other bits would otherwise have to be invented. Refusing to move
- * rather than guessing is deliberate.
+ * Writes GCONF.shaft first if the driver holds the other value. That needs a
+ * valid cached GCONF, to avoid inventing the register's other bits.
  *
- * A non-zero VACTUAL takes the driver off its STEP pin silently, so a move
- * would emit pulses that move nothing and still be counted. That is refused
- * when the cache knows the velocity, and not when it does not, because
- * inventing a refusal out of an invalid slot is worse than the check's absence.
+ * Polls health first, to avoid moving a driver that reset since bring-up.
+ *
+ * Refuses a non-zero VACTUAL, to avoid counting pulses that move nothing.
  *
  * @param dev  device with a stepgen and DIR
  * @param m    what to move
@@ -574,35 +491,35 @@ tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running);
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG          null argument, or a profile that does not
  *                                  describe a reachable ramp
- * @retval TMC2209_ERR_RATE         a rate above the backend's max_pps
+ * @retval TMC2209_ERR_RATE         a rate above the backend's max_pps, or a
+ *                                  pull-in below its min_pps
  * @retval TMC2209_ERR_NO_BACKEND   no stepgen, or no lines for DIR
  * @retval TMC2209_ERR_UNWIRED      this board does not connect DIR
  * @retval TMC2209_ERR_BUSY         a run is already in flight
- * @retval TMC2209_ERR_INVALID_SLOT GCONF is not cached, so the shaft bit cannot
- *                                  be set without inventing the rest of it
- * @retval TMC2209_ERR_ACCESS       VACTUAL is non-zero: the STEP pin is not
- *                                  what is driving this motor
+ * @retval TMC2209_ERR_INVALID_SLOT the owned cache is not valid, or the driver
+ *                                  reset since bring-up
+ * @retval TMC2209_ERR_ACCESS       VACTUAL is non-zero
  * @retval TMC2209_ERR_IO           the DIR write or the backend failed
- * @return any error from the GCONF write, when the shaft bit had to change
+ * @return any error from the health poll, or from the GCONF write when the
+ *         shaft bit had to change
  */
 tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_movement_plan_t *m);
 
 /**
  * @brief Changes the cruise rate of a run in flight.
  *
- * What an unbounded run is for. Restarting the run to change speed would put a
- * stop and a start into the motion.
+ * For unbounded runs, to avoid a stop and a start when changing speed.
  *
- * Unlike tmc2209_move(), a rate below pullin_pps is accepted. Pull-in bounds
- * starting and stopping, not running: a motor already turning can be ramped
- * anywhere below it.
+ * Accepts rates below pullin_pps, down to the backend's min_pps. Pull-in only
+ * bounds starting and stopping.
  *
  * @param dev         device with a run in flight
  * @param cruise_pps  new rate to ramp to, at the run's original accel
  *
  * @retval TMC2209_OK
  * @retval TMC2209_ERR_ARG         null device
- * @retval TMC2209_ERR_RATE        zero, or above the backend's max_pps
+ * @retval TMC2209_ERR_RATE        zero, above the backend's max_pps, or below
+ *                                 its min_pps
  * @retval TMC2209_ERR_NO_BACKEND  no stepgen attached
  * @retval TMC2209_ERR_IDLE        nothing is running
  * @retval TMC2209_ERR_IO          the backend failed
@@ -612,14 +529,12 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps);
 /**
  * @brief Ends the run.
  *
- * Not an emergency stop. @p immediate still finishes the pulse in progress, and
- * the ramped form keeps stepping all the way down to pullin_pps. Anything
- * genuinely urgent drops the power stage with tmc2209_enable(), which is
- * synchronous and needs no peripheral to cooperate.
+ * @p immediate may cut the pulse in progress, so the count can be one off. The
+ * ramped form steps down to pullin_pps, or stops at once from a rate below it.
+ * For an emergency, drop the power stage with tmc2209_enable().
  *
- * The count is not collected here, because a ramped halt is still moving when
- * this returns and its final total is not known yet.
- * tmc2209_motion_report() is what collects it.
+ * Does not collect the count, since a ramped halt is still moving when this
+ * returns. tmc2209_motion_report() collects it.
  *
  * Halting an idle driver succeeds and does nothing.
  *
@@ -636,14 +551,10 @@ tmc2209_err_t tmc2209_halt(tmc2209_t *dev, bool immediate);
 /**
  * @brief Collects the run's pulse count, rate, and whether it is still going.
  *
- * Reaches the stepgen backend and nothing else.
+ * The backend holds one run's count, so the next move overwrites it.
  *
- * A backend holds one run's count, so this is the only chance to read a total
- * before the next move overwrites it. Nothing enforces that: a caller that
- * starts another move without asking loses the previous run's count.
- *
- * The count is pulses emitted, not steps taken. They agree while the motor
- * stays in sync.
+ * The count is pulses emitted. It matches steps taken while the motor stays in
+ * sync.
  *
  * @param dev  device
  * @param out  the run's count, rate and state
@@ -663,9 +574,8 @@ bool tmc2209_all_owned_valid(const tmc2209_t *dev);
 /**
  * @brief Invalidates every owned slot.
  *
- * Constant slots survive, since a brownout does not change the factory trim.
- * Callers that write through tmc2209_uart_send() must call this: a datagram the
- * library did not build is one it cannot account for.
+ * Constant slots survive. Callers that write through tmc2209_uart_send() must
+ * call this, since the library cannot account for a datagram it did not build.
  */
 void tmc2209_invalidate_owned(tmc2209_t *dev);
 
@@ -674,18 +584,10 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
 /**
  * @brief Sends raw bytes and optionally collects a fixed-length reply.
  *
- * Bytes in, bytes out, no interpretation. The caller framed the datagram, so
- * this keeps the lock and the echo discipline and skips framing and the cache
- * entirely.
+ * Keeps the lock and the echo check, and skips framing and the cache. The reply
+ * is not judged: a bad CRC or the wrong register comes back as bytes.
  *
- * Nothing about the reply is judged. A wrong CRC, a reply for a register that
- * was not asked about, and outright nonsense all come back as bytes, because
- * the caller here is diagnosing the driver and an opinion from this library
- * would be another thing under suspicion.
- *
- * Short replies are reported rather than discarded. @p rx_got says how many
- * bytes arrived, which separates nothing at all from something incomplete and
- * is what makes the bytes that did arrive safe to look at.
+ * Short replies are kept, and @p rx_got says how many bytes arrived.
  *
  * @param uart    channel to drive; no device state is consulted or updated
  * @param tx      bytes to send, 1..32
@@ -703,9 +605,8 @@ void tmc2209_invalidate_owned(tmc2209_t *dev);
  * @retval TMC2209_ERR_RX_TIMEOUT  fewer than @p rx_len bytes came back.
  *                                 @p rx_got says how many did
  * @retval TMC2209_ERR_IO          the backend failed for its own reasons
- * @retval TMC2209_ERR_ECHO        what came back is not what was sent, altered
- *                                 or short. The reply is still collected, so
- *                                 @p rx_got and @p rx remain worth reading
+ * @retval TMC2209_ERR_ECHO        the echo was altered or short. The reply is
+ *                                 still collected
  */
 tmc2209_err_t tmc2209_uart_send(const tmc2209_uart_t *uart, const uint8_t *tx, size_t tx_len,
                                 uint8_t *rx, size_t rx_len, size_t *rx_got);

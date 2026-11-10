@@ -1,12 +1,9 @@
 /*
- * tmc2209_stepgen.c: what a pulse source is not allowed to assume.
+ * tmc2209_stepgen.c: what a pulse source cannot know.
  *
- * A backend emits edges and counts them. It cannot know what has to hold for
- * those edges to turn the motor: DIR carrying the planned sign, GCONF.shaft
- * agreeing with it, VACTUAL at zero so the STEP pin still owns motion. Those
- * are settled here, before any backend is asked to run. The rest is refusal:
- * an impossible ramp, a rate past the backend's ceiling, or a second run over
- * one already in flight gets no further than this layer.
+ * A backend emits edges and counts them. DIR, GCONF.shaft and a zero VACTUAL
+ * are settled here before a backend runs, and an impossible ramp, a rate out of
+ * range or a second run is refused here.
  */
 
 #include "tmc2209_stepgen.h"
@@ -35,7 +32,7 @@ static tmc2209_err_t poll_run_state(const tmc2209_t *dev, tmc2209_run_state_t *s
     /* A backend that fills only part of this then reads as zeros, not as stack. */
     st->emitted  = 0;
     st->rate_pps = 0;
-    st->running  = false;
+    st->pulsing  = false;
     return (dev->stepgen->state(dev->stepgen->ctx, st) < 0) ? TMC2209_ERR_IO : TMC2209_OK;
 }
 
@@ -84,7 +81,7 @@ static tmc2209_err_t check_profile(const tmc2209_stepgen_t *sg, const tmc2209_mo
     if (m->accel_pps_s == 0 && m->cruise_pps != m->pullin_pps) {
         return TMC2209_ERR_ARG;  /* a ramp is needed and none was allowed */
     }
-    if (m->cruise_pps > sg->max_pps || m->pullin_pps > sg->max_pps) {
+    if (m->cruise_pps > sg->max_pps || m->pullin_pps > sg->max_pps || m->pullin_pps < sg->min_pps) {
         return TMC2209_ERR_RATE;
     }
     return TMC2209_OK;
@@ -102,7 +99,7 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
         if (!stepgen->run || !stepgen->retarget || !stepgen->halt || !stepgen->state) {
             return TMC2209_ERR_ARG;
         }
-        if (stepgen->max_pps == 0) {
+        if (stepgen->max_pps == 0 || stepgen->min_pps > stepgen->max_pps) {
             return TMC2209_ERR_ARG;  /* a pulse source that cannot pulse */
         }
         /* The width is a driver's requirement */
@@ -111,15 +108,14 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
         }
     }
 
-    /* Swapping the pulse source out from under a run in flight would strand the
-       count in a backend nothing points at any more. */
+    /* Refused, to avoid stranding the count in a backend nothing points at. */
     if (dev->stepgen) {
         tmc2209_run_state_t st;
         tmc2209_err_t       err = poll_run_state(dev, &st);
         if (err != TMC2209_OK) {
             return err;
         }
-        if (st.running) {
+        if (st.pulsing) {
             return TMC2209_ERR_BUSY;
         }
     }
@@ -128,15 +124,15 @@ tmc2209_err_t tmc2209_attach_stepgen(tmc2209_t *dev, const tmc2209_stepgen_t *st
     return TMC2209_OK;
 }
 
-tmc2209_err_t tmc2209_is_running(const tmc2209_t *dev, bool *running)
+tmc2209_err_t tmc2209_is_pulsing(const tmc2209_t *dev, bool *pulsing)
 {
-    if (!running) {
+    if (!pulsing) {
         return TMC2209_ERR_ARG;
     }
     tmc2209_run_state_t st;
     tmc2209_err_t       err = poll_run_state(dev, &st);
     if (err == TMC2209_OK) {
-        *running = st.running;
+        *pulsing = st.pulsing;
     }
     return err;
 }
@@ -162,8 +158,18 @@ tmc2209_err_t tmc2209_move(tmc2209_t *dev, const tmc2209_movement_plan_t *m)
     if (err != TMC2209_OK) {
         return err;
     }
-    if (st.running) {
+    if (st.pulsing) {
         return TMC2209_ERR_BUSY;
+    }
+
+    /* Avoids moving a driver that reset since bring-up */
+    uint32_t conditions = 0;
+    err                 = tmc2209_poll_health(dev, &conditions);
+    if (err != TMC2209_OK) {
+        return err;
+    }
+    if (!tmc2209_all_owned_valid(dev)) {
+        return TMC2209_ERR_INVALID_SLOT;
     }
 
     err = ensure_shaft(dev, m->shaft);
@@ -205,7 +211,8 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps)
     if (err != TMC2209_OK) {
         return err;
     }
-    if (cruise_pps == 0 || cruise_pps > dev->stepgen->max_pps) {
+    if (cruise_pps == 0 || cruise_pps > dev->stepgen->max_pps ||
+        cruise_pps < dev->stepgen->min_pps) {
         return TMC2209_ERR_RATE;
     }
 
@@ -214,7 +221,7 @@ tmc2209_err_t tmc2209_retarget(tmc2209_t *dev, uint32_t cruise_pps)
     if (err != TMC2209_OK) {
         return err;
     }
-    if (!st.running) {
+    if (!st.pulsing) {
         return TMC2209_ERR_IDLE;
     }
 
@@ -247,7 +254,7 @@ tmc2209_err_t tmc2209_motion_report(tmc2209_t *dev, tmc2209_motion_report_t *out
 
     out->emitted  = st.emitted;
     out->rate_pps = st.rate_pps;
-    out->running  = st.running;
+    out->pulsing  = st.pulsing;
     out->dir      = dev->run_dir;
     out->shaft    = dev->run_shaft;
     return TMC2209_OK;

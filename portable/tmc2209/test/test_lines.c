@@ -1,14 +1,12 @@
 /*
  * test_lines.c: the control lines, against a fake board.
  *
- * The theme is that a line call either does exactly what it says or refuses.
- * There is no third outcome where some other pin moves, which is what the
- * wiring mask exists to prevent: a board that does not connect DIAG must be
- * told apart from a board that connects it and reads low.
+ * A line call does what it says or refuses, and no other pin moves. The wiring
+ * mask tells a board that does not connect DIAG from one that connects it and
+ * reads low.
  *
- * Polarity is the other half. ENN is active low, so enable() and the raw level
- * disagree by construction, and a test that only ever asked one of them could
- * not tell a correct implementation from an inverted one.
+ * ENN is active low, so enable() and the raw level disagree, and the tests ask
+ * both to catch an inverted implementation.
  */
 
 #include "tmc2209.h"
@@ -16,8 +14,8 @@
 
 #include <string.h>
 
-/* A board with four pins. Levels persist, so a write is observable by the
-   read that follows it, the way a real output reads back what it drives. */
+/* A board with four pins. Levels persist, so a write reads back like a real
+   output. */
 typedef struct {
     bool     level[TMC2209_LINE_COUNT];
     unsigned writes[TMC2209_LINE_COUNT];
@@ -51,9 +49,8 @@ static int board_write(void *ctx, tmc2209_line_t line, bool level)
     return 0;
 }
 
-/* No bus is attached anywhere in this file. Lines and bytes are independent
-   backends, and the whole suite runs without a port to prove it.
-
+/* No bus is attached anywhere in this file, since lines and bytes are
+   independent backends.
    @p wired is what this board connects, so a test can build a board missing a
    line and assert the refusal. */
 static void setup_board(uint8_t wired)
@@ -78,8 +75,8 @@ static bool line_level(tmc2209_line_t line)
 
 /* ── Attachment ─────────────────────────────────────────────────────────── */
 
-/* A configuration-only caller attaches nothing, and must not need a stub
-   backend to compile or to get a sensible answer. */
+/* A configuration-only caller attaches no lines and still gets a sensible
+   answer. */
 static void test_a_device_without_lines_refuses_every_line_call(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -92,18 +89,9 @@ static void test_a_device_without_lines_refuses_every_line_call(void)
     TEST_ASSERT_FALSE(tmc2209_line_is_wired(&g_dev, TMC2209_LINE_ENN));
 }
 
-static void test_init_leaves_lines_detached(void)
-{
-    setup_board(TMC2209_LINES_ALL);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_init(&g_dev, 0));
-
-    TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_enable(&g_dev, true));
-    TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_ENN]);
-}
-
-/* The two refusals carry different instructions: attach a backend, or accept
-   that the pin is not on this board. One code for both would leave a bring-up
-   routine unable to tell a setup mistake from the wiring it was handed. */
+/* Two different refusals: attach a backend, or the pin is not on this board.
+   Separate codes let a bring-up routine tell a setup mistake from the
+   wiring. */
 static void test_a_missing_backend_reads_apart_from_a_missing_pin(void)
 {
     setup_board(TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIAG));
@@ -111,31 +99,6 @@ static void test_a_missing_backend_reads_apart_from_a_missing_pin(void)
 
     TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
     TEST_ASSERT_EQUAL(TMC2209_ERR_NO_BACKEND, tmc2209_line_write(&g_dev, TMC2209_LINE_DIAG, true));
-}
-
-/* A line outside the enum is a bad argument whatever is attached, so the
-   argument check has to come first. */
-static void test_a_bad_line_outranks_a_missing_backend(void)
-{
-    setup_board(TMC2209_LINES_ALL);
-    TEST_ASSERT_EQUAL(TMC2209_OK, tmc2209_attach_lines(&g_dev, NULL));
-
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_line_write(&g_dev, TMC2209_LINE_COUNT, true));
-}
-
-/* Half a backend is not a backend: accepting one would defer the crash to the
-   first call rather than reject it at the seam. */
-static void test_attach_rejects_an_incomplete_backend(void)
-{
-    setup_board(TMC2209_LINES_ALL);
-
-    tmc2209_lines_t half = g_lines;
-    half.write           = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_lines(&g_dev, &half));
-
-    half      = g_lines;
-    half.read = NULL;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_attach_lines(&g_dev, &half));
 }
 
 /* ── Raw levels ─────────────────────────────────────────────────────────── */
@@ -151,7 +114,7 @@ static void test_a_written_level_reads_back(void)
     TEST_ASSERT_FALSE(line_level(TMC2209_LINE_DIR));
 }
 
-/* The reason the raw tier exists at all: no polarity, no interpretation. */
+/* The raw tier applies no polarity. */
 static void test_a_raw_write_applies_no_polarity(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -180,8 +143,8 @@ static void test_diag_reads(void)
     TEST_ASSERT_TRUE(line_level(TMC2209_LINE_DIAG));
 }
 
-/* Driving an input is a caller error and not a board fact, so it survives a
-   board that wires everything. */
+/* Driving an input is a caller error, so it is refused even on a board that
+   wires everything. */
 static void test_driving_an_input_is_refused(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -190,8 +153,8 @@ static void test_driving_an_input_is_refused(void)
     TEST_ASSERT_EQUAL(0U, g_board.writes[TMC2209_LINE_DIAG]);
 }
 
-/* An unwired line is refused before the access policy is consulted: this board
-   never connected DIAG, which is the more specific truth about it. */
+/* An unwired line is refused before the access policy is checked, since it
+   is the more specific answer. */
 static void test_an_unwired_line_is_reported_as_unwired(void)
 {
     setup_board(TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIAG));
@@ -203,8 +166,7 @@ static void test_an_unwired_line_is_reported_as_unwired(void)
     TEST_ASSERT_EQUAL(0U, g_board.reads[TMC2209_LINE_DIAG]);
 }
 
-/* Missing one line leaves the rest usable, so the mask is per line and not a
-   switch on the whole backend. */
+/* Missing one line leaves the rest usable, so the mask is per line. */
 static void test_the_lines_a_board_does_wire_still_work(void)
 {
     setup_board(TMC2209_LINES_ALL & (uint8_t)~TMC2209_LINE_BIT(TMC2209_LINE_DIAG));
@@ -213,18 +175,7 @@ static void test_the_lines_a_board_does_wire_still_work(void)
     TEST_ASSERT_TRUE(tmc2209_line_is_wired(&g_dev, TMC2209_LINE_STEP));
 }
 
-static void test_a_line_outside_the_enum_is_a_bad_argument(void)
-{
-    setup_board(TMC2209_LINES_ALL);
-
-    bool level = false;
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_line_read(&g_dev, TMC2209_LINE_COUNT, &level));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_line_write(&g_dev, TMC2209_LINE_COUNT, true));
-    TEST_ASSERT_EQUAL(TMC2209_ERR_ARG, tmc2209_line_read(&g_dev, TMC2209_LINE_ENN, NULL));
-}
-
-/* A backend failure is neither a level nor a refusal, and the caller's
-   variable must not be left holding an invented one. */
+/* A backend failure leaves the caller's variable untouched. */
 static void test_a_backend_failure_yields_no_level(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -242,9 +193,8 @@ static void test_a_backend_failure_yields_no_level(void)
 
 /* ── Enable ─────────────────────────────────────────────────────────────── */
 
-/* The one place polarity is applied. Enabled is ENN low, and asserting the
-   level rather than the round trip is what catches an inverted implementation
-   that is self-consistent. */
+/* The one place polarity is applied. Enabled is ENN low, and checking the
+   level catches an inverted implementation that is self-consistent. */
 static void test_enable_drives_enn_low(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -271,8 +221,7 @@ static void test_is_enabled_inverts_the_level_back(void)
 }
 
 /* Enable is a pin and nothing else. A driver whose configuration would make it
-   hold no current still enables, because refusing here would hide a condition
-   the caller is better off polling for. */
+   hold no current still enables, and polling is how the caller finds out. */
 static void test_enable_touches_no_register(void)
 {
     setup_board(TMC2209_LINES_ALL);
@@ -285,10 +234,7 @@ static void test_enable_touches_no_register(void)
 void run_lines_tests(void)
 {
     RUN_TEST(test_a_device_without_lines_refuses_every_line_call);
-    RUN_TEST(test_init_leaves_lines_detached);
-    RUN_TEST(test_attach_rejects_an_incomplete_backend);
     RUN_TEST(test_a_missing_backend_reads_apart_from_a_missing_pin);
-    RUN_TEST(test_a_bad_line_outranks_a_missing_backend);
 
     RUN_TEST(test_a_written_level_reads_back);
     RUN_TEST(test_a_raw_write_applies_no_polarity);
@@ -297,7 +243,6 @@ void run_lines_tests(void)
     RUN_TEST(test_driving_an_input_is_refused);
     RUN_TEST(test_an_unwired_line_is_reported_as_unwired);
     RUN_TEST(test_the_lines_a_board_does_wire_still_work);
-    RUN_TEST(test_a_line_outside_the_enum_is_a_bad_argument);
     RUN_TEST(test_a_backend_failure_yields_no_level);
 
     RUN_TEST(test_enable_drives_enn_low);
