@@ -213,7 +213,7 @@ def identify(port: str, *, boot_timeout: float = BOOT_TIMEOUT) -> Verdict:
         ("backend", backend),
         ("version", running),
         ("idf", _text(reply.idf)),
-        ("reset reason", str(reply.reset_reason)),
+        ("reset reason", reply.reset_reason.name),
     )
 
     if not fw_api.compatible(backend, running):

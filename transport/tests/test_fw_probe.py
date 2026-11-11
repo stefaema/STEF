@@ -78,7 +78,7 @@ class Reply:
     """What `sys.version` answers, without a board to answer it."""
 
     def __init__(self, version=None, backend=None):
-        self.reset_reason = 1
+        self.reset_reason = fw_api.RpcReset.POWERON
         self.backend = fw_api.FW_API_BACKEND.encode() if backend is None else backend
         self.version = fw_api.FW_API_VERSION.encode() if version is None else version
         self.idf = b"v5.2"
