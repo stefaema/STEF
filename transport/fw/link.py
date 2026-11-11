@@ -41,10 +41,16 @@ class LinkClosed(LinkError):
 class FrameReader:
     """Owns the stream and the splitter, and hands each whole frame to a router."""
 
-    def __init__(self, stream: Any, route: Callable[[framing.Frame], None]) -> None:
-        """Take the stream to read and the router that every frame goes to."""
+    def __init__(
+        self,
+        stream: Any,
+        route: Callable[[framing.Frame], None],
+        lost: Callable[[], None],
+    ) -> None:
+        """Take the stream, the router every frame goes to, and what to call if the stream fails."""
         self._stream = stream
         self._route = route
+        self._lost = lost
         self._splitter = framing.FrameSplitter()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -81,6 +87,7 @@ class FrameReader:
                 waiting = getattr(self._stream, "in_waiting", 0)
                 data = self._stream.read(max(1, waiting))
             except Exception:
+                self._lost()
                 break
             if not data:
                 continue
@@ -200,17 +207,17 @@ class RequestBroker:
         self._thread.start()
 
     def stop(self) -> None:
-        """Refuse new work, fail what is queued, and let the thread finish."""
-        self._closed.set()
-        thread, self._thread = self._thread, None
-        if thread is not None:
-            self._jobs.put(_DONE)
-            thread.join(timeout=JOIN_TIMEOUT)
+        """Refuse new work, release and fail what is waiting, and let the thread finish."""
         with self._lock:
+            self._closed.set()
             waiting = list(self._pending.values())
             self._pending.clear()
         for pending in waiting:
             pending.event.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            self._jobs.put(_DONE)
+            thread.join(timeout=JOIN_TIMEOUT)
         while True:
             try:
                 job = self._jobs.get_nowait()
@@ -269,7 +276,7 @@ class RequestBroker:
         """Send one keepalive, waiting at most one interval for its reply."""
         with self._lock:
             every = self._renew_every
-            if every is None:
+            if every is None or self._closed.is_set():
                 self._renew_at = None
                 return
             self._renew_at = time.monotonic() + every
@@ -284,6 +291,8 @@ class RequestBroker:
     def _reserve(self) -> tuple[int, _Pending]:
         """Return a request id no reply is pending on, and the slot to wait at."""
         with self._lock:
+            if self._closed.is_set():
+                raise LinkClosed("the link closed")
             for _ in range(ID_MASK + 1):
                 request_id = next(self._ids) & ID_MASK
                 if request_id not in self._pending:
@@ -362,7 +371,7 @@ class FirmwareLink:
         self._stream = stream
         self._logs = LogForwarder(on_log)
         self._broker = RequestBroker(stream.write, timeout)
-        self._reader = FrameReader(stream, self._route)
+        self._reader = FrameReader(stream, self._route, self._broker.stop)
         self._namespaces = fw_api.attach(self._invoke)
 
         self._logs.start()

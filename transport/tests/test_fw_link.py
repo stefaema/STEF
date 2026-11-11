@@ -31,6 +31,7 @@ class FakeFirmware:
         self.answer = answer
         self.requests = []
         self.closed = False
+        self.failure: Exception | None = None
         self._out = bytearray()
         self._splitter = fw.framing.FrameSplitter()
         self._cv = threading.Condition()
@@ -51,6 +52,8 @@ class FakeFirmware:
         return len(data)
 
     def read(self, size):
+        if self.failure is not None:
+            raise self.failure
         with self._cv:
             if not self._out:
                 self._cv.wait(0.02)
@@ -276,6 +279,16 @@ def test_a_closed_link_refuses_new_calls():
     link.close()
     with pytest.raises(fw.link.LinkClosed):
         link.sys.state()
+
+
+def test_a_stream_that_fails_fails_the_waiting_call_at_once():
+    firmware, link = linked(timeout=5.0)
+    with link:
+        future = link._broker.submit(fw_api.RPC_NS_SYS, 0)
+        assert wait_until(lambda: firmware.requests)
+        firmware.failure = OSError("unplugged")
+        with pytest.raises(fw.link.LinkClosed):
+            future.result(timeout=TIMEOUT)
 
 
 def test_an_unknown_method_is_an_attribute_error():
