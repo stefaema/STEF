@@ -26,8 +26,8 @@ from shared.subsystem import (
 )
 
 SUMMARY_MAX_CHARS = 140
-DEVICE_HINT = "Which driver, by the name the board declares for it."
-REGISTER_HINT = "Which register to write, out of the ones the firmware owns."
+DEVICE_HINT = "The driver to use."
+REGISTER_HINT = "The register to write. Only registers the firmware owns are listed."
 
 # Bitfield decoders, for the registers that have fields.
 REGISTER_DECODERS = {
