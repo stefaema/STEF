@@ -110,7 +110,7 @@ def test_a_derived_form_keeps_the_shape_the_firmware_declared(client):
 def test_a_command_crosses_carrying_the_address_every_route_takes(client):
     write = command_named(transport_of(client), "raw.write")
     assert (write["group"], write["name"]) == ("raw", "write")
-    assert write["hazard"] == "overwrites driver registers"
+    assert write["hazard"] == "writes driver registers"
 
 
 def test_a_test_crosses_with_its_steps_and_its_end(client):

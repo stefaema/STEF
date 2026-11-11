@@ -29,7 +29,7 @@ SUMMARY_MAX_CHARS = 140
 DEVICE_HINT = "The driver to use."
 REGISTER_HINT = "The register to write. Only registers the firmware owns are listed."
 
-# Bitfield decoders, for the registers that have fields.
+# Decoders for the registers made of bitfields.
 REGISTER_DECODERS = {
     fw_api.TMC2209_GCONF: fw_api.tmc2209_gconf_decode,
     fw_api.TMC2209_GSTAT: fw_api.tmc2209_gstat_decode,
@@ -46,30 +46,30 @@ REGISTER_DECODERS = {
 }
 
 # Methods whose reply is always the same register.
-FIXED_REPLY_REGISTER = {"raw.poll_pins": fw_api.TMC2209_IOIN}
+REPLY_REGISTER_BY_METHOD = {"raw.poll_pins": fw_api.TMC2209_IOIN}
 
 # Methods whose reply is the register named in their `reg` argument.
-ASKED_REPLY_REGISTER = {"raw.read", "raw.poll_raw"}
+REPLY_REGISTER_IN_ARGS = {"raw.read", "raw.poll_raw"}
 
-# relay takes hand-built datagrams, and raw already covers what it would reach.
+# relay sends hand-built datagrams. Everything an operator needs is in raw.
 SKIPPED_NAMESPACES = ("relay",)
 
 HAZARDS = {
     "raw.move": "turns the shaft",
-    "raw.retarget": "changes how far a running move goes",
-    "raw.set_velocity": "turns the shaft from VACTUAL",
+    "raw.retarget": "changes the speed of a running move",
+    "raw.set_velocity": "turns the shaft until the velocity is set back to 0",
     "raw.set_current": "changes the coil current",
-    "raw.enable": "energises or releases the coils",
-    "raw.line_write": "drives a driver pin directly",
-    "raw.write": "overwrites driver registers",
-    "raw.clear_faults": "acknowledges latched driver faults",
-    "raw.invalidate_owned": "forgets the registers the firmware owns",
-    "raw.bringup": "rewrites every owned register",
+    "raw.enable": "switches the power stage on or off",
+    "raw.line_write": "drives a pin with no checks",
+    "raw.write": "writes driver registers",
+    "raw.clear_faults": "stops reporting latched faults",
+    "raw.invalidate_owned": "marks the register cache invalid",
+    "raw.bringup": "writes the whole driver configuration",
 }
 
 
 def driver_options(sub: Any) -> tuple[Option, ...]:
-    """Return the board's drivers by index and name, or none while the link is down."""
+    """Return the board's drivers as options, or none when the board cannot be asked."""
     if sub is None or sub.link_state() is not LinkState.UP:
         return ()
     try:
@@ -83,7 +83,7 @@ def driver_options(sub: Any) -> tuple[Option, ...]:
 
 
 def owned_register_options() -> tuple[Option, ...]:
-    """Return the registers `tmc2209_write` accepts, which are the ones the firmware owns."""
+    """Return the registers the firmware owns as options."""
     return tuple(
         Option(int(reg), reg.name.removeprefix("TMC2209_"))
         for reg in fw_api.Tmc2209Reg
@@ -138,15 +138,15 @@ def reply_result(name: str, reply: Any, layout: Any, register: Any) -> Result:
 
 def reply_register(name: str, values: dict[str, Any]) -> Any | None:
     """Return the register a method's reply holds, or None when it holds none."""
-    if name in ASKED_REPLY_REGISTER:
+    if name in REPLY_REGISTER_IN_ARGS:
         return values.get("reg")
-    return FIXED_REPLY_REGISTER.get(name)
+    return REPLY_REGISTER_BY_METHOD.get(name)
 
 
 def _register_fields(
     reply: Any, register: Any
 ) -> tuple[tuple[tuple[str, str], ...], str | None]:
-    """Return a register reply as its decoded fields, and a note giving the raw word."""
+    """Return a register reply as its decoded fields, with the raw word as a note."""
     label = _register_name(register)
     if label is None:
         return (), None
@@ -158,7 +158,7 @@ def _register_fields(
     if decoder is None:
         return ((label, _field_text(raw)),), None
 
-    note = f"{label} 0x{raw:08x}, decoded with the firmware's codec"
+    note = f"{label} = 0x{raw:08x}"
     decoded = decoder(raw)
     members = getattr(type(decoded), "_fields_", None)
     if members is None:
@@ -193,7 +193,7 @@ def _char_fields(layout: Any) -> frozenset[str]:
 
 
 def _flex_char_fields(layout: Any, field: str) -> frozenset[str]:
-    """Return the `char` fields of the records in `field`, when it is the struct's flexible array."""
+    """Return the `char` fields of the records in `field`, if it is a flexible array member."""
     flex = fw_api.FLEX.get(layout) if layout is not None else None
     if flex is None or flex.field != field:
         return frozenset()
@@ -271,7 +271,7 @@ def _command_call(spec: fw_api.MethodSpec) -> Callable[[Any, dict[str, Any]], Re
 
 def _command_inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
     """Return a method's form, with `idx` as a driver choice and `ops` limited to owned registers."""
-    override = {
+    overrides = {
         "idx": choice("idx", driver_options, hint=DEVICE_HINT),
         "ops": group(
             "ops",
@@ -282,20 +282,20 @@ def _command_inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
         ),
     }
     derived = inputs_for(spec.args)
-    named = {name: item for name, item in override.items() if name in spec.fields}
-    return overridden(derived, named)
+    applicable = {k: item for k, item in overrides.items() if k in spec.fields}
+    return overridden(derived, applicable)
 
 
 def _commands() -> tuple[Command, ...]:
-    """Return one command per method, outside SKIPPED_NAMESPACES."""
-    made = []
+    """Return one command per method, except those in SKIPPED_NAMESPACES."""
+    commands = []
     for namespace, methods in fw_api.namespaces().items():
         if namespace in SKIPPED_NAMESPACES:
             continue
         for spec in methods.values():
             group_name, _, name = spec.name.partition(".")
             summary, body = summary_and_body(spec.doc or "")
-            made.append(
+            commands.append(
                 Command(
                     group=group_name,
                     name=name,
@@ -306,7 +306,7 @@ def _commands() -> tuple[Command, ...]:
                     hazard=HAZARDS.get(spec.name),
                 )
             )
-    return tuple(made)
+    return tuple(commands)
 
 
 COMMANDS = _commands()
