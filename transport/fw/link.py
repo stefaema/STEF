@@ -105,8 +105,8 @@ class LogForwarder:
         self._thread: threading.Thread | None = None
         self.dropped = 0
 
-    def offer(self, record: framing.LogRecord) -> None:
-        """Hand over a record without ever blocking, dropping the oldest if full."""
+    def enqueue(self, record: framing.LogRecord) -> None:
+        """Queue a record without blocking, dropping the oldest when the queue is full."""
         if self._sink is None:
             return
         while True:
@@ -420,7 +420,7 @@ class FirmwareLink:
     def _route(self, frame: framing.Frame) -> None:
         """Send a log frame to the forwarder and a reply to the broker."""
         if frame.type == fw_api.RPC_FRAME_LOG:
-            self._logs.offer(framing.log_record(frame))
+            self._logs.enqueue(framing.log_record(frame))
         elif frame.type == fw_api.RPC_FRAME_REP:
             self._broker.settle(frame)
         else:
