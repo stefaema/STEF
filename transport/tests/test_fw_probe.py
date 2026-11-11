@@ -91,7 +91,7 @@ def answering(monkeypatch, attached):
     def speak(reply):
         attached(port("/dev/ttyACM0", 0x303A))
 
-        def ask(_port, _grace):
+        def ask(_port, _boot_timeout):
             if isinstance(reply, Exception):
                 raise reply
             return reply

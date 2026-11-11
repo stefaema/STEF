@@ -25,7 +25,7 @@ BRIDGE_VIDS = {
 }
 
 PROBE_TIMEOUT = 0.6
-BOOT_GRACE = 2.5
+BOOT_TIMEOUT = 2.5
 
 
 class Silicon(enum.Enum):
@@ -102,9 +102,9 @@ def find_port(port: str | None = None) -> str:
     if port is not None:
         if attached(port) is not None:
             return port
-        seen = ", ".join(shortlist) or "none"
+        plausible = ", ".join(shortlist) or "none"
         raise link.LinkError(
-            f"nothing is attached on {port}; ports that could carry a board: {seen}"
+            f"nothing is attached on {port}; ports that could carry a board: {plausible}"
         )
     if not shortlist:
         raise link.LinkError("no port that could carry a board is attached")
@@ -154,14 +154,14 @@ def _text(raw: Any) -> str:
     return str(raw)
 
 
-def _ask(port: str, grace: float) -> Any:
-    """Return the `sys.version` reply, retrying on timeout until `grace` runs out.
+def _ask(port: str, boot_timeout: float) -> Any:
+    """Return the `sys.version` reply, retrying on timeout until `boot_timeout` runs out.
 
     Opening the port toggles DTR and RTS, which resets most development boards,
     so the first requests can reach a chip that is still booting.
     """
     with link.FirmwareLink(port, timeout=PROBE_TIMEOUT) as opened:
-        deadline = time.monotonic() + grace
+        deadline = time.monotonic() + boot_timeout
         while True:
             try:
                 return opened.sys.version()
@@ -170,46 +170,46 @@ def _ask(port: str, grace: float) -> Any:
                     raise
 
 
-def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
+def identify(port: str, *, boot_timeout: float = BOOT_TIMEOUT) -> Verdict:
     """Return what is on this port, asking only the running app.
 
     The board is usable when its backend and version are compatible with this
     build's `fw_api`.
     """
-    seen = attached(port)
-    if seen is None:
+    candidate = attached(port)
+    if candidate is None:
         return Verdict(Finding.ABSENT, port, f"nothing is attached on {port} any more")
 
     descriptor = (
-        (f"{seen.vidpid} {seen.description}").strip()
-        if seen.vid is not None
-        else seen.description
+        (f"{candidate.vidpid} {candidate.description}").strip()
+        if candidate.vid is not None
+        else candidate.description
     )
-    common = (("port", port), ("usb", descriptor))
+    port_fields = (("port", port), ("usb", descriptor))
 
     try:
-        reply = _ask(port, grace)
+        reply = _ask(port, boot_timeout)
     except link.LinkTimeout:
         return Verdict(
             Finding.SILENT,
             port,
-            _silence(port, seen.silicon),
-            common,
-            silicon=seen.silicon,
+            _silence(port, candidate.silicon),
+            port_fields,
+            silicon=candidate.silicon,
         )
     except Exception as exc:
         return Verdict(
             Finding.ABSENT,
             port,
             f"{port} would not open: {type(exc).__name__}: {exc}",
-            common,
-            silicon=seen.silicon,
+            port_fields,
+            silicon=candidate.silicon,
         )
 
     running = _text(reply.version)
     backend = _text(reply.backend)
     fields = (
-        *common,
+        *port_fields,
         ("backend", backend),
         ("version", running),
         ("idf", _text(reply.idf)),
@@ -225,7 +225,7 @@ def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
             f"unusable. Flash it",
             fields,
             running,
-            seen.silicon,
+            candidate.silicon,
         )
 
     return Verdict(
@@ -234,7 +234,7 @@ def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
         f"{backend} {running} is answering on {port}",
         fields,
         running,
-        seen.silicon,
+        candidate.silicon,
     )
 
 
