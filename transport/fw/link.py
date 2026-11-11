@@ -1,4 +1,4 @@
-"""A firmware on the other end of a port, assembled from four collaborators."""
+"""A serial link to the firmware, serving each `fw_api` namespace as Python calls."""
 
 import itertools
 import queue
@@ -52,7 +52,7 @@ class FrameReader:
 
     @property
     def dropped(self) -> int:
-        """Return how many runs exceeded the bound, so delimiters had gone missing."""
+        """Return how many runs exceeded the frame bound, a sign of a lost delimiter."""
         return self._splitter.dropped
 
     @property
@@ -96,7 +96,7 @@ class FrameReader:
 
 
 class LogForwarder:
-    """Carries log records to a sink on its own thread, never on the reader's."""
+    """Hands log records to a sink from its own thread, so a slow sink cannot stall the reader."""
 
     def __init__(self, sink: Any = None, depth: int = LOG_DEPTH) -> None:
         """Take the sink each record goes to, and how many may wait for it."""
@@ -135,7 +135,7 @@ class LogForwarder:
             thread.join(timeout=JOIN_TIMEOUT)
 
     def _loop(self) -> None:
-        """Take records one at a time, letting a bad sink hurt nothing but itself."""
+        """Pass each record to the sink, counting those it raises on as dropped."""
         while True:
             record = self._queue.get()
             if record is _DONE:
@@ -350,7 +350,7 @@ class FirmwareLink:
         timeout: float = DEFAULT_TIMEOUT,
         on_log: Any = None,
     ) -> None:
-        """Open the port, or take a stream, and start serving calls either way."""
+        """Open the port or take the stream, then start the threads."""
         self._namespaces: dict[str, fw_api.Namespace] = {}
         if (port is None) == (stream is None):
             raise LinkError("name a port or pass a stream, not both and not neither")
@@ -370,7 +370,7 @@ class FirmwareLink:
         self._reader.start()
 
     def __getattr__(self, name: str) -> fw_api.Namespace:
-        """Return the named namespace, or say this build serves none by that name."""
+        """Return the namespace by that name, or raise AttributeError."""
         namespace = self.__dict__.get("_namespaces", {}).get(name)
         if namespace is None:
             raise AttributeError(name)
@@ -400,7 +400,7 @@ class FirmwareLink:
 
     @property
     def dropped(self) -> int:
-        """Return how much was discarded: oversized runs, and logs nobody took."""
+        """Return the oversized runs plus the logs dropped before reaching the sink."""
         return self._reader.dropped + self._logs.dropped
 
     @property
@@ -418,7 +418,7 @@ class FirmwareLink:
             pass
 
     def _route(self, frame: framing.Frame) -> None:
-        """Send one frame to whichever collaborator it belongs to."""
+        """Send a log frame to the forwarder and a reply to the broker."""
         if frame.type == fw_api.RPC_FRAME_LOG:
             self._logs.offer(framing.log_record(frame))
         elif frame.type == fw_api.RPC_FRAME_REP:

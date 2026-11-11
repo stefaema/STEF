@@ -47,7 +47,7 @@ class LogRecord(NamedTuple):
 
 
 class FrameSplitter:
-    """Turns a stream of bytes into whole frames, and resyncs after a bad one."""
+    """Splits a byte stream into frames and resyncs after an oversized run."""
 
     def __init__(self, limit: int = MAX_ENCODED) -> None:
         """Start with an empty run and no frame to resync past."""
@@ -76,11 +76,11 @@ class FrameSplitter:
         return runs
 
 
-# ── The codec, which is the firmware's own ───────────────────────────────────
+# ── The codec, from the firmware's library ──────────────────────────────────
 
 
 def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes:
-    """Return a request frame, header and CRC put on by the firmware's own code."""
+    """Return a request frame with its header and CRC, sealed by `rpc_frame_seal_req`."""
     if len(payload) > fw_api.RPC_MAX_PAYLOAD:
         raise FramingError(f"payload of {len(payload)} bytes exceeds the frame")
     buf = fw_api.rpc_buf_t()
@@ -93,14 +93,14 @@ def seal_request(request_id: int, ns: int, method: int, payload: bytes) -> bytes
 
 
 def seal_keepalive(request_id: int) -> bytes:
-    """Return a keepalive frame, sealed by the firmware's own code."""
+    """Return a keepalive frame, sealed by `rpc_frame_seal_keepalive`."""
     buf = fw_api.rpc_buf_t()
     length = fw_api.rpc_frame_seal_keepalive(buf, request_id)
     return bytes(buf.bytes[:length])
 
 
 def encode(frame: bytes) -> bytes:
-    """Return the frame as bytes with no zero in them, between two delimiters."""
+    """Return the frame COBS-encoded between two delimiters."""
     src = (ctypes.c_uint8 * len(frame)).from_buffer_copy(frame)
     capacity = cobs_encoded_max(len(frame))
     dst = (ctypes.c_uint8 * capacity)()

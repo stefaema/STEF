@@ -1,11 +1,9 @@
-"""Who is on a port, asked without disturbing whoever it is.
+"""What is on a serial port, found without resetting the board.
 
-A USB descriptor names the chip bridging to a UART, never what is on the far
-side of that UART, so it can nominate a port and never prove one. Proof comes
-from talking. This module does the two questions that cost nothing to ask: what
-the descriptor says, and whether our firmware answers. Telling a bare ESP32
-apart from something else entirely needs the ROM bootloader, which resets the
-board, so it lives in `transport.bench.rom` and not here.
+The USB descriptor names the chip bridging USB to UART, so it only shortlists
+ports. Asking `sys.version` identifies our firmware. Identifying a bare ESP32
+needs the ROM bootloader, which resets the board, so that is in
+`transport.bench.rom`.
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ BOOT_GRACE = 2.5
 
 
 class Silicon(enum.Enum):
-    """How much the descriptor alone settles."""
+    """What a port's USB vendor id says about it."""
 
     ESPRESSIF = "espressif"
     BRIDGE = "bridge"
@@ -40,7 +38,7 @@ class Silicon(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """One attached port, and what its descriptor is worth."""
+    """One attached port and its USB descriptor."""
 
     device: str
     vid: int | None
@@ -50,26 +48,26 @@ class Candidate:
 
     @property
     def plausible(self) -> bool:
-        """Whether this port is worth talking to at all."""
+        """Return whether the vendor id is Espressif or a known bridge."""
         return self.silicon is not Silicon.OTHER
 
     @property
     def vidpid(self) -> str:
-        """Return the identifier pair as it is written on a datasheet."""
+        """Return the vendor and product ids as `vvvv:pppp`."""
         if self.vid is None:
             return "?"
         return f"{self.vid:04x}:{self.pid or 0:04x}"
 
 
 def _silicon(vid: int | None) -> Silicon:
-    """Return what a vendor id settles, which for a bridge vendor is nothing."""
+    """Return the silicon class of a vendor id."""
     if vid == ESPRESSIF_VID:
         return Silicon.ESPRESSIF
     return Silicon.BRIDGE if vid in BRIDGE_VIDS else Silicon.OTHER
 
 
 def candidates() -> tuple[Candidate, ...]:
-    """Return every attached port, whether or not a board could be behind it."""
+    """Return every attached serial port."""
     from serial.tools import list_ports
 
     return tuple(
@@ -85,20 +83,20 @@ def candidates() -> tuple[Candidate, ...]:
 
 
 def plausible_ports() -> tuple[str, ...]:
-    """Return the ports a board might be on, which is a shortlist and not an answer."""
+    """Return the attached ports whose vendor id is Espressif or a known bridge."""
     return tuple(c.device for c in candidates() if c.plausible)
 
 
 def attached(port: str) -> Candidate | None:
-    """Return the named port as it is attached now, or None where it is not."""
+    """Return the named port if it is attached now, else None."""
     return next((c for c in candidates() if c.device == port), None)
 
 
 def find_port(port: str | None = None) -> str:
-    """Return the port to talk to: the named one if it is attached, or the only shortlisted one.
+    """Return the named port if it is attached, or else the only plausible one.
 
-    Either way the answer is checked against what is attached now, so a port that
-    has since gone is a refusal rather than a failure to open it.
+    Raises LinkError when the named port is gone, or when no port or several are
+    plausible.
     """
     shortlist = plausible_ports()
     if port is not None:
@@ -120,7 +118,7 @@ def find_port(port: str | None = None) -> str:
 
 
 class Finding(enum.Enum):
-    """What asking settled, ordered by how much of the stack answered."""
+    """What a probe found, ordered from most to least of the stack answering."""
 
     RUNNING = "running"
     INCOMPATIBLE = "incompatible"
@@ -129,13 +127,13 @@ class Finding(enum.Enum):
 
     @property
     def ok(self) -> bool:
-        """Whether this is a port the bench can go on to use."""
+        """Return whether the bench can use this port."""
         return self is Finding.RUNNING
 
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    """What one port turned out to be, in the words an operator reads."""
+    """What one port turned out to be, with a sentence for the operator."""
 
     finding: Finding
     port: str
@@ -145,7 +143,7 @@ class Verdict:
     silicon: Silicon = Silicon.OTHER
 
     def __bool__(self) -> bool:
-        """Return whether the port is usable, so a verdict reads like a check."""
+        """Return whether the port is usable."""
         return self.finding.ok
 
 
@@ -157,11 +155,10 @@ def _text(raw: Any) -> str:
 
 
 def _ask(port: str, grace: float) -> Any:
-    """Return what `sys.version` answers, retrying while the board may still be booting.
+    """Return the `sys.version` reply, retrying on timeout until `grace` runs out.
 
-    Opening the port toggles DTR and RTS, which is the auto-reset circuit on most
-    development boards, so the first request often reaches a chip that is still
-    coming up. Retrying is the difference between "no firmware" and "not yet".
+    Opening the port toggles DTR and RTS, which resets most development boards,
+    so the first requests can reach a chip that is still booting.
     """
     with link.FirmwareLink(port, timeout=PROBE_TIMEOUT) as opened:
         deadline = time.monotonic() + grace
@@ -174,11 +171,10 @@ def _ask(port: str, grace: float) -> Any:
 
 
 def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
-    """Return what is on this port, asking the app and never the bootloader.
+    """Return what is on this port, asking only the running app.
 
-    Nothing is passed in to judge against. What a board must report to be usable
-    is compiled into this build, so the only question is whether the far end
-    agrees with `fw_api`.
+    The board is usable when its backend and version are compatible with this
+    build's `fw_api`.
     """
     seen = attached(port)
     if seen is None:
@@ -243,7 +239,7 @@ def identify(port: str, *, grace: float = BOOT_GRACE) -> Verdict:
 
 
 def _silence(port: str, silicon: Silicon) -> str:
-    """Return what silence means, which is as far as the descriptor can narrow it."""
+    """Return the operator's sentence for a port that answers no RPC."""
     if silicon is Silicon.ESPRESSIF:
         return (
             f"Espressif silicon on {port} that answers no RPC. It has no working "

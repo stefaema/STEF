@@ -1,6 +1,4 @@
-"""
-This package contains the transport firmware interface. It has framing, image, link, logs and probe modules.
-"""
+"""The link to the firmware, its framing, the flashable images and the board's logs."""
 
 from transport.fw import framing, image, link, logs, probe
 

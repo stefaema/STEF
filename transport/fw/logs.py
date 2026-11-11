@@ -1,11 +1,11 @@
-"""The board's own log lines, in the shape everything else here writes."""
+"""Firmware log lines, written to the PC's log."""
 
 from __future__ import annotations
 
 from shared import logs
 from transport.fw import framing
 
-# The severity band `rpc_proto.h` fixes on the wire, as the names a sink knows.
+# Wire log levels from `rpc_proto.h`, as loguru level names.
 LEVELS = {
     0: "INFO",
     1: "ERROR",
@@ -20,12 +20,7 @@ log = logs.as_component("transport.firmware")
 
 
 def forward(record: framing.LogRecord) -> None:
-    """Write one firmware line, stamped when we received it and saying when it was said.
-
-    The board has no clock, only its own uptime, and a reset restarts it. So the
-    timestamp is honestly ours, the arrival, and the board's number rides in the
-    message where it can still be matched against a firmware-side trace.
-    """
+    """Log one firmware line at its arrival time, prefixed with the board's uptime."""
     log.log(
         LEVELS.get(record.level, UNKNOWN),
         "+{}ms {}",

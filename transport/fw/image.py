@@ -1,13 +1,8 @@
-"""The flashable images this machine has, and the one it is meant to run.
+"""The firmware releases installed on this machine, and which one to flash.
 
-A flash is not a file. An ESP-IDF board needs a bootloader, a partition table
-and an app, each written at its own offset, and only the build knows what those
-offsets were. So the unit here is a directory holding those binaries and one
-manifest saying where each goes, and the inventory is a directory of those.
-
-A machine holds one release at a time, because installing replaces rather than
-adds. Which of them a board ought to be running is not declared anywhere: it is
-whichever one `fw_api` says this build can talk to.
+A release is a directory holding the bootloader, the partition table and the
+app, with a manifest giving each file's flash offset. Installing replaces the
+previous release, so `auto` expects one release compatible with `fw_api`.
 """
 
 from __future__ import annotations
@@ -25,12 +20,12 @@ READ_CHUNK = 1 << 20
 
 
 class ImageError(Exception):
-    """An image that cannot be trusted to reach a board intact."""
+    """A release whose manifest or files cannot be used."""
 
 
 @dataclass(frozen=True, slots=True)
 class Binary:
-    """One file of a release, and the offset the build says it belongs at."""
+    """One file of a release and its flash offset."""
 
     offset: int
     path: Path
@@ -38,13 +33,13 @@ class Binary:
 
     @property
     def size(self) -> int:
-        """Return how many bytes will go on the wire for this one."""
+        """Return the file size in bytes."""
         return self.path.stat().st_size
 
 
 @dataclass(frozen=True, slots=True)
 class Release:
-    """One version's worth of binaries, and what the build knew about them."""
+    """One release: its binaries and the build settings from its manifest."""
 
     version: str
     backend: str
@@ -58,16 +53,16 @@ class Release:
 
     @property
     def total(self) -> int:
-        """Return how many bytes a whole flash writes."""
+        """Return the bytes a full flash writes."""
         return sum(b.size for b in self.binaries)
 
     def fits(self, chip: str) -> bool:
-        """Whether this release was built for the chip that answered."""
+        """Return whether this release was built for `chip`."""
         return chip.lower().replace("-", "") == self.chip.lower().replace("-", "")
 
 
 def _binary(directory: Path, entry: dict) -> Binary:
-    """Return one manifest entry as a binary, refusing one that is not there."""
+    """Return one manifest entry as a Binary, refusing one whose file is missing."""
     path = directory / entry["file"]
     if not path.is_file():
         raise ImageError(f"{directory.name} names {entry['file']}, which is missing")
@@ -77,7 +72,7 @@ def _binary(directory: Path, entry: dict) -> Binary:
 
 
 def read(directory: Path) -> Release:
-    """Return the release a directory holds, refusing one whose manifest disagrees with it."""
+    """Return the release in `directory`, refusing a missing or incomplete manifest."""
     manifest = directory / MANIFEST
     if not manifest.is_file():
         raise ImageError(f"{directory} carries no {MANIFEST}")
@@ -103,11 +98,7 @@ def read(directory: Path) -> Release:
 
 
 def installed() -> tuple[Release, ...]:
-    """Return every release on this machine, skipping directories that are not one.
-
-    A directory with no manifest is something an operator left there, not an
-    image, and refusing the whole inventory over it would be unhelpful.
-    """
+    """Return every release on this machine, skipping directories without a usable manifest."""
     root = paths.firmware_bins()
     if not root.is_dir():
         return ()
@@ -121,20 +112,20 @@ def installed() -> tuple[Release, ...]:
 
 
 def versions() -> tuple[str, ...]:
-    """Return the versions a form may offer, with the usable one standing for itself."""
+    """Return the choices a form offers: `auto` and every installed version."""
     return (AUTO, *(release.version for release in installed()))
 
 
-# ── The one this installation runs ───────────────────────────────────────────
+# ── Choosing the release ─────────────────────────────────────────────────────
 
 
 def usable() -> tuple[Release, ...]:
-    """Return the installed releases this build could talk to once one is flashed."""
+    """Return the installed releases compatible with this build's `fw_api`."""
     return tuple(r for r in installed() if fw_api.compatible(r.backend, r.version))
 
 
 def resolve(version: str = AUTO) -> Release:
-    """Return the release a form's choice names, `auto` meaning the one that fits."""
+    """Return the release named by `version`, where `auto` picks the one compatible release."""
     have = installed()
     if not have:
         raise ImageError(
@@ -161,16 +152,15 @@ def resolve(version: str = AUTO) -> Release:
     names = ", ".join(r.version for r in fit)
     raise ImageError(
         f"several installed releases speak {fw_api.FW_API_VERSION}, so 'auto' names "
-        f"nothing; installing replaces rather than adds, so remove the ones that do "
-        f"not belong here or choose: {names}"
+        f"nothing; remove the extra ones or choose: {names}"
     )
 
 
-# ── Whether what is on disk is what the build made ───────────────────────────
+# ── Checking the files against the manifest ──────────────────────────────────
 
 
 def digest(path: Path) -> str:
-    """Return one file's SHA-256, read in pieces so a large image costs no memory."""
+    """Return a file's SHA-256, read in chunks."""
     digested = hashlib.sha256()
     with path.open("rb") as handle:
         while chunk := handle.read(READ_CHUNK):
@@ -179,7 +169,7 @@ def digest(path: Path) -> str:
 
 
 def altered(release: Release) -> tuple[str, ...]:
-    """Return the names of the binaries that no longer hash to what the manifest says."""
+    """Return the names of the binaries whose hash differs from the manifest."""
     return tuple(
         b.path.name for b in release.binaries if digest(b.path) != b.sha256.lower()
     )
