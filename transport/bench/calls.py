@@ -1,13 +1,4 @@
-"""Every firmware method, declared as a routine, without writing any of them out.
-
-`fw_api` already generates one annotated dataclass per method from the firmware
-headers, and an annotated dataclass is exactly what a form derives from. Writing
-twenty-six declarations by hand would copy names and order that are already
-fixed elsewhere, and the copy would go stale the day a header changes.
-
-So the declarations are made in a loop, through the registrar the decorator is
-sugar over.
-"""
+"""One diagnostics command per firmware method, built from the dataclasses `fw_api` generates."""
 
 from __future__ import annotations
 
@@ -34,13 +25,12 @@ from shared.subsystem import (
     titled,
 )
 
-SUMMARY = 140
-DEVICE = "Which driver, by the name the board declares for it."
-REGISTER = "Which register to write, out of the ones the firmware owns."
+SUMMARY_MAX_CHARS = 140
+DEVICE_HINT = "Which driver, by the name the board declares for it."
+REGISTER_HINT = "Which register to write, out of the ones the firmware owns."
 
-# The codec that names one register's bits, for each register that has one. The
-# rest are plain scalars, where the number is already the answer.
-CODEC = {
+# Bitfield decoders, for the registers that have fields.
+REGISTER_DECODERS = {
     fw_api.TMC2209_GCONF: fw_api.tmc2209_gconf_decode,
     fw_api.TMC2209_GSTAT: fw_api.tmc2209_gstat_decode,
     fw_api.TMC2209_IFCNT: fw_api.tmc2209_ifcnt_decode,
@@ -55,20 +45,16 @@ CODEC = {
     fw_api.TMC2209_PWM_AUTO: fw_api.tmc2209_pwm_auto_decode,
 }
 
-# A method whose reply is one register the method itself names.
-ANSWERS = {
-    "raw.poll_pins": fw_api.TMC2209_IOIN,
-}
+# Methods whose reply is always the same register.
+FIXED_REPLY_REGISTER = {"raw.poll_pins": fw_api.TMC2209_IOIN}
 
-# A method whose reply is one register the caller named, in this argument.
-ANSWERS_WHAT_WAS_ASKED = {"raw.read", "raw.poll_raw"}
+# Methods whose reply is the register named in their `reg` argument.
+ASKED_REPLY_REGISTER = {"raw.read", "raw.poll_raw"}
 
-# The relay hands a driver a datagram the caller assembled, and everything an
-# operator would ask for is already a method one level up, in raw. Declaring it
-# would only offer the chance to hand-build a frame.
-UNDECLARED = ("relay",)
+# relay takes hand-built datagrams, and raw already covers what it would reach.
+SKIPPED_NAMESPACES = ("relay",)
 
-HAZARDOUS = {
+HAZARDS = {
     "raw.move": "turns the shaft",
     "raw.retarget": "changes how far a running move goes",
     "raw.set_velocity": "turns the shaft from VACTUAL",
@@ -82,13 +68,8 @@ HAZARDOUS = {
 }
 
 
-def devices(sub: Any) -> tuple[Option, ...]:
-    """Return the board's driver table, as the names each index stands for.
-
-    Asked rather than declared. The firmware's table carries the names, growing
-    the machine is growing that table, and a copy kept here would disagree with
-    the board the first time one is added.
-    """
+def driver_options(sub: Any) -> tuple[Option, ...]:
+    """Return the board's drivers by index and name, or none while the link is down."""
     if sub is None or sub.link_state() is not LinkState.UP:
         return ()
     try:
@@ -96,21 +77,13 @@ def devices(sub: Any) -> tuple[Option, ...]:
     except Exception:  # noqa: BLE001
         return ()
     return tuple(
-        Option(index, _as_text(entry.name) or str(index))
+        Option(index, _c_string(entry.name) or str(index))
         for index, entry in enumerate(reply.devs)
     )
 
 
-def owned_registers() -> tuple[Option, ...]:
-    """Return the registers a batch may name, which is the ones the firmware owns.
-
-    `tmc2209_write` takes owned registers and refuses the rest, so offering all
-    twenty-three is offering a refusal. Which ones those are is asked of the
-    library rather than listed here, since the library is what will refuse.
-
-    Asked once, at declaration. The table is compiled into the library, so unlike
-    the board's driver table this cannot answer differently later.
-    """
+def owned_register_options() -> tuple[Option, ...]:
+    """Return the registers `tmc2209_write` accepts, which are the ones the firmware owns."""
     return tuple(
         Option(int(reg), reg.name.removeprefix("TMC2209_"))
         for reg in fw_api.Tmc2209Reg
@@ -118,12 +91,98 @@ def owned_registers() -> tuple[Option, ...]:
     )
 
 
-def text_fields(layout: Any) -> frozenset[str]:
-    """Return the fields the firmware declared as characters rather than bytes.
+def reply_result(name: str, reply: Any, layout: Any, register: Any) -> Result:
+    """Return a method's reply as a summary line, its fields, and a table for a list of records.
 
-    Both read back as `bytes`, so the dataclass alone cannot tell a name from a
-    payload. The wire struct can.
+    A reply that is one register is shown as that register's decoded fields.
     """
+    if reply is None:
+        return Result(level=Level.OK, summary=f"{name} returned")
+    if not dataclasses.is_dataclass(reply):
+        return Result(level=Level.OK, summary=f"{name} -> {reply}")
+
+    text_names = _char_fields(layout)
+    fields: list[tuple[str, str]] = []
+    table: Table | None = None
+    for f in dataclasses.fields(reply):
+        if f.name.startswith("_"):
+            continue
+        value = getattr(reply, f.name)
+        if isinstance(value, list):
+            records = _records_table(value, _flex_char_fields(layout, f.name))
+            if records is not None and table is None:
+                table = records
+                continue
+            fields.append((f.name, f"{len(value)} entries"))
+            continue
+        if f.name in text_names and isinstance(value, bytes):
+            fields.append((f.name, _c_string(value)))
+            continue
+        fields.append((f.name, _field_text(value)))
+
+    register_fields, note = _register_fields(reply, register)
+    shown = register_fields or tuple(fields)
+
+    line = ", ".join(f"{k}={v}" for k, v in shown)
+    if table is not None:
+        counted = f"{len(table.rows)} entries"
+        line = f"{line}, {counted}" if line else counted
+    return Result(
+        level=Level.OK,
+        summary=_clipped(f"{name} -> {line}" if line else name),
+        note=note,
+        fields=shown,
+        table=table,
+    )
+
+
+def reply_register(name: str, values: dict[str, Any]) -> Any | None:
+    """Return the register a method's reply holds, or None when it holds none."""
+    if name in ASKED_REPLY_REGISTER:
+        return values.get("reg")
+    return FIXED_REPLY_REGISTER.get(name)
+
+
+def _register_fields(
+    reply: Any, register: Any
+) -> tuple[tuple[tuple[str, str], ...], str | None]:
+    """Return a register reply as its decoded fields, and a note giving the raw word."""
+    label = _register_name(register)
+    if label is None:
+        return (), None
+    raw = getattr(reply, "value", None)
+    if not isinstance(raw, int):
+        return (), None
+
+    decoder = REGISTER_DECODERS.get(register)
+    if decoder is None:
+        return ((label, _field_text(raw)),), None
+
+    note = f"{label} 0x{raw:08x}, decoded with the firmware's codec"
+    decoded = decoder(raw)
+    members = getattr(type(decoded), "_fields_", None)
+    if members is None:
+        # VACTUAL and IFCNT decode to one number.
+        return ((label, _field_text(decoded)),), note
+    return tuple(
+        (member, _field_text(getattr(decoded, member)))
+        for member, *_ in members
+        if not member.startswith("_")
+    ), note
+
+
+def _register_name(register: Any) -> str | None:
+    """Return a register's name without the TMC2209_ prefix, or None if it is not one."""
+    if register is None:
+        return None
+    try:
+        return fw_api.Tmc2209Reg(register).name.removeprefix("TMC2209_")
+    except ValueError:
+        return None
+
+
+def _char_fields(layout: Any) -> frozenset[str]:
+    """Return the names of a struct's `char` array fields, which hold text."""
     if layout is None:
         return frozenset()
     return frozenset(
@@ -133,150 +192,50 @@ def text_fields(layout: Any) -> frozenset[str]:
     )
 
 
-def as_result(
-    name: str, reply: Any, layout: Any = None, register: Any = None
-) -> Result:
-    """Return whatever a method answered in the one vocabulary every caller reads."""
-    if reply is None:
-        return Result(level=Level.OK, summary=f"{name} returned")
-    if not dataclasses.is_dataclass(reply):
-        return Result(level=Level.OK, summary=f"{name} -> {reply}")
-
-    texts = text_fields(layout)
-    fields: list[tuple[str, str]] = []
-    table: Table | None = None
-    for f in dataclasses.fields(reply):
-        if f.name.startswith("_"):
-            continue
-        value = getattr(reply, f.name)
-        if isinstance(value, list):
-            built = _table(value, _element_texts(layout, f.name))
-            if built is not None and table is None:
-                table = built
-                continue
-            fields.append((f.name, f"{len(value)} entries"))
-            continue
-        if f.name in texts and isinstance(value, bytes):
-            fields.append((f.name, _as_text(value)))
-            continue
-        fields.append((f.name, _render(value)))
-
-    named, note = _decoded(name, reply, ANSWERS.get(name, register))
-    shown_fields = named or tuple(fields)
-
-    shown = ", ".join(f"{k}={v}" for k, v in shown_fields)
-    if table is not None:
-        counted = f"{len(table.rows)} entries"
-        shown = f"{shown}, {counted}" if shown else counted
-    return Result(
-        level=Level.OK,
-        summary=_clipped(f"{name} -> {shown}" if shown else name),
-        note=note,
-        fields=shown_fields,
-        table=table,
-    )
-
-
-def asked_register(name: str, values: dict[str, Any]) -> Any | None:
-    """Return the register a call asked for, for the methods that answer per register.
-
-    Only these need telling. A method that always answers the same register names
-    it in `ANSWERS`, which `as_result` reads for itself, so a caller holding no
-    arguments still gets the decode.
-    """
-    if name in ANSWERS_WHAT_WAS_ASKED:
-        return values.get("reg")
-    return None
-
-
-def _decoded(
-    name: str, reply: Any, register: Any
-) -> tuple[tuple[tuple[str, str], ...], str | None]:
-    """Return a raw register reply as the named bits it stands for.
-
-    A TMC2209 register is a packed bitfield, so the number that came off the wire
-    is the encoding of the answer rather than the answer. The codec that unpacks
-    it is generated alongside the ABI and is the one the firmware would have
-    used, so running it here costs nothing and leaving it undone makes an
-    operator do it by hand against the datasheet.
-    """
-    label = _register_label(register)
-    if label is None:
-        return (), None
-    raw = getattr(reply, "value", None)
-    if not isinstance(raw, int):
-        return (), None
-
-    codec = CODEC.get(register)
-    if codec is None:
-        # A scalar register, where the number is already the answer. Naming it
-        # after the register is the whole of what this can add.
-        return ((label, _render(raw)),), None
-
-    note = f"{label} 0x{raw:08x}, decoded with the firmware's own codec"
-    decoded = codec(raw)
-    members = getattr(type(decoded), "_fields_", None)
-    if members is None:
-        # A codec answering one number rather than a struct, which is the two
-        # registers whose width or sign the raw word does not carry.
-        return ((label, _render(decoded)),), note
-    return tuple(
-        (member, _render(getattr(decoded, member)))
-        for member, *_ in members
-        if not member.startswith("_")
-    ), note
-
-
-def _register_label(register: Any) -> str | None:
-    """Return the short name of a register, or None where it names none."""
-    if register is None:
-        return None
-    try:
-        return fw_api.Tmc2209Reg(register).name.removeprefix("TMC2209_")
-    except ValueError:
-        return None
-
-
-def _as_text(raw: bytes) -> str:
-    """Return a fixed-width field as the name it holds, up to its terminator."""
-    return raw.split(b"\0", 1)[0].decode("utf-8", "replace")
-
-
-def _element_texts(layout: Any, field: str) -> frozenset[str]:
-    """Return the character fields of whatever a repeating member holds."""
+def _flex_char_fields(layout: Any, field: str) -> frozenset[str]:
+    """Return the `char` fields of the records in `field`, when it is the struct's flexible array."""
     flex = fw_api.FLEX.get(layout) if layout is not None else None
     if flex is None or flex.field != field:
         return frozenset()
-    return text_fields(flex.elem)
+    return _char_fields(flex.elem)
 
 
-def _table(entries: list[Any], texts: frozenset[str] = frozenset()) -> Table | None:
-    """Return a list of records as rows, or None where the list is not records."""
+def _c_string(raw: bytes) -> str:
+    """Return a fixed-width `char` field up to its terminator."""
+    return raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+
+
+def _records_table(
+    entries: list[Any], text_names: frozenset[str] = frozenset()
+) -> Table | None:
+    """Return a list of records as a table, or None when the list holds no records."""
     if not entries or not dataclasses.is_dataclass(entries[0]):
         return None
     head = tuple(f.name for f in dataclasses.fields(entries[0]))
     return Table(
         head=head,
         rows=tuple(
-            tuple(_cell(getattr(e, n), n in texts) for n in head) for e in entries
+            tuple(_cell(getattr(e, n), n in text_names) for n in head) for e in entries
         ),
     )
 
 
 def _cell(value: Any, is_text: bool) -> str:
-    """Return one table cell, reading a character field as the name it holds."""
+    """Return one table cell."""
     if is_text and isinstance(value, bytes):
-        return _as_text(value)
-    return _render(value)
+        return _c_string(value)
+    return _field_text(value)
 
 
 def _clipped(line: str) -> str:
-    """Return a headline short enough to read at a glance."""
-    return line if len(line) <= SUMMARY else line[: SUMMARY - 3] + "..."
+    """Return the line cut to SUMMARY_MAX_CHARS."""
+    if len(line) <= SUMMARY_MAX_CHARS:
+        return line
+    return line[: SUMMARY_MAX_CHARS - 3] + "..."
 
 
-def _render(value: Any) -> str:
-    """Return one decoded field as the text a panel shows."""
+def _field_text(value: Any) -> str:
+    """Return a field as panel text: enums by name, bytes in hex, ints above 9 also in hex."""
     if isinstance(value, enum.Enum):
         label = value.name or str(value)
         if not isinstance(value, int) or label == str(int(value)):
@@ -293,38 +252,32 @@ def _render(value: Any) -> str:
     return str(value)
 
 
-# ── One routine per generated method ─────────────────────────────────────────
+# ── One command per method ───────────────────────────────────────────────────
 
 
-def _caller(
-    spec: fw_api.MethodSpec,
-) -> Callable[[Any, dict[str, Any]], Result]:
-    """Return the routine that makes one method's call and reports what came back."""
+def _command_call(spec: fw_api.MethodSpec) -> Callable[[Any, dict[str, Any]], Result]:
+    """Return the function that calls one method on the board and reports its reply."""
     namespace, _, method = spec.name.partition(".")
 
     def call(sub: Any, values: dict[str, Any]) -> Result:
         bound = getattr(getattr(sub.firmware(), namespace), method)
         reply = bound(**values)
-        return as_result(
-            spec.name, reply, spec.ret_layout, asked_register(spec.name, values)
+        return reply_result(
+            spec.name, reply, spec.ret_layout, reply_register(spec.name, values)
         )
 
     return call
 
 
-def _inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
-    """Return the form one method takes, deriving it and overriding what it cannot say.
-
-    An index is a number until the board says which driver each one is, and a
-    batch element names a register out of a set narrower than the type allows.
-    """
+def _command_inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
+    """Return a method's form, with `idx` as a driver choice and `ops` limited to owned registers."""
     override = {
-        "idx": choice("idx", devices, hint=DEVICE),
+        "idx": choice("idx", driver_options, hint=DEVICE_HINT),
         "ops": group(
             "ops",
             columns=(
                 integer("value"),
-                choice("reg", owned_registers(), hint=REGISTER),
+                choice("reg", owned_register_options(), hint=REGISTER_HINT),
             ),
         ),
     }
@@ -333,11 +286,11 @@ def _inputs(spec: fw_api.MethodSpec) -> tuple[Any, ...]:
     return overridden(derived, named)
 
 
-def declared() -> tuple[Command, ...]:
-    """Return one command per generated method."""
+def _commands() -> tuple[Command, ...]:
+    """Return one command per method, outside SKIPPED_NAMESPACES."""
     made = []
     for namespace, methods in fw_api.namespaces().items():
-        if namespace in UNDECLARED:
+        if namespace in SKIPPED_NAMESPACES:
             continue
         for spec in methods.values():
             group_name, _, name = spec.name.partition(".")
@@ -348,12 +301,12 @@ def declared() -> tuple[Command, ...]:
                     name=name,
                     title=titled(summary) or spec.name,
                     description=body,
-                    call=_caller(spec),
-                    inputs=_inputs(spec),
-                    hazard=HAZARDOUS.get(spec.name),
+                    call=_command_call(spec),
+                    inputs=_command_inputs(spec),
+                    hazard=HAZARDS.get(spec.name),
                 )
             )
     return tuple(made)
 
 
-COMMANDS = declared()
+COMMANDS = _commands()

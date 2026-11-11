@@ -8,7 +8,7 @@ from shared import fw_api
 from shared.diagnostics import Failed, Test, step
 from shared.subsystem import Level, Result, Table, choice
 from transport import device_profile
-from transport.bench.calls import DEVICE, devices
+from transport.bench.calls import DEVICE_HINT, driver_options
 
 if TYPE_CHECKING:
     from transport.subsystem import Transport
@@ -80,7 +80,7 @@ class BaselineBringup(Test[Any]):
 
     sub: Transport
     inputs = (
-        choice("idx", devices, hint=DEVICE),
+        choice("idx", driver_options, hint=DEVICE_HINT),
         choice(
             "profile",
             lambda sub: device_profile.names(),

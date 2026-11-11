@@ -34,7 +34,7 @@ from shared.diagnostics import Failed, Test, end, step
 from shared.subsystem import Level, Result, Table, boolean, choice, integer
 from transport import device_profile
 from transport.bench import spin_measure
-from transport.bench.calls import DEVICE, devices
+from transport.bench.calls import DEVICE_HINT, driver_options
 from transport.bench.setup import flag_rows, hex_word, named_conditions
 from transport.bench.spin_measure import (
     AT_REST,
@@ -178,7 +178,7 @@ class OneTurn(Spin):
     """
 
     inputs = (
-        choice("idx", devices, hint=DEVICE),
+        choice("idx", driver_options, hint=DEVICE_HINT),
         PROFILE,
         boolean(
             "dir",
@@ -645,7 +645,7 @@ class VelocityTurn(Spin):
     """
 
     inputs = (
-        choice("idx", devices, hint=DEVICE),
+        choice("idx", driver_options, hint=DEVICE_HINT),
         PROFILE,
         integer(
             "velocity",
