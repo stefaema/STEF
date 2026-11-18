@@ -270,7 +270,15 @@ class GuiModel:
             )
         else:
             self._clear_stop_alarm(subsystem_id)
-            self.say(subsystem_id, Level.OK, "result", gettext("Stopped"))
+            safe_state = self.subsystem_view(subsystem_id).safe_state
+            self.say(
+                subsystem_id,
+                Level.OK,
+                "result",
+                gettext("Ensured %(safe_state)s") % {"safe_state": safe_state}
+                if safe_state
+                else gettext("Stopped"),
+            )
         return deferred
 
     def call_command(

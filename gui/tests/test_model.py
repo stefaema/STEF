@@ -127,7 +127,9 @@ def test_a_stopped_test_is_cancelled_and_still_runs_its_end_step(model, recorder
     assert last is not None and last.verdict is not None
     assert last.verdict.value == "cancelled"
     assert last.outcomes[-1].end and last.outcomes[-1].status.value == "passed"
-    assert last.stopped is not None and last.stopped.summary == "stopped the hardware"
+    assert last.stopped is not None and last.stopped.summary == (
+        "ensured every demo drive disabled and standing still"
+    )
 
 
 def test_a_question_is_answered_through_the_model(model, recorder):
@@ -148,6 +150,16 @@ def test_a_question_is_answered_through_the_model(model, recorder):
     )
     model.request_stop("demo")
     recorder.wait_for(lambda one: one.test_ended)
+
+
+def test_an_idle_stop_logs_the_safe_state_it_ensured(model):
+    model.connect("demo", demo_board.HEALTHY)
+
+    assert model.request_stop("demo") is False
+
+    assert model.log_backlog()[-1].text == (
+        "Ensured every demo drive disabled and standing still"
+    )
 
 
 def test_a_stop_with_the_link_down_raises_an_alarm(model, recorder):
