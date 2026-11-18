@@ -27,7 +27,7 @@ class Transport(Linked[str], Diagnosable):
         return link.can_connect(target)
 
     def _open(self, target: str) -> fw.link.FirmwareLink:
-        return opened(target)
+        return opened(target, on_lost=self.announce_link_lost)
 
     def _close(self, handle: fw.link.FirmwareLink) -> None:
         handle.close()

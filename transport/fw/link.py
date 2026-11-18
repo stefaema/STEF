@@ -358,8 +358,12 @@ class FirmwareLink:
         baudrate: int = DEFAULT_BAUDRATE,
         timeout: float = DEFAULT_TIMEOUT,
         on_log: Any = None,
+        on_lost: Callable[[], None] | None = None,
     ) -> None:
-        """Open the port or take the stream, then start the threads."""
+        """Open the port or take the stream, then start the threads.
+
+        on_lost is called once, from the reader thread, when the stream fails.
+        """
         self._namespaces: dict[str, fw_api.Namespace] = {}
         if (port is None) == (stream is None):
             raise LinkError("name a port or pass a stream, not both and not neither")
@@ -371,12 +375,19 @@ class FirmwareLink:
         self._stream = stream
         self._logs = LogForwarder(on_log)
         self._broker = RequestBroker(stream.write, timeout)
-        self._reader = FrameReader(stream, self._route, self._broker.stop)
+        self._on_lost = on_lost
+        self._reader = FrameReader(stream, self._route, self._stream_failed)
         self._namespaces = fw_api.attach(self._invoke)
 
         self._logs.start()
         self._broker.start()
         self._reader.start()
+
+    def _stream_failed(self) -> None:
+        """Release every waiting call, then tell the owner the link is gone."""
+        self._broker.stop()
+        if self._on_lost is not None:
+            self._on_lost()
 
     def __getattr__(self, name: str) -> fw_api.Namespace:
         """Return the namespace by that name, or raise AttributeError."""

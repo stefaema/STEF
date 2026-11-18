@@ -1,5 +1,6 @@
 """What the transport's port is called, and how a link to it is opened."""
 
+from collections.abc import Callable
 from typing import Any
 
 from shared import fw_api
@@ -25,9 +26,11 @@ def text(raw: Any) -> str:
 # ── The link ─────────────────────────────────────────────────────────────────
 
 
-def opened(port: str) -> fw.link.FirmwareLink:
+def opened(
+    port: str, on_lost: Callable[[], None] | None = None
+) -> fw.link.FirmwareLink:
     chosen = fw.probe.find_port(named_port(port))
-    link = fw.link.FirmwareLink(chosen, on_log=fw.logs.forward)
+    link = fw.link.FirmwareLink(chosen, on_log=fw.logs.forward, on_lost=on_lost)
     try:
         reply = link.sys.version()
         backend, version = text(reply.backend), text(reply.version)

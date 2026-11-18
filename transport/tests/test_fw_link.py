@@ -291,6 +291,22 @@ def test_a_stream_that_fails_fails_the_waiting_call_at_once():
             future.result(timeout=TIMEOUT)
 
 
+def test_a_stream_that_fails_tells_the_owner_once():
+    lost = threading.Event()
+    calls = []
+
+    def on_lost():
+        calls.append(1)
+        lost.set()
+
+    firmware, link = linked(on_lost=on_lost)
+    with link:
+        firmware.failure = OSError("unplugged")
+        assert lost.wait(TIMEOUT)
+        assert wait_until(lambda: not link.alive)
+    assert calls == [1]
+
+
 def test_an_unknown_method_is_an_attribute_error():
     _, link = linked()
     with link, pytest.raises(AttributeError):
