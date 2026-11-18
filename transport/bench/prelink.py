@@ -17,6 +17,7 @@ from shared.diagnostics import (
     Needs,
     StepStatus,
     Test,
+    end,
     step,
 )
 from shared.subsystem import Level, Result, Table, boolean, choice
@@ -53,6 +54,7 @@ ERASE = "Erase"
 WRITE = "Write"
 READ_BACK = "Read back"
 FIRMWARE = "Firmware"
+LEFT = "What the board was left with"
 
 
 def _panel(status: StepStatus, verdict: fw.probe.Verdict) -> Result:
@@ -174,6 +176,7 @@ class FlashBoard(Test[Any]):
     Erases the flash and writes one installed release onto it, then reads it back
     and asks the firmware who it is. Refuses a board that already runs the chosen
     version unless forced, and refuses a release built for another chip always.
+    However it ends, it says whether the board was left with working firmware.
     """
 
     sub: Transport
@@ -233,6 +236,7 @@ class FlashBoard(Test[Any]):
 
     @step(ERASE, hazard="erases the board's flash")
     def erase(self) -> None:
+        self.erase_began = True
         rom.erase(self.port, self.chosen.chip)
         self.report("flash erased")
 
@@ -264,5 +268,19 @@ class FlashBoard(Test[Any]):
     @step(FIRMWARE)
     def firmware(self) -> None:
         settled = fw.probe.identify(self.port)
+        self.new_firmware_answers = bool(settled)
         said = self.report if settled else self.warn
         said(settled.sentence, _result_for(settled))
+
+    @end(LEFT)
+    def left_with(self) -> None:
+        if not getattr(self, "erase_began", False):
+            self.report("the board's flash was not touched")
+            return
+        if getattr(self, "new_firmware_answers", False):
+            self.report("the board runs the firmware just written")
+            return
+        self.warn(
+            "the flash may be erased or only partly written, so the board has no "
+            "working firmware. Flash it again"
+        )
