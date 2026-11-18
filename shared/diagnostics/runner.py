@@ -21,6 +21,7 @@ from shared.diagnostics.records import (
     SkipReason,
     StepOutcome,
     StepStatus,
+    StopUnconfirmed,
     verdict,
 )
 from shared.diagnostics.steps import Finish, Skip, StepSpec, Test
@@ -58,6 +59,7 @@ class Run:
         self.done = threading.Event()
         self.stop_requested: float | None = None
         self.stopped: Result | None = None
+        self.stop_unconfirmed: str | None = None
         self.outcomes: list[StepOutcome] = []
         self.prompt: Prompt | None = None
         self._lock = threading.Lock()
@@ -220,7 +222,18 @@ class Run:
     def stop_after(self, stop: Callable[[], None]) -> None:
         if self.stop_requested is None:
             return
-        self.stopped = stopped_by(stop, self.name)
+        try:
+            self.stopped = stopped_by(stop, self.name)
+        except StopUnconfirmed as unconfirmed:
+            self.mark_stop_unconfirmed(unconfirmed)
+            return
+        self._tell(self.stopped)
+
+    def mark_stop_unconfirmed(self, unconfirmed: StopUnconfirmed) -> None:
+        """Record that no stop reached the hardware, at ERROR, and tell the listener."""
+        self.stop_unconfirmed = str(unconfirmed)
+        self.stopped = Result(level=Level.ERROR, summary=str(unconfirmed))
+        run_log.log.error("{}: {}", self.name, unconfirmed)
         self._tell(self.stopped)
 
     def _tell(self, said: StepOutcome | Prompt | Result) -> None:
@@ -251,8 +264,11 @@ class Run:
 
 
 def stopped_by(stop: Callable[[], None], name: str) -> Result:
+    """Call stop and say how it went. A StopUnconfirmed passes through to the caller."""
     try:
         stop()
+    except StopUnconfirmed:
+        raise
     except Exception as exc:
         run_log.log.error("{}: stopping failed: {}: {}", name, type(exc).__name__, exc)
         return Result(

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from shared.subsystem import Input, Result
+from shared.subsystem import Input, LinkState, Result
 
 
 class StepStatus(enum.Enum):
@@ -105,3 +105,34 @@ class Failed(Exception):
 
 class NoAnswer(Exception):
     pass
+
+
+class StopUnconfirmed(Exception):
+    """Raised when a stop could not be sent, so the hardware's state is unknown."""
+
+    def __init__(
+        self,
+        link_state: LinkState,
+        link_reason: str | None = None,
+        while_running: bool = False,
+        port_held_by_test: bool = False,
+    ) -> None:
+        if port_held_by_test:
+            message = (
+                "the stop was not sent: this test opened the port itself, so the "
+                "subsystem cannot reach that hardware; check what its end step reported"
+            )
+        else:
+            cause = (
+                "the link was lost while the test ran"
+                if while_running
+                else (f"the link is {link_state.value}")
+            )
+            if link_reason:
+                cause = f"{cause} ({link_reason})"
+            message = f"the stop was not sent: {cause}; the hardware's state is unknown"
+        super().__init__(message)
+        self.link_state = link_state
+        self.link_reason = link_reason
+        self.while_running = while_running
+        self.port_held_by_test = port_held_by_test

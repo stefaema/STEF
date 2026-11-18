@@ -70,6 +70,7 @@ class RunView:
     prompt: PromptView | None
     stop_requested: float | None
     stopped: Result | None
+    stop_unconfirmed: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +164,7 @@ def run_view(run: Run, sub_id: str) -> RunView:
         prompt=prompt_view(asked, address) if asked else None,
         stop_requested=run.stop_requested,
         stopped=run.stopped,
+        stop_unconfirmed=run.stop_unconfirmed,
     )
 
 

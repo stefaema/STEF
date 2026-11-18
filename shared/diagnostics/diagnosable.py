@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from shared.diagnostics import run_log
 from shared.diagnostics.commands import Command
-from shared.diagnostics.records import Needs
+from shared.diagnostics.records import Needs, StopUnconfirmed
 from shared.diagnostics.runner import Report, Run
 from shared.diagnostics.steps import Test
 from shared.subsystem import (
@@ -14,6 +14,7 @@ from shared.subsystem import (
     DeclarationError,
     Input,
     Level,
+    Linked,
     LinkState,
     NotReady,
     Readiness,
@@ -132,10 +133,21 @@ class Diagnosable(Subsystem):
             run = Run(test, self, values, report)
             self._running = run
             self._runs[key] = run
+        linked_at_start = self._link_is_up()
         try:
             run.execute()
         finally:
-            run.stop_after(self.stop)
+            run.stop_after(lambda: self._stop_reaching_hardware(test))
+            if (
+                linked_at_start
+                and not self._link_is_up()
+                and run.stop_unconfirmed is None
+            ):
+                run.mark_stop_unconfirmed(
+                    StopUnconfirmed(
+                        self.link_state(), self.link_reason(), while_running=True
+                    )
+                )
             with self._run_lock:
                 self._running = None
             run.done.set()
@@ -172,8 +184,19 @@ class Diagnosable(Subsystem):
                 run.stop_requested = time.time()
                 run.cancelled.set()
                 return True
-        self.stop()
+        self._stop_reaching_hardware(None)
         return False
+
+    def _link_is_up(self) -> bool:
+        return not isinstance(self, Linked) or self.link_state() is LinkState.UP
+
+    def _stop_reaching_hardware(self, test: type[Test[Any]] | None) -> None:
+        """Call stop(), or raise StopUnconfirmed when the link it goes through is not up."""
+        if test is not None and test.needs is Needs.DOWN:
+            raise StopUnconfirmed(self.link_state(), port_held_by_test=True)
+        if not self._link_is_up():
+            raise StopUnconfirmed(self.link_state(), self.link_reason())
+        self.stop()
 
     def cancel(self) -> None:
         with self._run_lock:

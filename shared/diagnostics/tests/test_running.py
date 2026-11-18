@@ -14,10 +14,11 @@ from shared.diagnostics import (
     Prompt,
     SkipReason,
     StepOutcome,
+    StopUnconfirmed,
     end,
 )
 from shared.diagnostics.tests.fixture import heat
-from shared.subsystem import NotReady
+from shared.subsystem import Level, LinkState, NotReady
 
 
 def run(oven, key, values=None, operator=False):
@@ -356,6 +357,53 @@ def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):
 
     assert done["run"].stopped is not None
     assert "element 1 did not confirm" in done["run"].stopped.summary
+
+
+def test_a_stop_with_the_link_down_raises_and_sends_nothing(oven):
+    oven.disconnect()
+    before = oven.stopped
+
+    with pytest.raises(StopUnconfirmed, match="not sent: the link is down"):
+        oven.request_stop()
+
+    assert oven.stopped == before
+
+
+def test_a_deferred_stop_after_the_link_died_is_unconfirmed(oven, monkeypatch):
+    heat.Waits.started.clear()
+    worker, heard, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+
+    monkeypatch.setattr(oven, "_alive", lambda handle: False)
+    oven.request_stop()
+    worker.join(5)
+
+    finished = done["run"]
+    assert oven.stopped == 0
+    assert finished.stopped.level is Level.ERROR
+    assert "the hardware's state is unknown" in finished.stopped.summary
+    assert finished.stop_unconfirmed == finished.stopped.summary
+    assert heard[-1] == finished.stopped
+
+
+def test_a_link_lost_during_a_run_is_unconfirmed_without_a_stop(oven, monkeypatch):
+    heat.Waits.started.clear()
+    worker, _, done = in_background(oven, "heat.Waits")
+    heat.Waits.started.wait(5)
+
+    monkeypatch.setattr(oven, "_alive", lambda handle: False)
+    oven.cancel()
+    worker.join(5)
+
+    finished = done["run"]
+    assert finished.stop_requested is None
+    assert "lost while the test ran" in (finished.stop_unconfirmed or "")
+
+
+def test_a_stop_for_a_test_that_holds_the_port_says_the_subsystem_cannot_reach_it():
+    unconfirmed = StopUnconfirmed(LinkState.DOWN, port_held_by_test=True)
+
+    assert "opened the port itself" in str(unconfirmed)
 
 
 def test_an_end_step_states_how_long_it_is_expected_to_take():

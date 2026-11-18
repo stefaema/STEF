@@ -168,7 +168,7 @@ def test_a_test_that_opens_the_port_is_refused_while_the_link_holds_it(
 def test_stopping_a_subsystem_that_is_not_connected_says_why(client):
     answer = client.post("/api/stop/transport").json()
     assert answer["ok"] is False
-    assert "not connected" in answer["reason"]
+    assert "not sent" in answer["reason"]
 
 
 def test_answering_when_nothing_is_asked_is_refused(client):

@@ -18,6 +18,7 @@ from shared.diagnostics.records import (
     SkipReason,
     StepOutcome,
     StepStatus,
+    StopUnconfirmed,
     verdict,
 )
 from shared.diagnostics.runner import Report, Run
@@ -63,6 +64,7 @@ __all__ = [
     "StepSpec",
     "StepStatus",
     "StepView",
+    "StopUnconfirmed",
     "SubsystemView",
     "Test",
     "TestView",
