@@ -1,4 +1,6 @@
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 HEALTHY = "healthy"
@@ -19,11 +21,21 @@ class Drive:
 
 
 class Board:
-    def __init__(self, dies_after: float | None = None) -> None:
+    def __init__(
+        self,
+        dies_after: float | None = None,
+        on_death: Callable[[], None] | None = None,
+    ) -> None:
+        """A board that stops answering dies_after seconds in, calling on_death then."""
         self.opened = time.monotonic()
         self.dies_after = dies_after
         self.drives = {"left": Drive(), "right": Drive()}
         self.closed = False
+        self._death_timer: threading.Timer | None = None
+        if dies_after is not None and on_death is not None:
+            self._death_timer = threading.Timer(dies_after, on_death)
+            self._death_timer.daemon = True
+            self._death_timer.start()
 
     @property
     def alive(self) -> bool:
@@ -51,3 +63,5 @@ class Board:
 
     def close(self) -> None:
         self.closed = True
+        if self._death_timer is not None:
+            self._death_timer.cancel()

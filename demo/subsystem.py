@@ -39,7 +39,10 @@ class Demo(Linked[str], Diagnosable):
         time.sleep(link.PACE_S)
         if target == FAILS_TO_OPEN:
             raise OSError("the demo board would not open, as asked")
-        return Board(dies_after=DIES_AFTER_S if target == DIES else None)
+        return Board(
+            dies_after=DIES_AFTER_S if target == DIES else None,
+            on_death=self.announce_link_lost,
+        )
 
     def _close(self, handle: Board) -> None:
         handle.close()

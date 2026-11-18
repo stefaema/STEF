@@ -151,6 +151,19 @@ def test_a_board_that_dies_turns_the_link_to_an_error(monkeypatch):
     sub.disconnect()
 
 
+def test_a_board_that_dies_announces_it_without_being_asked(monkeypatch):
+    monkeypatch.setattr("demo.subsystem.DIES_AFTER_S", 0.05)
+    sub = demo.SUBSYSTEM(demo)
+    announced = threading.Event()
+    sub.watch_link(
+        lambda: announced.set() if sub.link_state() is LinkState.ERROR else None
+    )
+    sub.connect(boards.DIES)
+
+    assert announced.wait(1.0)
+    sub.disconnect()
+
+
 def test_a_command_that_raises_replies_with_an_error(board):
     assert board.run_command("calls.raises", {}).summary.startswith("OSError")
 
