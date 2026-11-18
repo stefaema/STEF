@@ -72,11 +72,11 @@ class Machine:
 
     @property
     def focus_holder(self) -> str | None:
-        """Return what holds the focus, such as "transport.raw.write", or None when idle."""
+        """Return the focus holder, such as "transport.raw.write", or None while idle."""
         return self._holder
 
     def focus_on(self, activity: Activity, holder: str) -> None:
-        """Take the focus of the STEF machine for an activity, on behalf of holder."""
+        """Take the focus for activity on behalf of holder, or raise Busy."""
         with self._lock:
             if self._activity is not None:
                 raise Busy(self._activity, self._holder or "")

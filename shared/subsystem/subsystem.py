@@ -69,11 +69,11 @@ class Linked[Target](Subsystem):
         self._on_link_change: Callable[[], None] | None = None
 
     def watch_link(self, on_link_change: Callable[[], None]) -> None:
-        """Call on_link_change after every change of link state, from whichever thread made it."""
+        """Call on_link_change after every link state change, on the thread that made the change."""
         self._on_link_change = on_link_change
 
     def announce_link_lost(self) -> None:
-        """Say that the open handle stopped answering. A subclass calls this when it notices."""
+        """Report that the open handle stopped answering. Subclasses call this when they detect it."""
         self._announce_link_change()
 
     def _announce_link_change(self) -> None:

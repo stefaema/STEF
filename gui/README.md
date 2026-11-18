@@ -25,9 +25,9 @@ The Implementation card shows the subsystem's prose and `facts`.
 
 ## How it is put together
 
-`GuiModel` (`src/model.py`) is the one object that holds what the screen shows and
-does what the operator asks. Routes call its methods and render what it holds; no
-route or template touches a subsystem.
+`GuiModel` (`src/model.py`) holds the screen's state and carries out the operator's
+actions. Routes call its methods and render its state. No route or template calls a
+subsystem.
 
 ```
 browser ──HTTP──▶ app.py ──calls──▶ GuiModel ──requests──▶ SubsystemWorker ──▶ hardware
@@ -35,63 +35,63 @@ browser ──HTTP──▶ app.py ──calls──▶ GuiModel ──requests�
    └──SSE── bindings.py ◀──changes─────┘ └────────events──────────
 ```
 
-- **`SubsystemWorker`** (`src/worker.py`) is the only thing that calls its
-  subsystem. It serves one request at a time from a queue, so two requests never
-  share a port. A test runs on a thread the worker owns, so an answer or a stop
-  still gets through while it runs.
-- **The messages** (`src/messages.py`) between the model and a worker are two
-  closed sets of dataclasses, requests in and events out. Every field is something
-  `as_json` serialises, which is what lets a worker become a subprocess later.
-- **The focus** is the machine's one-activity lock. Connecting and calling a
-  command hold it for as long as they take, and starting a test holds it until the
-  test ends. A second action is refused with the holder's name and not queued.
+- **`SubsystemWorker`** (`src/worker.py`) is the only code that calls its subsystem.
+  It serves one request at a time from a queue, so two requests never use the port
+  at once. A test runs on a separate thread that the worker owns, so an answer or a
+  stop can still be passed on while the test runs.
+- **The messages** (`src/messages.py`) between the model and a worker are two closed
+  sets of dataclasses (requests to the worker, events from it). Every field holds a
+  value that `as_json` can serialise, so a worker can run in a subprocess later.
+- **The focus** is the machine's one-activity lock. Connecting and calling a command
+  hold it until they return. Starting a test holds it until the test ends. A second
+  action is refused with the holder's name. It is not queued.
 
 ### What runs when
 
-1. `uvicorn` starts the app, and `lifespan` starts the log file, the model and the
-   bindings. The model assembles the roster and starts one worker each.
-2. A page load renders from what the model holds. Nothing asks the hardware.
-3. Every action posts a form. The route parses it (`src/forms.py`), calls the
-   model, and returns the fragment it changed.
-4. A worker sends an event whenever something changes. The model updates what it
-   holds and publishes a `Change` on one of four channels.
-5. On shutdown, `lifespan` closes the model: running tests are cancelled and let
-   run their end step, then every subsystem is stopped and disconnected.
+1. `uvicorn` starts the app. `lifespan` starts the log file, the model and the
+   bindings. The model assembles the roster and starts one worker per subsystem.
+2. A page load renders from the model's state and sends no request to the hardware.
+3. Every action posts a form. The route parses it (`src/forms.py`), calls the model
+   and returns the fragment that changed.
+4. A worker sends an event for every change. The model updates its state and
+   publishes a `Change` on one of four channels.
+5. On shutdown, `lifespan` closes the model. Running tests are cancelled and run
+   their end step, then every subsystem is stopped and disconnected.
 
 ### The channels
 
-The browser opens one SSE connection, `/diagnostics/events`. `src/bindings.py`
-renders each change once into an event and hands the same text to every
-connection.
+The browser opens one SSE connection at `/diagnostics/events`. `src/bindings.py`
+renders each change once into an event and sends the same text to every connection.
 
 | channel | event | what it redraws |
 | --- | --- | --- |
 | log | `log` | one row of the log dock |
-| link | `link` | link marks on the subsystem tabs, the Implementation card, the stop alarm, every test's head |
-| link | `link_state` | tells the board of that subsystem to fetch itself again, since it depends on the open tool |
+| link | `link` | the link marks on the subsystem tabs, the Implementation card, the stop alarm and every test's head |
+| link | `link_state` | makes the board of that subsystem request itself again, because its content depends on the open tool |
 | test progress | `test_progress` | one test's head and steps, and its group's mark when it ends |
 | focus | `focus` | the busy line in the header |
 
-A link is watched two ways: `Linked.watch_link` reports every change as it happens,
-and the worker checks once a second for anything that was not reported.
+`Linked.watch_link` reports each link change when it happens. The worker also
+checks the link once a second for changes that were not reported.
 
 ## Stopping
 
 The tool bar's Stop and a running test's Stop both call `request_stop`. A running
-test is cancelled, its end step runs, and then the subsystem's `stop()` runs. Once
-the end step is overdue (30 s, unless the test's `@end` says otherwise), the card
-says so, and for a hazardous test it says to cut the hardware's power.
+test is cancelled, its end step runs, then the subsystem's `stop()` runs. When the
+end step takes longer than expected (30 s, unless the test's `@end` sets another
+time), the card says so. For a hazardous test it also says to cut the hardware's
+power.
 
-A stop that cannot reach the hardware raises `StopUnconfirmed`. That happens when
-the link is down or lost. The board then shows a red alarm and the subsystem's tab mark turns red, on every open
-browser, until the operator acknowledges it or a later stop succeeds. A link
-that drops under a running test raises the same alarm at once and cancels the
-test.
+A stop is not sent when the link is down or lost, and `StopUnconfirmed` is raised.
+The board then shows a red alarm and the subsystem's tab mark turns red in every
+open browser. Both stay until the operator acknowledges the alarm or a later stop
+succeeds. When the link drops while a test is running, the alarm is raised at once
+and the test is cancelled.
 
-A test with `needs=DOWN`, such as `prelink.VerifyPort` or `prelink.FlashBoard`,
-holds no link: each of its steps opens its own short connection and closes it.
-Stop cancels it at the next step and calls no `stop()`, since there is no link
-to send one through, and raises no alarm.
+A test with `needs=DOWN` (`prelink.VerifyPort`, `prelink.FlashBoard`) holds no
+link, because each of its steps opens its own short connection and closes it. Stop
+cancels the test at the next step. No `stop()` is sent and no alarm is raised,
+because there is no link to send it through.
 
 ## Language
 
@@ -141,6 +141,7 @@ cd gui && tailwindcss -i web/src/input.css -o web/tailwind.css
 python -m ci_cd.run test gui
 ```
 
-`tests/test_model.py` drives the model against the demo board,
-`tests/test_transport_through_the_model.py` reads transport's declarations with
-nothing plugged in, and `tests/test_routes.py` runs the app.
+- `tests/test_model.py` tests the model with the demo board.
+- `tests/test_transport_through_the_model.py` tests transport's declarations and
+  refusals with no board attached.
+- `tests/test_routes.py` tests the routes on the real app.

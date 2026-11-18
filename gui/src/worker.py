@@ -1,8 +1,8 @@
-"""The one thread that touches a subsystem's hardware, fed by requests and answering with events.
+"""Runs every call to one subsystem on one thread.
 
-A worker serves one request at a time, so two requests never share a port. A test
-runs on a thread the worker owns, which keeps the worker free to pass on an answer
-or a stop while the test is still running.
+The worker serves one request at a time, so two requests never use the port at once.
+A test runs on a separate thread that the worker owns. This lets the worker pass on
+an answer or a stop while the test runs.
 """
 
 import dataclasses
@@ -47,16 +47,16 @@ from shared.subsystem import (
     coerced,
 )
 
-# How often the link is checked even when nothing announced a change.
+# Seconds between link checks, for changes that were not announced.
 LINK_CHECK_INTERVAL_S = 1.0
-# How long close() waits for a request that is still being served.
+# Seconds that close() waits for each thread to finish.
 CLOSE_PATIENCE_S = 30.0
 
 log = logs.as_component("gui")
 
 
 def facts_or_warning(subsystem: Diagnosable) -> Result | None:
-    """Return the subsystem's facts, or a warning saying why they could not be read."""
+    """Return the subsystem's facts, or a warning Result if reading them raised."""
     try:
         return subsystem.facts()
     except Exception as exc:
@@ -67,7 +67,7 @@ class SubsystemWorker:
     def __init__(
         self, subsystem: Diagnosable, send_event: Callable[[WorkerEvent], None]
     ) -> None:
-        """Serve subsystem's requests, telling send_event everything that changes."""
+        """Serve requests for subsystem and pass every event to send_event."""
         self.subsystem = subsystem
         self._send_event = send_event
         self._requests: queue.Queue[WorkerRequest | None] = queue.Queue()
@@ -98,7 +98,7 @@ class SubsystemWorker:
         self._requests.put(request)
 
     def close(self) -> None:
-        """Let any running test end, stop and disconnect the hardware, then end the threads."""
+        """Cancel a running test and wait for it, stop the threads, then disconnect the subsystem."""
         self._closing.set()
         self.subsystem.cancel()
         test_thread = self._test_thread
@@ -116,10 +116,10 @@ class SubsystemWorker:
                     "{}: disconnecting on close failed: {}", self.subsystem.id, exc
                 )
 
-    # ── What it shows ────────────────────────────────────────────────────────
+    # ── Views ────────────────────────────────────────────────────────────────
 
     def current_view(self) -> SubsystemView:
-        """Return the board as it is now, with the facts last read rather than read again."""
+        """Return the current subsystem view, with the cached facts."""
         unread = subsystem_view(self.subsystem, operator=True, read_facts=False)
         return dataclasses.replace(unread, facts=self._facts)
 
@@ -195,7 +195,7 @@ class SubsystemWorker:
                 return list(subsystem.options(item_key, input_name))
 
     def _target_value(self, linked: Linked[Any], submitted: Any) -> Any:
-        """Return what the connect form submitted as the value the link's target promises."""
+        """Convert the submitted form value to the type that the link's target input declares."""
         return coerced(type(linked).target, submitted, linked)
 
     def _linked(self) -> Linked[Any]:
@@ -206,7 +206,7 @@ class SubsystemWorker:
     # ── Running a test ───────────────────────────────────────────────────────
 
     def _start_test(self, test_key: str, form_values: dict[str, Any]) -> None:
-        """Start the test on its own thread and return once it is registered, or raise why not."""
+        """Start the test on its own thread. Return once the run is registered, or raise the error that prevented it."""
         registered = threading.Event()
         refused: list[Exception] = []
 
@@ -260,7 +260,7 @@ class SubsystemWorker:
         return self.subsystem.link_state(), self.subsystem.link_reason()
 
     def _check_link(self) -> None:
-        """Send the board again if the link changed since last seen. Safe from any thread."""
+        """Send the subsystem view if the link state changed since the last check. Can be called from any thread."""
         with self._link_check_lock:
             link_now = self._link_now()
             if link_now == self._last_link_seen:
@@ -275,11 +275,11 @@ class SubsystemWorker:
         self._send_event(SubsystemChanged(self.current_view(), True))
 
     def _cancel_test_that_lost_its_link(self) -> None:
-        """Cancel a running test that needs the link, since nothing it does reaches the hardware."""
+        """Cancel a running test that needs the link, because it can't reach the hardware without it."""
         running = self.subsystem.running()
         if running is None or running.test.needs is Needs.DOWN:
             return
-        log.error("{}: the link was lost while it ran; cancelling it", running.name)
+        log.error("{}: the link was lost while it ran. Cancelling it", running.name)
         self.subsystem.request_stop()
 
     def _check_link_every_interval(self) -> None:

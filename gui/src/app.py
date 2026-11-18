@@ -1,7 +1,7 @@
-"""The operator's routes. Each one reads a form, calls GuiModel, and renders what it holds.
+"""The operator's routes. Each route parses the form, calls GuiModel and renders the result.
 
-The model starts with the server and closes with it: on shutdown every running test
-is let end, and every subsystem is stopped and disconnected.
+The model starts and stops with the server. On shutdown, running tests are cancelled
+and run their end step, then every subsystem is stopped and disconnected.
 """
 
 import asyncio
@@ -26,7 +26,7 @@ from shared.diagnostics import CommandView, InputView, TestView
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
-# Seconds between comments on an idle event stream, so nothing between closes it.
+# Seconds between keep-alive comments on an idle event stream, to keep proxies from closing it.
 KEEPALIVE_S = 15.0
 
 templates = Jinja2Templates(directory=str(HERE / "templates"))
@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(title="STEF", lifespan=lifespan)
 
 
-# ── Finding what a route names ───────────────────────────────────────────────
+# ── Lookups ──────────────────────────────────────────────────────────────────
 
 
 def served_subsystem(subsystem_id: str) -> str:
@@ -87,7 +87,7 @@ def link_target(subsystem_id: str) -> InputView:
 
 
 def options_still_loading(inputs: tuple[InputView, ...], form: Any) -> bool:
-    """Whether a live option list has not arrived yet, so the form cannot be judged."""
+    """Return True if a live option list has not loaded yet. The form can't be checked until it has."""
     return any(
         one.kind == "choice"
         and one.reload is not None
@@ -123,7 +123,7 @@ def diagnostics(request: Request) -> Any:
 
 @app.get("/diagnostics/events")
 async def screen_events() -> StreamingResponse:
-    """Stream every change the screen shows to one browser, as server-sent events."""
+    """Send every change to one browser as server-sent events."""
     events = bindings.connect()
 
     async def stream() -> AsyncIterator[str]:
@@ -211,7 +211,7 @@ async def disconnect(request: Request, subsystem_id: str) -> Any:
     )
 
 
-# ── Stopping, and the alarm when a stop could not be sent ────────────────────
+# ── Stop and the stop alarm ──────────────────────────────────────────────────
 
 
 @app.post("/diagnostics/{subsystem_id}/stop", response_class=HTMLResponse)
@@ -354,7 +354,7 @@ async def call_command(request: Request, subsystem_id: str, command_key: str) ->
     return fragment(request, "diagnostics/commands/reply.html", template_context)
 
 
-# ── Form helpers: live option lists, and one more row of a group ─────────────
+# ── Live option lists and group rows ─────────────────────────────────────────
 
 
 @app.get(

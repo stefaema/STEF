@@ -1,4 +1,4 @@
-"""What a template reads: labels, tones, groupings, form fields, and the context of every page."""
+"""Labels, tones, groupings and form fields for the templates, and the context of every page."""
 
 import time
 from collections.abc import Callable
@@ -280,7 +280,7 @@ def _field(
 
 
 def blank_form_values(inputs: tuple[InputView, ...]) -> dict[str, Any]:
-    """Return what every control holds before anyone touches it."""
+    """Return the initial value of every control."""
     return {one.name: _blank(one) for one in inputs}
 
 
@@ -298,7 +298,7 @@ def _blank(spec: InputView) -> Any:
     return []
 
 
-# ── What a template is given ─────────────────────────────────────────────────
+# ── Template contexts ────────────────────────────────────────────────────────
 
 
 def log_sources(model: "GuiModel") -> list[dict[str, str]]:
@@ -310,7 +310,7 @@ def log_sources(model: "GuiModel") -> list[dict[str, str]]:
 def page_context(
     model: "GuiModel", subsystem_id: str | None, tool: str
 ) -> dict[str, Any]:
-    """Return what every page and the board read, for one subsystem and one tool."""
+    """Return the context that every page and the board use, for one subsystem and tool."""
     subsystem_view = (
         model.subsystem_view(subsystem_id)
         if subsystem_id is not None and model.has_subsystem(subsystem_id)
@@ -347,7 +347,7 @@ def page_context(
 def link_tool_context(
     model: "GuiModel", subsystem_id: str, **extra: Any
 ) -> dict[str, Any]:
-    """Return the Link tool: the connect form, and the tests that need the port to themselves."""
+    """Return the context of the Link tool, with the connect form and the tests that need the link down."""
     template_context = page_context(model, subsystem_id, "link")
     subsystem_view: SubsystemView | None = template_context["subsystem_view"]
     link = subsystem_view.link if subsystem_view is not None else None
@@ -385,7 +385,7 @@ def commands_tool_context(
     group: str | None = None,
     command_key: str | None = None,
 ) -> dict[str, Any]:
-    """Return the Commands tool with one command picked: the asked one, or the group's first."""
+    """Return the context of the Commands tool. command_key picks the command, otherwise the group's first command is used."""
     template_context = page_context(model, subsystem_id, "commands")
     subsystem_view = template_context["subsystem_view"]
     groups = command_groups(subsystem_view) if subsystem_view is not None else []
@@ -423,7 +423,7 @@ def tool_context(
 def test_card_context(
     model: "GuiModel", subsystem_id: str, test_key: str, oob: bool = False
 ) -> dict[str, Any]:
-    """Return one test's card: its head and steps, as a route or an event renders them."""
+    """Return the context of one test card, used by routes and by events."""
     template_context = page_context(model, subsystem_id, "tests")
     test = model.test_view(subsystem_id, test_key)
     template_context.update(

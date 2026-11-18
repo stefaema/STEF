@@ -222,14 +222,14 @@ class Run:
         self._tell(outcome)
 
     def stop_after(self, stop: Callable[[], None] | None) -> None:
-        """Stop the hardware if a stop was asked for. stop is None when the test holds no link."""
+        """Call stop if a stop was requested. stop is None for a test that holds no link."""
         if self.stop_requested is None:
             return
         if stop is None:
             self.stopped = Result(
                 level=Level.OK,
-                summary="cancelled between steps; this test holds no link, "
-                "so there was nothing to stop",
+                summary="cancelled at the next step. This test holds no link, "
+                "so no stop was sent",
             )
             run_log.log.info("{}: {}", self.name, self.stopped.summary)
             self._tell(self.stopped)
@@ -242,7 +242,7 @@ class Run:
         self._tell(self.stopped)
 
     def mark_stop_unconfirmed(self, unconfirmed: StopUnconfirmed) -> None:
-        """Record that no stop reached the hardware, at ERROR, and tell the listener."""
+        """Record that the stop did not reach the hardware, log it at ERROR and report it."""
         self.stop_unconfirmed = str(unconfirmed)
         self.stopped = Result(level=Level.ERROR, summary=str(unconfirmed))
         run_log.log.error("{}: {}", self.name, unconfirmed)
@@ -276,7 +276,7 @@ class Run:
 
 
 def stopped_by(stop: Callable[[], None], name: str) -> Result:
-    """Call stop and say how it went. A StopUnconfirmed passes through to the caller."""
+    """Call stop and return a Result that says whether it succeeded. StopUnconfirmed is re-raised."""
     try:
         stop()
     except StopUnconfirmed:

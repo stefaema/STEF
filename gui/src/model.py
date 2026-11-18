@@ -1,8 +1,8 @@
-"""Everything the GUI knows and everything it can do, in one object the routes only call.
+"""Holds the GUI's state and carries out the operator's actions.
 
-GuiModel owns the machine and its focus, one SubsystemWorker per subsystem, what
-each board last looked like, and the log. Routes call its methods and render what
-it holds. Every change goes out to subscribers as a Change on one of four channels.
+GuiModel owns the machine and its focus, one SubsystemWorker per subsystem, the last
+view of each subsystem and the log. Routes call its methods and render its state.
+Each change is published to subscribers as a Change on one of four channels.
 """
 
 import dataclasses
@@ -42,12 +42,12 @@ from shared import logs
 from shared.diagnostics import Diagnosable, Needs, SubsystemView, TestView
 from shared.subsystem import Level, LinkState, Readiness, Result, blocked
 
-# How many log lines a browser that connects late is shown.
+# Number of log lines that a newly connected browser receives.
 LOG_BACKLOG = 200
-# How long an action waits for its worker before telling the operator it never answered.
+# Seconds that an action waits for its worker before the action is refused.
 REPLY_TIMEOUT_S = 120.0
 
-# What a logged level is called on a screen, which has three weights and not six.
+# Maps the six logger levels to the three levels that the screen shows.
 SCREEN_LEVEL = {
     "TRACE": Level.OK,
     "DEBUG": Level.OK,
@@ -60,12 +60,12 @@ SCREEN_LEVEL = {
 
 
 class Refused(Exception):
-    """An action the model would not do, or that failed, as one sentence for the operator."""
+    """Raised when an action is refused or fails. The message is one sentence for the operator."""
 
 
 @dataclass(frozen=True, slots=True)
 class StopAlarm:
-    """No stop reached the hardware, so nobody knows its state. Shown until acknowledged."""
+    """Set when a stop did not reach the hardware. It is shown until the operator acknowledges it."""
 
     message: str
     hazardous: bool
@@ -84,7 +84,7 @@ class PendingRequest:
 
 
 def with_test(view: SubsystemView, test_view: TestView) -> SubsystemView:
-    """Return view with one test replaced by test_view, and what is running updated."""
+    """Return a copy of view in which test_view replaces the matching test and running is updated."""
     tests = tuple(test_view if one.key == test_view.key else one for one in view.tests)
     running = view.running
     if test_view.last is not None and test_view.last.running:
@@ -96,7 +96,7 @@ def with_test(view: SubsystemView, test_view: TestView) -> SubsystemView:
 
 class GuiModel:
     def __init__(self, roster: tuple[str, ...] | None = None) -> None:
-        """Hold the subsystems roster names, unassembled until start()."""
+        """Create the model for the subsystems in roster. Nothing is assembled until start()."""
         self.machine = Machine(roster)
         self._workers: dict[str, SubsystemWorker] = {}
         self._states: dict[str, SubsystemState] = {}
@@ -112,7 +112,7 @@ class GuiModel:
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     def start(self) -> None:
-        """Assemble the subsystems, start one worker each, and start hearing the log."""
+        """Assemble the subsystems, start one worker for each and add the log sink."""
         self._log_sink_id = logs.to(self._record_logged)
         self.machine.assemble()
         for subsystem_id, subsystem in self.machine.subsystems.items():
@@ -125,7 +125,7 @@ class GuiModel:
         self.say("gui", Level.OK, "gui", gettext("Backend ready"))
 
     def close(self) -> None:
-        """Let running tests end, stop and disconnect every subsystem, then stop hearing the log."""
+        """Cancel running tests, stop and disconnect every subsystem, then remove the log sink."""
         for subsystem_id, worker in self._workers.items():
             self.say(subsystem_id, Level.WARN, "command", "close()")
             worker.close()
@@ -134,7 +134,7 @@ class GuiModel:
             logs.logger.remove(self._log_sink_id)
             self._log_sink_id = None
 
-    # ── What it holds ────────────────────────────────────────────────────────
+    # ── State ────────────────────────────────────────────────────────────────
 
     @property
     def roster(self) -> tuple[str, ...]:
@@ -147,7 +147,7 @@ class GuiModel:
         return next((one for one in self.roster if one in self._states), None)
 
     def subsystem_view(self, subsystem_id: str) -> SubsystemView:
-        """Return the board as last seen. Raises KeyError for a subsystem that is not served."""
+        """Return the last view of the subsystem. Raise KeyError if the subsystem is not served."""
         with self._lock:
             return self._states[subsystem_id].view
 
@@ -174,7 +174,7 @@ class GuiModel:
 
     @property
     def focus(self) -> tuple[Activity | None, str | None]:
-        """Return what the focus is held for, and by what, both None while idle."""
+        """Return the focus activity and holder. Both are None while the machine is idle."""
         return self.machine.activity, self.machine.focus_holder
 
     def log_backlog(self) -> list[LogLine]:
@@ -187,7 +187,7 @@ class GuiModel:
         with self._lock:
             return self._option_lists.get((subsystem_id, item_key, input_name))
 
-    # ── Who hears about changes ──────────────────────────────────────────────
+    # ── Subscribers ──────────────────────────────────────────────────────────
 
     def subscribe(self, listener: Callable[[Change], None]) -> None:
         with self._lock:
@@ -198,10 +198,10 @@ class GuiModel:
             if listener in self._listeners:
                 self._listeners.remove(listener)
 
-    # ── What it can do ───────────────────────────────────────────────────────
+    # ── Actions ──────────────────────────────────────────────────────────────
 
     def probe_target(self, subsystem_id: str, target: Any) -> Readiness:
-        """Ask whether target can be connected to. target is the value the form submitted."""
+        """Return whether the subsystem can connect to target. target is the submitted form value."""
         finished = self._ask_worker(
             subsystem_id, lambda request_id: ProbeTarget(request_id, target)
         )
@@ -253,7 +253,7 @@ class GuiModel:
         )
 
     def request_stop(self, subsystem_id: str) -> bool:
-        """Ask for a stop. Return True when it waits for a running test's end step."""
+        """Request a stop. Return True if the stop waits for a running test's end step."""
         self.say(subsystem_id, Level.WARN, "command", "stop()")
         finished = self._ask_worker(subsystem_id, RequestStop)
         if finished.failure_kind is FailureKind.STOP_UNCONFIRMED:
@@ -298,7 +298,7 @@ class GuiModel:
     def options(
         self, subsystem_id: str, item_key: str, input_name: str, refresh: bool = False
     ) -> list[dict[str, Any]]:
-        """Return an option list that only exists at runtime, asking the worker unless cached."""
+        """Return a live option list from the cache, or ask the worker for it."""
         if not refresh:
             cached = self.cached_options(subsystem_id, item_key, input_name)
             if cached is not None:
@@ -330,7 +330,7 @@ class GuiModel:
         self._publish(Change(Channel.LOG, log_line=line))
 
     def _record_logged(self, message: Any) -> None:
-        """Put one logged record on the screen's log, as shared.logs hands it to a sink."""
+        """Add one logger record to the screen's log. shared.logs calls this as a sink."""
         record = getattr(message, "record", None)
         if record is None:
             self.say("stef", Level.OK, "log", str(message).rstrip())
@@ -342,7 +342,7 @@ class GuiModel:
             str(record["message"]),
         )
 
-    # ── Talking to workers ───────────────────────────────────────────────────
+    # ── Worker requests and events ───────────────────────────────────────────
 
     def _ask_worker(
         self, subsystem_id: str, make_request: Callable[[int], WorkerRequest]
@@ -377,7 +377,7 @@ class GuiModel:
         raise Refused(finished.failure)
 
     def _apply(self, event: WorkerEvent) -> None:
-        """Take in one event from a worker, on the worker's thread, and publish what changed."""
+        """Apply one worker event to the state and publish the change. Runs on the worker's thread."""
         match event:
             case RequestFinished(request_id=request_id):
                 with self._lock:
@@ -416,7 +416,7 @@ class GuiModel:
                 )
 
     def _alarm_if_lost_while_running(self, view: SubsystemView) -> None:
-        """Raise the alarm the moment a link drops under a running test, not when it ends."""
+        """Raise the alarm as soon as the link drops while a test that needs it is running."""
         lost = view.link is not None and view.link.state in (
             LinkState.DOWN,
             LinkState.ERROR,
@@ -425,8 +425,8 @@ class GuiModel:
         if not lost or running is None or running.needs is Needs.DOWN:
             return
         message = gettext(
-            "the link was lost while %(test)s was running; "
-            "the hardware's state is unknown"
+            "the link was lost while %(test)s was running. "
+            "The hardware's state is unknown"
         ) % {"test": running.title}
         self._raise_stop_alarm(view.id, message, running.hazardous)
 
@@ -435,7 +435,7 @@ class GuiModel:
             state = self._states[subsystem_id]
             state.view = with_test(state.view, test_view)
 
-    # ── The focus and the alarm ──────────────────────────────────────────────
+    # ── Focus and stop alarm ─────────────────────────────────────────────────
 
     def _focus_on(self, activity: Activity, holder: str) -> None:
         try:
@@ -487,7 +487,7 @@ class GuiModel:
 
 
 def shown(values: dict[str, Any]) -> str:
-    """Return submitted values on one line, as an echoed call shows them."""
+    """Return form values on one line, in the format of an echoed call."""
     return ", ".join(f"{name}={value!r}" for name, value in values.items())
 
 

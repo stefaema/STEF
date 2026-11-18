@@ -216,7 +216,7 @@ def link_view(sub: Any) -> LinkView | None:
 def subsystem_view(
     sub: "Diagnosable", operator: bool = True, read_facts: bool = True
 ) -> SubsystemView:
-    """Return what a screen shows of sub. read_facts=False leaves facts unread, as None."""
+    """Return the view of sub. With read_facts=False, facts() is not called and facts is None."""
     running = sub.running()
     return SubsystemView(
         id=sub.id,

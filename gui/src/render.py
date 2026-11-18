@@ -1,4 +1,4 @@
-"""Jinja filters and globals: how a value is written on the screen."""
+"""Jinja filters and globals that format values for the screen."""
 
 import base64
 import json
@@ -52,7 +52,7 @@ def data_uri(value: Any) -> str:
 
 
 def as_record(result: Result | None) -> str:
-    """Return a result as the JSON its copy button puts on the clipboard."""
+    """Return a result as the JSON that its copy button copies."""
     if result is None:
         return "{}"
     copied: dict[str, Any] = {}

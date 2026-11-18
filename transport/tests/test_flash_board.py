@@ -1,4 +1,4 @@
-"""What FlashBoard says it left on the board, however it ended."""
+"""Tests the end step of FlashBoard."""
 
 from types import SimpleNamespace
 
@@ -22,7 +22,7 @@ class Image:
 
 @pytest.fixture
 def board_without_firmware(monkeypatch):
-    """A board on PORT whose firmware is silent, and a release that matches its chip."""
+    """Patch the probes so PORT has an ESP32 with silent firmware and the release fits it."""
     monkeypatch.setattr(fw.image, "resolve", lambda chosen: Image())
     monkeypatch.setattr(fw.image, "altered", lambda image: ())
     monkeypatch.setattr(prelink, "_port_now", lambda chosen: PORT)

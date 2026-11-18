@@ -1,4 +1,4 @@
-"""The operator's routes, against the real app with the demo subsystem served."""
+"""Tests the operator's routes on the real app, with the demo subsystem served."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +9,7 @@ from shared import paths
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    """Return a client against the real app, with demo served and a state directory of its own."""
+    """Return a client for the real app. The demo subsystem is served and STEF_HOME is a temporary directory."""
     with pytest.MonkeyPatch.context() as patched:
         patched.setenv(paths.ENV_HOME, str(tmp_path_factory.mktemp("home")))
         patched.setenv("STEF_DEMO", "1")

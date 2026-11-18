@@ -1,4 +1,4 @@
-"""GuiModel driven against the demo subsystem, which acts out every behaviour without hardware."""
+"""Tests GuiModel with the demo subsystem, which needs no hardware."""
 
 import json
 import threading
@@ -16,7 +16,7 @@ WAIT_S = 5.0
 
 
 class ChangeRecorder:
-    """Every change a model published, and a way to wait for one without polling."""
+    """Records the changes that a model publishes and waits for a matching one without polling."""
 
     def __init__(self) -> None:
         self.changes: list[Change] = []
@@ -155,7 +155,7 @@ def test_a_stop_with_the_link_down_raises_an_alarm(model, recorder):
         model.request_stop("demo")
 
     alarm = model.stop_alarm("demo")
-    assert alarm is not None and "the hardware's state is unknown" in alarm.message
+    assert alarm is not None and "The hardware's state is unknown" in alarm.message
     model.acknowledge_stop_alarm("demo")
     assert model.stop_alarm("demo") is None
 

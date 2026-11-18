@@ -176,7 +176,7 @@ class FlashBoard(Test[Any]):
     Erases the flash and writes one installed release onto it, then reads it back
     and asks the firmware who it is. Refuses a board that already runs the chosen
     version unless forced, and refuses a release built for another chip always.
-    However it ends, it says whether the board was left with working firmware.
+    Its end step reports whether the board has working firmware.
     """
 
     sub: Transport

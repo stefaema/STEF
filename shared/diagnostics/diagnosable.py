@@ -197,7 +197,7 @@ class Diagnosable(Subsystem):
         return not isinstance(self, Linked) or self.link_state() is LinkState.UP
 
     def _stop_reaching_hardware(self) -> None:
-        """Call stop(), or raise StopUnconfirmed when the link it goes through is not up."""
+        """Call stop(), or raise StopUnconfirmed if the link is not up."""
         if not self._link_is_up():
             raise StopUnconfirmed(self.link_state(), self.link_reason())
         self.stop()

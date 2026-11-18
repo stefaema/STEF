@@ -1,4 +1,4 @@
-"""A submitted HTML form, as the values a test, command or link takes."""
+"""Converts a submitted HTML form into the values that a test, command or link expects."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -10,7 +10,7 @@ FormInput = Input | InputView
 
 
 def values_from(inputs: Sequence[FormInput], form: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the form's values by input name. A browser sends only strings, flattened."""
+    """Return the form's values keyed by input name. The browser sends every value as a string and group rows as flat keys."""
     return _submitted(inputs, form)
 
 

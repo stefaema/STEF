@@ -392,7 +392,7 @@ def test_a_stop_with_the_link_down_raises_and_sends_nothing(oven):
     oven.disconnect()
     before = oven.stopped
 
-    with pytest.raises(StopUnconfirmed, match="not sent: the link is down"):
+    with pytest.raises(StopUnconfirmed, match="not sent because the link is down"):
         oven.request_stop()
 
     assert oven.stopped == before
@@ -410,7 +410,7 @@ def test_a_deferred_stop_after_the_link_died_is_unconfirmed(oven, monkeypatch):
     finished = done["run"]
     assert oven.stopped == 0
     assert finished.stopped.level is Level.ERROR
-    assert "the hardware's state is unknown" in finished.stopped.summary
+    assert "The hardware's state is unknown" in finished.stopped.summary
     assert finished.stop_unconfirmed == finished.stopped.summary
     assert heard[-1] == finished.stopped
 
@@ -439,7 +439,7 @@ def test_a_stop_during_a_test_that_holds_no_link_cancels_and_sends_nothing(oven)
 
     assert oven.stopped == stopped_before
     assert stopping.stopped is not None and stopping.stopped.level is Level.OK
-    assert "nothing to stop" in stopping.stopped.summary
+    assert "no stop was sent" in stopping.stopped.summary
     assert stopping.stop_unconfirmed is None
 
 

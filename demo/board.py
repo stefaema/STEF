@@ -26,7 +26,7 @@ class Board:
         dies_after: float | None = None,
         on_death: Callable[[], None] | None = None,
     ) -> None:
-        """A board that stops answering dies_after seconds in, calling on_death then."""
+        """Stops answering after dies_after seconds and calls on_death at that time."""
         self.opened = time.monotonic()
         self.dies_after = dies_after
         self.drives = {"left": Drive(), "right": Drive()}

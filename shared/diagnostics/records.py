@@ -94,7 +94,7 @@ class Prompt:
 
 @dataclass(frozen=True, slots=True)
 class PromptClosed:
-    """A question stopped being asked: answered, timed out or cancelled."""
+    """Reported when a question closes because it was answered, timed out or was cancelled."""
 
     test: str
     step: str
@@ -115,7 +115,7 @@ class NoAnswer(Exception):
     pass
 
 
-# How a stop that was not sent describes the link it would have gone through.
+# Link state as written in a StopUnconfirmed message.
 LINK_STATE_SAID = {
     LinkState.DOWN: "the link is down",
     LinkState.LINKING: "the link is still connecting",
@@ -125,7 +125,7 @@ LINK_STATE_SAID = {
 
 
 class StopUnconfirmed(Exception):
-    """Raised when a stop could not be sent, so the hardware's state is unknown."""
+    """Raised when a stop was not sent because the link is not up. The hardware's state is then unknown."""
 
     def __init__(
         self,
@@ -141,7 +141,7 @@ class StopUnconfirmed(Exception):
         if link_reason:
             cause = f"{cause} ({link_reason})"
         super().__init__(
-            f"the stop was not sent: {cause}; the hardware's state is unknown"
+            f"the stop was not sent because {cause}. The hardware's state is unknown"
         )
         self.link_state = link_state
         self.link_reason = link_reason

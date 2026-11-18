@@ -1,13 +1,12 @@
-"""What each change the model publishes redraws on the screen, and the connections it goes to.
+"""Renders each published change into a server-sent event for every connected browser.
 
-A change is rendered once, on the thread that published it, into the text of one
-server-sent event. Every connected browser gets that same text through its own
-asyncio queue, so no thread is held per connection.
+Each change is rendered once, on the thread that published it. Every browser receives
+the same text through its own asyncio queue, so no thread is held per connection.
 
-Fragments that read the same for every viewer travel out of band: HTMX swaps each
-one in by its id. The LINK channel also sends `link_state` when the link itself
-changed. Each board listens for that, for its own subsystem, and fetches itself
-again, since what it shows depends on which tool that viewer has open.
+Fragments that look the same for every browser are sent out of band, and HTMX swaps
+each one in by its id. The LINK channel also sends a `link_state` event. The board of
+that subsystem then requests itself again, because its content depends on which tool
+the browser has open.
 """
 
 import asyncio
@@ -22,19 +21,19 @@ from gui.src.messages import Change, Channel, LogLine
 from gui.src.model import GuiModel
 from shared.diagnostics import Needs
 
-# How many rendered events one browser may fall behind by before it misses some.
+# Queue size per browser. Events beyond it are dropped for that browser.
 CONNECTION_DEPTH = 512
 
 
 def sse_event(name: str, body: str) -> str:
-    """Return body as one server-sent event called name, one data line per line."""
+    """Return body as one server-sent event named name, with one data line per line of body."""
     lines = body.splitlines() or [""]
     return f"event: {name}\n" + "".join(f"data: {line}\n" for line in lines) + "\n"
 
 
 class ScreenBindings:
     def __init__(self, model: GuiModel, templates: Jinja2Templates) -> None:
-        """Render model's changes with templates, for every browser that connects."""
+        """Render the model's changes with templates and send them to every connected browser."""
         self.model = model
         self.templates = templates
         self._connections: list[
@@ -51,7 +50,7 @@ class ScreenBindings:
     # ── Connections ──────────────────────────────────────────────────────────
 
     def connect(self) -> asyncio.Queue[str]:
-        """Return the queue one browser's event stream reads, starting with the log backlog."""
+        """Register a browser and return its event queue, which starts with the log backlog."""
         events: asyncio.Queue[str] = asyncio.Queue(CONNECTION_DEPTH)
         for log_line in self.model.log_backlog():
             events.put_nowait(self.log_event(log_line))
@@ -66,7 +65,7 @@ class ScreenBindings:
             ]
 
     def publish(self, change: Change) -> None:
-        """Render change once and hand the same text to every connected browser."""
+        """Render change once and queue the text for every connected browser."""
         with self._lock:
             connections = list(self._connections)
         if not connections:
@@ -77,7 +76,7 @@ class ScreenBindings:
         for loop, events in connections:
             loop.call_soon_threadsafe(_offer, events, rendered)
 
-    # ── What each channel redraws ────────────────────────────────────────────
+    # ── Rendering per channel ────────────────────────────────────────────────
 
     def render(self, change: Change) -> str:
         match change.channel:
@@ -96,7 +95,7 @@ class ScreenBindings:
         return sse_event("log", self._render("log/record.html", {"log_line": log_line}))
 
     def link_events(self, subsystem_id: str) -> str:
-        """Return the board's viewer-independent fragments, then link_state if the link moved."""
+        """Return the fragments that look the same to every browser, followed by a link_state event."""
         template_context = view.tests_tool_context(self.model, subsystem_id)
         template_context["oob"] = True
         fragments = [
@@ -163,7 +162,7 @@ class ScreenBindings:
 
 
 def _offer(events: asyncio.Queue[str], rendered: str) -> None:
-    """Put rendered on one browser's queue, dropping it for a browser that fell too far behind."""
+    """Queue rendered for one browser. Drop it if that browser's queue is full."""
     try:
         events.put_nowait(rendered)
     except asyncio.QueueFull:

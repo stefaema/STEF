@@ -1,7 +1,7 @@
-"""The closed sets of messages between GuiModel and a SubsystemWorker, and the channels the browser hears.
+"""Messages between GuiModel and SubsystemWorker, and the channels that GuiModel publishes on.
 
-Every field is a value `shared.diagnostics.as_json` serialises, so a worker can move
-into a subprocess without changing the model.
+Every field holds a value that `shared.diagnostics.as_json` can serialise. This lets
+a worker run in a subprocess later without changes to the model.
 """
 
 import enum
@@ -10,7 +10,7 @@ from typing import Any
 
 from shared.diagnostics import SubsystemView, TestView
 
-# ── Requests: the model asks a worker ────────────────────────────────────────
+# ── Requests from the model to a worker ──────────────────────────────────────
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +74,11 @@ WorkerRequest = (
 )
 
 
-# ── Events: a worker tells the model ─────────────────────────────────────────
+# ── Events from a worker to the model ────────────────────────────────────────
 
 
 class FailureKind(enum.Enum):
-    """Why a request did not do what it asked."""
+    """Why a request failed."""
 
     NOT_READY = "not_ready"
     STOP_UNCONFIRMED = "stop_unconfirmed"
@@ -87,7 +87,7 @@ class FailureKind(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class RequestFinished:
-    """One request is done. reply is what it returned; failure says why it did not."""
+    """Sent when a request is finished. reply holds its return value. failure holds the reason if it failed."""
 
     subsystem_id: str
     request_id: int
@@ -98,7 +98,7 @@ class RequestFinished:
 
 @dataclass(frozen=True, slots=True)
 class SubsystemChanged:
-    """Something that changes what the whole board shows: the link, readiness, facts."""
+    """Sent when the link, readiness or facts change. It carries the whole subsystem view."""
 
     subsystem_view: SubsystemView
     link_changed: bool
@@ -106,7 +106,7 @@ class SubsystemChanged:
 
 @dataclass(frozen=True, slots=True)
 class TestChanged:
-    """One test moved: a step settled, a question opened or closed, a stop was asked."""
+    """Sent when a step finishes, a question opens or closes, or a stop is requested."""
 
     subsystem_id: str
     test_view: TestView
@@ -114,7 +114,7 @@ class TestChanged:
 
 @dataclass(frozen=True, slots=True)
 class TestEnded:
-    """One test's run is over, whatever its verdict."""
+    """Sent when a test run ends."""
 
     subsystem_id: str
     test_view: TestView
@@ -124,11 +124,11 @@ class TestEnded:
 WorkerEvent = RequestFinished | SubsystemChanged | TestChanged | TestEnded
 
 
-# ── Channels: the model tells the browser ────────────────────────────────────
+# ── Channels that the model publishes on ─────────────────────────────────────
 
 
 class Channel(enum.Enum):
-    """One kind of change the screen shows. Every subsystem shares the same four."""
+    """The kind of a published change. All subsystems use the same four channels."""
 
     LOG = "log"
     LINK = "link"
@@ -148,7 +148,7 @@ class LogLine:
 
 @dataclass(frozen=True, slots=True)
 class Change:
-    """One change the model published. subsystem_id and test_key say what changed."""
+    """A change that the model published. subsystem_id and test_key identify what changed."""
 
     channel: Channel
     subsystem_id: str | None = None

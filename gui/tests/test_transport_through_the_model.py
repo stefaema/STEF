@@ -1,4 +1,4 @@
-"""What the transport subsystem declares, read and refused through GuiModel, with nothing plugged in."""
+"""Tests transport's declarations and refusals through GuiModel, with no board attached."""
 
 import json
 
@@ -11,7 +11,7 @@ from shared.subsystem import LinkState
 
 @pytest.fixture
 def unplugged(monkeypatch):
-    """Answer as a machine with nothing attached, so every refusal reads the same anywhere."""
+    """Report no attached ports, so the refusals are the same on every machine."""
     from transport import fw
 
     monkeypatch.setattr(fw.probe, "candidates", lambda: ())

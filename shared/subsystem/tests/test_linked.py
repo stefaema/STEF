@@ -179,7 +179,7 @@ def test_a_link_that_is_down_has_no_handle():
 
 
 def watched_oven():
-    """Return an oven and the link states it announced, in order."""
+    """Return an oven and a list that records each announced link state in order."""
     oven = Oven()
     announced: list[LinkState] = []
     oven.watch_link(lambda: announced.append(oven.link_state()))

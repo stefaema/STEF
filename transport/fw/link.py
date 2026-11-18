@@ -362,7 +362,7 @@ class FirmwareLink:
     ) -> None:
         """Open the port or take the stream, then start the threads.
 
-        on_lost is called once, from the reader thread, when the stream fails.
+        on_lost is called once on the reader thread if the stream fails.
         """
         self._namespaces: dict[str, fw_api.Namespace] = {}
         if (port is None) == (stream is None):
@@ -384,7 +384,7 @@ class FirmwareLink:
         self._reader.start()
 
     def _stream_failed(self) -> None:
-        """Release every waiting call, then tell the owner the link is gone."""
+        """Release every waiting call, then call on_lost."""
         self._broker.stop()
         if self._on_lost is not None:
             self._on_lost()
