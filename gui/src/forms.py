@@ -1,27 +1,31 @@
+"""A submitted HTML form, as the values a test, command or link takes."""
+
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from shared.subsystem import Input
+from shared.diagnostics import InputView
+from shared.subsystem import Input, truthy
 
-TRUTHY = ("true", "1", "on", "yes")
+FormInput = Input | InputView
 
 
-def values_from(inputs: Sequence[Input], form: Mapping[str, Any]) -> dict[str, Any]:
+def values_from(inputs: Sequence[FormInput], form: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the form's values by input name. A browser sends only strings, flattened."""
     return _submitted(inputs, form)
 
 
-def _submitted(inputs: Sequence[Input], form: Mapping[str, Any]) -> dict[str, Any]:
-    taken: dict[str, Any] = {}
+def _submitted(inputs: Sequence[FormInput], form: Mapping[str, Any]) -> dict[str, Any]:
+    form_values: dict[str, Any] = {}
     for item in inputs:
         if item.kind == "group":
-            taken[item.name] = _rows(item, form)
+            form_values[item.name] = _rows(item, form)
         elif item.kind == "bitmask":
-            taken[item.name] = _mask(item.name, form)
+            form_values[item.name] = _mask(item.name, form)
         elif item.kind == "boolean":
-            taken[item.name] = _flag(item.name, form)
+            form_values[item.name] = truthy(form.get(item.name, ""))
         elif item.name in form:
-            taken[item.name] = form[item.name]
-    return taken
+            form_values[item.name] = form[item.name]
+    return form_values
 
 
 def _listed(name: str, form: Mapping[str, Any]) -> list[Any]:
@@ -34,18 +38,14 @@ def _listed(name: str, form: Mapping[str, Any]) -> list[Any]:
     return list(found) if isinstance(found, list) else [found]
 
 
-def _flag(name: str, form: Mapping[str, Any]) -> bool:
-    return str(form.get(name, "")).strip().lower() in TRUTHY
-
-
 def _mask(name: str, form: Mapping[str, Any]) -> int:
-    held = 0
+    mask = 0
     for one in _listed(name, form):
-        held |= int(one or 0)
-    return held
+        mask |= int(one or 0)
+    return mask
 
 
-def _rows(item: Input, form: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _rows(item: FormInput, form: Mapping[str, Any]) -> list[dict[str, Any]]:
     prefix = f"{item.name}."
     indices = sorted(
         {
@@ -58,7 +58,7 @@ def _rows(item: Input, form: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [_row(item, form, f"{prefix}{index}.") for index in indices]
 
 
-def _row(item: Input, form: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+def _row(item: FormInput, form: Mapping[str, Any], prefix: str) -> dict[str, Any]:
     return _submitted(item.columns, _Scoped(form, prefix))
 
 

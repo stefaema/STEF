@@ -16,28 +16,28 @@
 </div>
 {%- endmacro -%}
 
-{%- macro result(answer, copyable=False) -%}
-{%- if answer %}
+{%- macro result(result, copyable=False) -%}
+{%- if result %}
 <div class="{{ S.card }} overflow-hidden">
   <div class="flex items-start gap-2 px-3 py-2 border-b border-gray-300 dark:border-gray-700">
     <div class="min-w-0 flex-1">
-      <div class="{{ S.mono }} text-gray-900 dark:text-white">{{ answer.summary }}</div>
-      {%- if answer.note %}<div class="{{ S.hint }}">{{ answer.note }}</div>{% endif %}
+      <div class="{{ S.mono }} text-gray-900 dark:text-white">{{ result.summary }}</div>
+      {%- if result.note %}<div class="{{ S.hint }}">{{ result.note }}</div>{% endif %}
     </div>
-    {%- if copyable %}{{ M.copy_button(answer|as_record) }}{% endif %}
+    {%- if copyable %}{{ M.copy_button(result|as_record) }}{% endif %}
   </div>
-  {%- if answer.raw %}
+  {%- if result.raw %}
   <div class="px-3 py-2 border-b border-gray-300 dark:border-gray-700">
-    <div class="max-h-24 overflow-auto font-mono text-xs tracking-widest text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ answer.raw|hexdump }}</div>
+    <div class="max-h-24 overflow-auto font-mono text-xs tracking-widest text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ result.raw|hexdump }}</div>
   </div>
   {%- endif %}
-  {%- if answer.image %}
+  {%- if result.image %}
   <div class="px-3 py-2 border-b border-gray-300 dark:border-gray-700">
-    <img src="{{ answer.image|data_uri }}" alt="{{ answer.summary }}" class="max-h-64 w-auto rounded border border-gray-300 dark:border-gray-700">
+    <img src="{{ result.image|data_uri }}" alt="{{ result.summary }}" class="max-h-64 w-auto rounded border border-gray-300 dark:border-gray-700">
   </div>
   {%- endif %}
-  {%- if answer.fields %}<div class="p-3">{{ kv_table(answer.fields) }}</div>{% endif %}
-  {%- if answer.table %}<div class="p-3">{{ kv_table(answer.table.rows, answer.table.head) }}</div>{% endif %}
+  {%- if result.fields %}<div class="p-3">{{ kv_table(result.fields) }}</div>{% endif %}
+  {%- if result.table %}<div class="p-3">{{ kv_table(result.table.rows, result.table.head) }}</div>{% endif %}
 </div>
 {%- endif -%}
 {%- endmacro -%}

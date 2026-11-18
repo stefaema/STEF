@@ -1,0 +1,3 @@
+{%- set dot = LINK_MARK.get(one.link_state, LINK_MARK["down"])[1] -%}
+<span id="subsystem-mark-{{ one.id }}" class="w-1.5 h-1.5 rounded-full {{ "bg-red-600 animate-pulse" if one.alarmed else dot }}"
+      title="{{ _("A stop could not be confirmed") if one.alarmed else _(LINK_LABEL.get(one.link_state, one.link_state)) }}"{{ ' hx-swap-oob="true"'|safe if oob }}></span>

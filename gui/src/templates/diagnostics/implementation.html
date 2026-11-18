@@ -1,19 +1,19 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
-<div class="{{ S.card }}" id="implementation">
+<div class="{{ S.card }}" id="implementation-{{ subsystem_view.id }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
   <div class="{{ S.cardHead }}">
     <span class="{{ S.sectionTitle }}">{{ _("Implementation") }}</span>
     <span class="{{ S.spacer }}"></span>
-    {{ M.link_mark(sub.link_state().value) }}
+    {{ M.link_mark(subsystem_view.link.state.value if subsystem_view.link else "down") }}
   </div>
   <div class="flex flex-col gap-2 p-4">
-    <span class="{{ S.lede }}">{{ sub.summary }}</span>
-    {%- if sub.description %}{{ M.show_more(sub.description) }}{% endif %}
-    {%- if seen.facts and seen.facts.fields %}
+    <span class="{{ S.lede }}">{{ subsystem_view.summary }}</span>
+    {%- if subsystem_view.description %}{{ M.show_more(subsystem_view.description) }}{% endif %}
+    {%- if subsystem_view.facts and subsystem_view.facts.fields %}
     <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 pt-2 text-sm">
-      {%- for name, said in seen.facts.fields %}
+      {%- for name, value in subsystem_view.facts.fields %}
       <dt class="text-gray-500 dark:text-gray-400">{{ name }}</dt>
-      <dd class="font-mono text-gray-900 dark:text-white">{{ said }}</dd>
+      <dd class="font-mono text-gray-900 dark:text-white">{{ value }}</dd>
       {%- endfor %}
     </dl>
     {%- endif %}

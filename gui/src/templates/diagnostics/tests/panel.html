@@ -1,11 +1,11 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
 <div id="panel" class="flex flex-col gap-4">
-  {%- if not groups %}
+  {%- if not test_groups %}
   <div class="{{ S.card }}"><div class="{{ S.cardBody }}"><div class="{{ S.hint }}">{{ _("This subsystem declares no tests") }}</div></div></div>
   {%- else %}
-  {%- for name, items in groups %}
-  {{ M.section(group_label(name), M.outcome_mark(worst_status(items), id="mark-" ~ (sub.id ~ "-" ~ name)|slug)) }}
+  {%- for name, items in test_groups %}
+  {{ M.section(group_label(name), M.outcome_mark(worst_status(items), id="mark-" ~ (subsystem_view.id ~ "-" ~ name)|slug)) }}
   <div class="flex flex-col gap-2">
     {%- for item in items %}{% with test = item %}{% include "diagnostics/tests/test.html" %}{% endwith %}{% endfor %}
   </div>

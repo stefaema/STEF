@@ -1,8 +1,11 @@
+"""The operator's routes. Each one reads a form, calls GuiModel, and renders what it holds.
+
+The model starts with the server and closes with it: on shutdown every running test
+is let end, and every subsystem is stopped and disconnected.
+"""
+
 import asyncio
-import json
-import time
-import traceback
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -11,233 +14,101 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from gui.src import render, view
+from gui.src.bindings import ScreenBindings
 from gui.src.forms import values_from
 from gui.src.i18n import gettext, ngettext
-from gui.src.render import OPTIONS
-from gui.src.runner import Record, Stream, call_off_loop, start_run
-from machine import AREAS, Activity, Area, Busy, Machine
+from gui.src.model import GuiModel, Refused
 from shared import logs
-from shared.diagnostics import (
-    LINK_KEY,
-    Diagnosable,
-    Needs,
-    Prompt,
-    StepOutcome,
-    as_json,
-)
-from shared.diagnostics.views import view_of_test
-from shared.subsystem import (
-    Input,
-    Linked,
-    NotReady,
-    Result,
-    answered,
-    blank_values,
-    coerced,
-    options_are_live,
-)
+from shared.diagnostics import CommandView, InputView, TestView
 
 HERE = Path(__file__).resolve().parent
 WEB = HERE.parent / "web"
-HEARTBEAT = 15.0
-STARTING = 1.0
+# Seconds between comments on an idle event stream, so nothing between closes it.
+KEEPALIVE_S = 15.0
 
-
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
-    wake()
-    yield
-
-
-app = FastAPI(title="STEF", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 templates.env.add_extension("jinja2.ext.i18n")
 templates.env.install_gettext_callables(gettext, ngettext, newstyle=True)  # pyright: ignore[reportAttributeAccessIssue]
 templates.env.filters.update(render.FILTERS)
 templates.env.globals.update(render.GLOBALS)
 
-stream = Stream()
-runs = Stream()
-stef = Machine()
+model = GuiModel()
+bindings = ScreenBindings(model, templates)
 log = logs.as_component("gui")
 
 
-def wake() -> None:
-    written = logs.start()
-    logs.to(stream.sink)
-    log.info("writing to {}", written)
-    stef.assemble()
-    stream.say("gui", "ok", "gui", gettext("Backend ready"))
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
+    log.info("writing to {}", logs.start())
+    model.start()
+    bindings.start()
+    yield
+    bindings.close()
+    await run_in_threadpool(model.close)
 
 
-def diagnosed(name: str | None) -> Diagnosable | None:
-    found = stef.subsystems.get(name) if name else None
-    return found if isinstance(found, Diagnosable) else None
+app = FastAPI(title="STEF", lifespan=lifespan)
 
 
-def subsystem_of(name: str) -> Any:
-    found = diagnosed(name)
+# ── Finding what a route names ───────────────────────────────────────────────
+
+
+def served_subsystem(subsystem_id: str) -> str:
+    if not model.has_subsystem(subsystem_id):
+        raise HTTPException(404, f"no subsystem {subsystem_id!r}")
+    return subsystem_id
+
+
+def declared_test(subsystem_id: str, test_key: str) -> TestView:
+    try:
+        return model.test_view(served_subsystem(subsystem_id), test_key)
+    except KeyError:
+        raise HTTPException(404, f"no test {subsystem_id}.{test_key}") from None
+
+
+def declared_command(subsystem_id: str, command_key: str) -> CommandView:
+    subsystem_view = model.subsystem_view(served_subsystem(subsystem_id))
+    found = next(
+        (one for one in subsystem_view.commands if one.key == command_key), None
+    )
     if found is None:
-        raise HTTPException(404, f"no subsystem {name!r}")
+        raise HTTPException(404, f"no command {subsystem_id}.{command_key}")
     return found
 
 
-def _test_of(sub: Any, key: str) -> Any:
-    try:
-        return sub.test(key)
-    except KeyError:
-        raise HTTPException(404, f"no test {sub.id}.{key}") from None
+def link_target(subsystem_id: str) -> InputView:
+    link = model.subsystem_view(served_subsystem(subsystem_id)).link
+    if link is None or link.target is None:
+        raise HTTPException(404, f"{subsystem_id} has no link")
+    return link.target
 
 
-def _command_of(sub: Any, key: str) -> Any:
-    try:
-        return sub.command(key)
-    except KeyError:
-        raise HTTPException(404, f"no command {sub.id}.{key}") from None
+def options_still_loading(inputs: tuple[InputView, ...], form: Any) -> bool:
+    """Whether a live option list has not arrived yet, so the form cannot be judged."""
+    return any(
+        one.kind == "choice"
+        and one.reload is not None
+        and not str(form.get(one.name, "")).strip()
+        for one in inputs
+    )
 
 
-def _target_of(sub: Any) -> Input:
-    if not isinstance(sub, Linked):
-        raise HTTPException(404, f"{sub.id} has no link")
-    return type(sub).target
+def fragment(request: Request, template: str, template_context: dict[str, Any]) -> Any:
+    return templates.TemplateResponse(request, template, template_context)
 
 
-def _refusal(activity: Activity) -> str:
-    if activity is Activity.CONFIGURING:
-        return gettext("There are unsaved changes")
-    if activity is Activity.SCANNING:
-        return gettext("A scan is running")
-    return gettext("A test is running")
+def page(request: Request, subsystem_id: str | None, tool: str) -> Any:
+    """Return the whole page, or only #main when HTMX asked for it."""
+    template_context = view.tool_context(model, subsystem_id, tool)
+    partial = request.headers.get("hx-request") == "true"
+    template = "diagnostics/main.html" if partial else "diagnostics/index.html"
+    return fragment(request, template, template_context)
 
 
-def _area_refusals() -> dict[str, str | None]:
-    held = stef.activity
-    return {
-        area.value: _refusal(held) if held and AREAS[area] is not held else None
-        for area in Area
-    }
-
-
-def _failed(name: str, exc: BaseException) -> str:
-    message = f"{type(exc).__name__}: {exc}"
-    stream.say(name, "error", "result", message)
-    stream.say(name, "error", "traceback", "".join(traceback.format_exception(exc)))
-    return message
-
-
-def _link_state(name: str) -> str:
-    return stef.link_state_of(name).value
-
-
-def _shown(values: dict[str, Any]) -> str:
-    return ", ".join(f"{k}={v!r}" for k, v in values.items())
-
-
-# ── Starting one run ─────────────────────────────────────────────────────────
-
-OUTCOME_LEVEL = {
-    "failed": "error",
-    "error": "error",
-    "warned": "warn",
-    "cancelled": "warn",
-}
-
-
-def _reporting(name: str, key: str) -> Callable[[str, Any], None]:
-    def report(event: str, item: Any) -> None:
-        if event == "started":
-            runs.say(name, "ok", "started", key, {"key": key})
-            return
-        if event == "done":
-            run = subsystem_of(name).last_run(key)
-            settled = run.verdict() if run is not None else None
-            status = settled.value if settled is not None else "skipped"
-            runs.say(name, "ok", "done", key, {"key": key, "status": status})
-            return
-        if event == "error":
-            runs.say(name, "error", "error", str(item), {"key": key})
-            return
-        if isinstance(item, Result):
-            level = "error" if item.level.value == "error" else "ok"
-            runs.say(name, level, "stopped", item.summary, {"key": key})
-            return
-        if isinstance(item, Prompt):
-            asked = item.question.hint or item.question.name
-            runs.say(name, "ok", "prompt", asked, {"key": key})
-            return
-        if isinstance(item, StepOutcome):
-            packed = as_json(item)
-            runs.say(
-                name,
-                OUTCOME_LEVEL.get(packed["status"], "ok"),
-                "outcome",
-                packed["detail"],
-                {"key": key, "outcome": packed},
-            )
-
-    return report
-
-
-def _begin(name: str, key: str, submitted: dict[str, Any]) -> None:
-    sub = subsystem_of(name)
-    _test_of(sub, key)
-    verdict = sub.readiness(key, operator=True)
-    if not verdict:
-        raise HTTPException(409, str(verdict))
-
-    stream.say(name, "ok", "command", f"{key}({_shown(submitted)})")
-    report = _reporting(name, key)
-
-    def work() -> None:
-        sub.run_test(
-            key, submitted, lambda said: report("outcome", said), operator=True
-        )
-
-    runs.forget()
-    began = time.time()
-    try:
-        start_run(stef, Activity.BENCHING, f"{name}.{key}", work, report)
-    except Busy as exc:
-        raise HTTPException(409, _refusal(exc.activity)) from exc
-    deadline = time.monotonic() + STARTING
-    while time.monotonic() < deadline:
-        last = sub.last_run(key)
-        if last is not None and last.started >= began:
-            break
-        time.sleep(0.01)
-
-
-def _answer(sub: Any, key: str, form: Any) -> None:
-    run = sub.running()
-    asked = run.prompt if run is not None else None
-    if run is None or asked is None:
-        raise HTTPException(409, gettext("Nothing is being asked"))
-    taken = values_from((asked.question,), form)
-    sub.answer(taken.get(asked.question.name, ""))
-    deadline = time.monotonic() + STARTING
-    while run.prompt is asked and time.monotonic() < deadline:
-        time.sleep(0.01)
-    runs.say(sub.id, "ok", "answered", asked.question.name, {"key": key})
-
-
-def _stop_requested(name: str, sub: Any) -> str | None:
-    stream.say(name, "warn", "command", "stop()")
-    try:
-        deferred = sub.request_stop()
-    except Exception as exc:  # noqa: BLE001
-        return _failed(name, exc)
-    if deferred:
-        stream.say(
-            name, "warn", "result", gettext("Stopping once the end step is done")
-        )
-    else:
-        stream.say(name, "ok", "result", gettext("Stopped"))
-    return None
-
-
-# ── The JSON a machine reads ─────────────────────────────────────────────────
+# ── Pages and the event stream ───────────────────────────────────────────────
 
 
 @app.get("/", include_in_schema=False)
@@ -245,563 +116,316 @@ def index() -> RedirectResponse:
     return RedirectResponse("/diagnostics")
 
 
-@app.get("/api/state")
-def machine_state() -> dict[str, Any]:
-    return {
-        "state": stef.activity.value if stef.activity else "idle",
-        "areas": _area_refusals(),
-        "subsystems": {name: _link_state(name) for name in stef.subsystems},
-    }
-
-
-@app.get("/api/subsystems")
-def declarations() -> list[dict[str, Any]]:
-    found = []
-    for name in stef.roster:
-        if name not in stef.subsystems:
-            found.append({"id": name, "available": False})
-            continue
-        found.append({**as_json(subsystem_of(name).view()), "available": True})
-    return found
-
-
-@app.get("/api/options/{name}/{key}/{input_name}")
-async def options_for(name: str, key: str, input_name: str) -> list[dict[str, Any]]:
-    sub = subsystem_of(name)
-    try:
-        return list(await asyncio.to_thread(sub.options, key, input_name))
-    except KeyError as exc:
-        raise HTTPException(404, f"no options for {name}.{key}.{input_name}") from exc
-
-
-def _target_value(sub: Any, values: Any) -> Any:
-    target = _target_of(sub)
-    taken = values_from((target,), values)
-    return coerced(target, taken.get(target.name, ""), sub)
-
-
-@app.post("/api/link/{name}/readiness")
-async def link_readiness(name: str, values: dict[str, Any]) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    chosen = _target_value(sub, values)
-    try:
-        verdict = answered(await asyncio.to_thread(sub.probe, chosen))
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": f"{type(exc).__name__}: {exc}"}
-    return as_json(verdict)
-
-
-@app.post("/api/link/{name}/connect")
-async def connect(name: str, values: dict[str, Any]) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    chosen = _target_value(sub, values)
-    try:
-        await _opened(name, sub, chosen)
-    except Busy as exc:
-        raise HTTPException(409, _refusal(exc.activity)) from exc
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc), "link": _link_state(name)}
-    return {"ok": True, "reason": None, "link": _link_state(name)}
-
-
-@app.post("/api/link/{name}/disconnect")
-async def disconnect(name: str) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    _target_of(sub)
-    try:
-        await _closed(name, sub)
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc), "link": _link_state(name)}
-    return {"ok": True, "link": _link_state(name)}
-
-
-@app.post("/api/run/{name}/{key}")
-async def run(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
-    await asyncio.to_thread(_begin, name, key, values)
-    return {"ok": True, "run": f"{name}.{key}"}
-
-
-@app.post("/api/call/{name}/{key:path}")
-async def call(name: str, key: str, values: dict[str, Any]) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    _command_of(sub, key)
-    verdict = sub.readiness(key)
-    if not verdict:
-        raise HTTPException(409, str(verdict))
-    answer = await _called(name, sub, key, values)
-    if not answer["ok"]:
-        return answer
-    packed = as_json(answer["value"]) if answer["value"] else None
-    return {"ok": True, "reason": None, "value": packed}
-
-
-@app.post("/api/answer/{name}")
-async def answer(name: str, values: dict[str, Any]) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    run = sub.running()
-    asked = run.prompt if run is not None else None
-    if asked is None:
-        raise HTTPException(409, gettext("Nothing is being asked"))
-    await asyncio.to_thread(_answer, sub, asked.test, values)
-    return {"ok": True}
-
-
-@app.post("/api/stop/{name}")
-async def stop(name: str) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    pending = sub.running() is not None
-    reason = await asyncio.to_thread(_stop_requested, name, sub)
-    return {"ok": reason is None, "reason": reason, "pending": pending}
-
-
-async def _opened(name: str, sub: Any, chosen: Any) -> None:
-    stream.say(name, "ok", "command", f"connect({chosen!r})")
-    await call_off_loop(
-        stef, Activity.BENCHING, f"{name}.connect", lambda: sub.connect(chosen)
-    )
-    OPTIONS.forget(name)
-    stream.say(name, "ok", "result", gettext("Connected"))
-
-
-async def _closed(name: str, sub: Any) -> None:
-    stream.say(name, "ok", "command", "disconnect()")
-    await asyncio.to_thread(sub.disconnect)
-    OPTIONS.forget(name)
-    stream.say(name, "ok", "result", gettext("Disconnected"))
-
-
-async def _called(
-    name: str, sub: Any, key: str, values: dict[str, Any]
-) -> dict[str, Any]:
-    stream.say(name, "ok", "command", f"{key}({_shown(values)})")
-    try:
-        reply: Result = await call_off_loop(
-            stef,
-            Activity.BENCHING,
-            f"{name}.{key}",
-            lambda: sub.run_command(key, values),
-        )
-    except Busy as exc:
-        return {"ok": False, "reason": _refusal(exc.activity), "value": None}
-    except NotReady as exc:
-        return {"ok": False, "reason": str(exc), "value": None}
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": _failed(name, exc), "value": None}
-    stream.say(name, "ok", "result", reply.summary)
-    return {"ok": True, "reason": None, "value": reply}
-
-
-# ── The HTML an operator reads ───────────────────────────────────────────────
-
-
-def _log_sources() -> list[dict[str, str]]:
-    return [{"id": "all", "label": gettext("All")}] + [
-        {"id": name, "label": name} for name in stef.subsystems
-    ]
-
-
-def _fields_for(sub: Any) -> Callable[[Any], Any]:
-    return lambda item: view.fields_of(item.inputs, OPTIONS.warm, sub.id, item.key)
-
-
-def _board(name: str | None, tool: str) -> dict[str, Any]:
-    sub = diagnosed(name)
-    return {
-        "sub": sub,
-        "seen": sub.view() if sub is not None else None,
-        "tabs": view.subsystem_tabs(stef, name),
-        "tool": tool,
-        "up": view.is_up(sub) if sub else False,
-        "log_sources": _log_sources(),
-        "fields_for": _fields_for(sub) if sub else (lambda item: ()),
-        "oob": False,
-    }
-
-
-def _link_context(name: str, tool: str, **extra: Any) -> dict[str, Any]:
-    held = _board(name, tool)
-    sub, seen = held["sub"], held["seen"]
-    link = seen.link if seen is not None else None
-    held.update(
-        connect_fields=view.fields_of((link.target,), OPTIONS.warm, sub.id, LINK_KEY)
-        if link is not None and link.target is not None
-        else (),
-        connect_values=blank_values((type(sub).target,)) if link is not None else {},
-        prelink=view.tests_while_down(seen) if seen is not None else [],
-        reason=None,
-        error=None,
-        known=held["up"] or link is None,
-    )
-    held.update(extra)
-    return held
-
-
-def _commands_context(name: str, group: str | None, key: str | None) -> dict[str, Any]:
-    held = _board(name, "commands")
-    sub, seen = held["sub"], held["seen"]
-    groups = view.command_groups(seen) if seen is not None else []
-    held["groups"] = groups
-    if not groups:
-        return held
-    names = [one for one, _ in groups]
-    chosen = group if group in names else names[0]
-    siblings = dict(groups)[chosen]
-    picked = next((one for one in siblings if one.key == key), None)
-    command = picked or siblings[0]
-    held.update(
-        siblings=siblings,
-        command=command,
-        fields=view.fields_of(command.inputs, OPTIONS.warm, sub.id, command.key),
-        blank=blank_values(sub.command(command.key).inputs),
-    )
-    return held
-
-
-def _context(name: str | None, tool: str) -> dict[str, Any]:
-    if tool == "tests":
-        held = _board(name, tool)
-        seen = held["seen"]
-        held["groups"] = view.test_groups(seen) if seen is not None else []
-        return held
-    if tool == "commands":
-        return _commands_context(name or "", None, None)
-    return _link_context(name or "", "link") if name else _board(name, tool)
-
-
-def _page(request: Request, name: str | None, tool: str) -> Any:
-    held = _context(name, tool)
-    partial = request.headers.get("hx-request") == "true"
-    return templates.TemplateResponse(
-        request, "diagnostics/main.html" if partial else "diagnostics/index.html", held
-    )
-
-
-def _fragment(request: Request, template: str, held: dict[str, Any]) -> Any:
-    return templates.TemplateResponse(request, template, held)
-
-
-def _test_context(name: str, key: str, oob: bool = False) -> dict[str, Any]:
-    sub = subsystem_of(name)
-    seen = view_of_test(sub, sub.test(key), True)
-    return {
-        "sub": sub,
-        "test": seen,
-        "uid": render.slug(f"{sub.id}.{seen.key}"),
-        "fields_for": _fields_for(sub),
-        "oob": oob,
-    }
-
-
-@app.get("/diagnostics/stream/log")
-async def log_stream() -> StreamingResponse:
-    return _served(stream, "record", _log_html)
-
-
-@app.get("/diagnostics/stream/runs")
-async def run_stream() -> StreamingResponse:
-    return _served(runs, "run", _run_html())
-
-
 @app.get("/diagnostics", response_class=HTMLResponse)
 def diagnostics(request: Request) -> Any:
-    return _page(request, view.first_available(stef), "link")
+    return page(request, model.first_subsystem_id(), "link")
 
 
-@app.get("/diagnostics/{name}/commands/panel", response_class=HTMLResponse)
-def commands_panel(request: Request, name: str, group: str | None = None) -> Any:
-    subsystem_of(name)
-    return _fragment(
+@app.get("/diagnostics/events")
+async def screen_events() -> StreamingResponse:
+    """Stream every change the screen shows to one browser, as server-sent events."""
+    events = bindings.connect()
+
+    async def stream() -> AsyncIterator[str]:
+        try:
+            while True:
+                try:
+                    yield await asyncio.wait_for(events.get(), KEEPALIVE_S)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            bindings.disconnect(events)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.get("/diagnostics/{subsystem_id}", response_class=HTMLResponse)
+def subsystem_page(request: Request, subsystem_id: str) -> Any:
+    return page(request, served_subsystem(subsystem_id), "link")
+
+
+@app.get("/diagnostics/{subsystem_id}/{tool}", response_class=HTMLResponse)
+def tool_page(request: Request, subsystem_id: str, tool: str) -> Any:
+    served_subsystem(subsystem_id)
+    if tool not in view.TOOLS or (
+        tool != "link" and not model.link_is_up(subsystem_id)
+    ):
+        return RedirectResponse(f"/diagnostics/{subsystem_id}")
+    return page(request, subsystem_id, tool)
+
+
+# ── The link ─────────────────────────────────────────────────────────────────
+
+
+@app.post("/diagnostics/{subsystem_id}/link/readiness", response_class=HTMLResponse)
+async def link_readiness(request: Request, subsystem_id: str) -> Any:
+    target = link_target(subsystem_id)
+    form = await request.form()
+    if options_still_loading((target,), form):
+        return fragment(
+            request,
+            "diagnostics/link/actions.html",
+            view.link_tool_context(model, subsystem_id, probe_answered=False),
+        )
+    submitted = values_from((target,), form).get(target.name, "")
+    readiness = await run_in_threadpool(model.probe_target, subsystem_id, submitted)
+    return fragment(
+        request,
+        "diagnostics/link/actions.html",
+        view.link_tool_context(
+            model, subsystem_id, probe_refusal=readiness.reason, probe_answered=True
+        ),
+    )
+
+
+@app.post("/diagnostics/{subsystem_id}/link/connect", response_class=HTMLResponse)
+async def connect(request: Request, subsystem_id: str) -> Any:
+    target = link_target(subsystem_id)
+    submitted = values_from((target,), await request.form()).get(target.name, "")
+    action_error = None
+    try:
+        await run_in_threadpool(model.connect, subsystem_id, submitted)
+    except Refused as refused:
+        action_error = str(refused)
+    return fragment(
+        request,
+        "diagnostics/main.html",
+        view.link_tool_context(
+            model, subsystem_id, action_error=action_error, probe_answered=True
+        ),
+    )
+
+
+@app.post("/diagnostics/{subsystem_id}/link/disconnect", response_class=HTMLResponse)
+async def disconnect(request: Request, subsystem_id: str) -> Any:
+    link_target(subsystem_id)
+    action_error = None
+    try:
+        await run_in_threadpool(model.disconnect, subsystem_id)
+    except Refused as refused:
+        action_error = str(refused)
+    return fragment(
+        request,
+        "diagnostics/main.html",
+        view.link_tool_context(model, subsystem_id, action_error=action_error),
+    )
+
+
+# ── Stopping, and the alarm when a stop could not be sent ────────────────────
+
+
+@app.post("/diagnostics/{subsystem_id}/stop", response_class=HTMLResponse)
+async def stop(request: Request, subsystem_id: str) -> Any:
+    served_subsystem(subsystem_id)
+    action_error = None
+    try:
+        await run_in_threadpool(model.request_stop, subsystem_id)
+    except Refused as refused:
+        action_error = str(refused)
+    return fragment(
+        request,
+        "diagnostics/main.html",
+        view.link_tool_context(model, subsystem_id, action_error=action_error),
+    )
+
+
+@app.post("/diagnostics/{subsystem_id}/alarm/acknowledge", response_class=HTMLResponse)
+async def acknowledge_alarm(request: Request, subsystem_id: str) -> Any:
+    served_subsystem(subsystem_id)
+    await run_in_threadpool(model.acknowledge_stop_alarm, subsystem_id)
+    return fragment(
+        request,
+        "diagnostics/stop_alarm.html",
+        view.page_context(model, subsystem_id, "link"),
+    )
+
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+
+@app.post(
+    "/diagnostics/{subsystem_id}/tests/{test_key}/run", response_class=HTMLResponse
+)
+async def run_test(request: Request, subsystem_id: str, test_key: str) -> Any:
+    test = declared_test(subsystem_id, test_key)
+    form_values = values_from(test.inputs, await request.form())
+    try:
+        await run_in_threadpool(model.start_test, subsystem_id, test_key, form_values)
+    except Refused as refused:
+        raise HTTPException(409, str(refused)) from refused
+    return fragment(
+        request,
+        "diagnostics/tests/steps.html",
+        view.test_card_context(model, subsystem_id, test_key),
+    )
+
+
+@app.post(
+    "/diagnostics/{subsystem_id}/tests/{test_key}/stop", response_class=HTMLResponse
+)
+async def stop_test(request: Request, subsystem_id: str, test_key: str) -> Any:
+    declared_test(subsystem_id, test_key)
+    try:
+        await run_in_threadpool(model.request_stop, subsystem_id)
+    except Refused as refused:
+        raise HTTPException(409, str(refused)) from refused
+    return fragment(
+        request,
+        "diagnostics/tests/steps.html",
+        view.test_card_context(model, subsystem_id, test_key),
+    )
+
+
+@app.get(
+    "/diagnostics/{subsystem_id}/tests/{test_key}/steps", response_class=HTMLResponse
+)
+def test_steps(request: Request, subsystem_id: str, test_key: str) -> Any:
+    declared_test(subsystem_id, test_key)
+    return fragment(
+        request,
+        "diagnostics/tests/steps.html",
+        view.test_card_context(model, subsystem_id, test_key),
+    )
+
+
+@app.post(
+    "/diagnostics/{subsystem_id}/tests/{test_key}/answer", response_class=HTMLResponse
+)
+async def answer_question(request: Request, subsystem_id: str, test_key: str) -> Any:
+    test = declared_test(subsystem_id, test_key)
+    prompt = test.last.prompt if test.last is not None else None
+    if prompt is None:
+        raise HTTPException(409, gettext("Nothing is being asked"))
+    form_values = values_from((prompt.question,), await request.form())
+    try:
+        await run_in_threadpool(
+            model.answer_question,
+            subsystem_id,
+            form_values.get(prompt.question.name, ""),
+        )
+    except Refused as refused:
+        raise HTTPException(409, str(refused)) from refused
+    return HTMLResponse("")
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+
+@app.get("/diagnostics/{subsystem_id}/commands/panel", response_class=HTMLResponse)
+def commands_panel(
+    request: Request, subsystem_id: str, group: str | None = None
+) -> Any:
+    return fragment(
         request,
         "diagnostics/commands/panel.html",
-        _commands_context(name, group, None),
+        view.commands_tool_context(model, served_subsystem(subsystem_id), group),
     )
 
 
-@app.get("/diagnostics/{name}/commands/method", response_class=HTMLResponse)
-def commands_method(request: Request, name: str, key: str | None = None) -> Any:
-    subsystem_of(name)
+@app.get("/diagnostics/{subsystem_id}/commands/method", response_class=HTMLResponse)
+def commands_method(request: Request, subsystem_id: str, key: str | None = None) -> Any:
     group = key.rpartition(".")[0] if key else None
-    return _fragment(
+    return fragment(
         request,
         "diagnostics/commands/method.html",
-        _commands_context(name, group, key),
+        view.commands_tool_context(model, served_subsystem(subsystem_id), group, key),
     )
 
 
-@app.post("/diagnostics/{name}/commands/{key}/run", response_class=HTMLResponse)
-async def commands_run(request: Request, name: str, key: str) -> Any:
-    sub = subsystem_of(name)
-    declared = _command_of(sub, key)
-    verdict = sub.readiness(key)
-    held = _commands_context(name, declared.group, key)
-    if not verdict:
-        held["answer"] = {"ok": False, "reason": str(verdict), "value": None}
-        return _fragment(request, "diagnostics/commands/reply.html", held)
-    taken = values_from(declared.inputs, await request.form())
-    held["answer"] = await _called(name, sub, key, taken)
-    return _fragment(request, "diagnostics/commands/reply.html", held)
-
-
-@app.get("/diagnostics/{name}/options/{key}/{input_name}", response_class=HTMLResponse)
-async def options_html(
-    request: Request, name: str, key: str, input_name: str, refresh: int = 0
-) -> Any:
-    sub = subsystem_of(name)
+@app.post(
+    "/diagnostics/{subsystem_id}/commands/{command_key}/run",
+    response_class=HTMLResponse,
+)
+async def call_command(request: Request, subsystem_id: str, command_key: str) -> Any:
+    command = declared_command(subsystem_id, command_key)
+    form_values = values_from(command.inputs, await request.form())
+    command_reply: dict[str, Any]
     try:
-        offered = await asyncio.to_thread(
-            OPTIONS.fetch, sub, key, input_name, bool(refresh)
+        result = await run_in_threadpool(
+            model.call_command, subsystem_id, command_key, form_values
+        )
+        command_reply = {"result": result, "refusal": None}
+    except Refused as refused:
+        command_reply = {"result": None, "refusal": str(refused)}
+    template_context = view.commands_tool_context(
+        model, subsystem_id, command.group, command_key
+    )
+    template_context["command_reply"] = command_reply
+    return fragment(request, "diagnostics/commands/reply.html", template_context)
+
+
+# ── Form helpers: live option lists, and one more row of a group ─────────────
+
+
+@app.get(
+    "/diagnostics/{subsystem_id}/options/{item_key}/{input_name}",
+    response_class=HTMLResponse,
+)
+async def option_list(
+    request: Request,
+    subsystem_id: str,
+    item_key: str,
+    input_name: str,
+    refresh: int = 0,
+) -> Any:
+    served_subsystem(subsystem_id)
+    try:
+        offered = await run_in_threadpool(
+            model.options, subsystem_id, item_key, input_name, bool(refresh)
         )
     except KeyError as exc:
-        raise HTTPException(404, f"no options for {name}.{key}.{input_name}") from exc
-    return _fragment(
+        raise HTTPException(
+            404, f"no options for {subsystem_id}.{item_key}.{input_name}"
+        ) from exc
+    return fragment(
         request, "diagnostics/options.html", {"offered": offered, "chosen": None}
     )
 
 
-@app.get("/diagnostics/{name}/row/{key}/{input_name}", response_class=HTMLResponse)
+@app.get(
+    "/diagnostics/{subsystem_id}/row/{item_key}/{input_name}",
+    response_class=HTMLResponse,
+)
 def group_row(
     request: Request,
-    name: str,
-    key: str,
+    subsystem_id: str,
+    item_key: str,
     input_name: str,
     index: int = 0,
     uid: str = "",
 ) -> Any:
-    sub = subsystem_of(name)
-    seen = sub.view()
+    subsystem_view = model.subsystem_view(served_subsystem(subsystem_id))
     declared = next(
-        (one for one in (*seen.tests, *seen.commands) if one.key == key), None
+        (
+            one
+            for one in (*subsystem_view.tests, *subsystem_view.commands)
+            if one.key == item_key
+        ),
+        None,
     )
     if declared is None:
-        raise HTTPException(404, f"no test or command {name}.{key}")
+        raise HTTPException(404, f"no test or command {subsystem_id}.{item_key}")
     spec = next(
         (
             one
-            for one in view.fields_of(declared.inputs, OPTIONS.warm, sub.id, key)
+            for one in view.fields_of(
+                declared.inputs, model.cached_options, subsystem_id, item_key
+            )
             if one.name == input_name
         ),
         None,
     )
     if spec is None:
-        raise HTTPException(404, f"{name}.{key} declares no group {input_name!r}")
-    return _fragment(
+        raise HTTPException(
+            404, f"{subsystem_id}.{item_key} declares no group {input_name!r}"
+        )
+    return fragment(
         request,
         "diagnostics/row.html",
         {"spec": spec, "name": input_name, "index": index, "uid": uid or input_name},
     )
 
 
-def _options_pending(inputs: Any, form: Any) -> bool:
-    return any(
-        one.kind == "choice"
-        and options_are_live(one)
-        and not str(form.get(one.name, "")).strip()
-        for one in inputs
-    )
-
-
-@app.post("/diagnostics/{name}/link/readiness", response_class=HTMLResponse)
-async def link_readiness_html(request: Request, name: str) -> Any:
-    sub = subsystem_of(name)
-    target = _target_of(sub)
-    form = await request.form()
-    if _options_pending((target,), form):
-        return _fragment(
-            request,
-            "diagnostics/link/actions.html",
-            _link_context(name, "link", known=False),
-        )
-    chosen = _target_value(sub, form)
-    try:
-        verdict = answered(await asyncio.to_thread(sub.probe, chosen))
-        reason = None if verdict else verdict.reason
-    except Exception as exc:  # noqa: BLE001
-        reason = f"{type(exc).__name__}: {exc}"
-    return _fragment(
-        request,
-        "diagnostics/link/actions.html",
-        _link_context(name, "link", reason=reason, known=True),
-    )
-
-
-@app.post("/diagnostics/{name}/link/connect", response_class=HTMLResponse)
-async def connect_html(request: Request, name: str) -> Any:
-    sub = subsystem_of(name)
-    chosen = _target_value(sub, await request.form())
-    error = None
-    try:
-        await _opened(name, sub, chosen)
-    except Busy as exc:
-        error = _refusal(exc.activity)
-    except Exception as exc:  # noqa: BLE001
-        error = _failed(name, exc)
-    held = _link_context(name, "link", error=error, known=True)
-    return _fragment(request, "diagnostics/main.html", held)
-
-
-@app.post("/diagnostics/{name}/link/disconnect", response_class=HTMLResponse)
-async def disconnect_html(request: Request, name: str) -> Any:
-    sub = subsystem_of(name)
-    _target_of(sub)
-    error = None
-    try:
-        await _closed(name, sub)
-    except Exception as exc:  # noqa: BLE001
-        error = _failed(name, exc)
-    return _fragment(
-        request, "diagnostics/main.html", _link_context(name, "link", error=error)
-    )
-
-
-@app.post("/diagnostics/{name}/stop", response_class=HTMLResponse)
-async def stop_html(request: Request, name: str) -> Any:
-    sub = subsystem_of(name)
-    error = await asyncio.to_thread(_stop_requested, name, sub)
-    return _fragment(
-        request, "diagnostics/main.html", _link_context(name, "link", error=error)
-    )
-
-
-@app.post("/diagnostics/{name}/tests/{key}/run", response_class=HTMLResponse)
-async def tests_run(request: Request, name: str, key: str) -> Any:
-    sub = subsystem_of(name)
-    declared = _test_of(sub, key)
-    taken = values_from(declared.inputs, await request.form())
-    await asyncio.to_thread(_begin, name, key, taken)
-    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
-
-
-@app.post("/diagnostics/{name}/tests/{key}/stop", response_class=HTMLResponse)
-async def tests_stop(request: Request, name: str, key: str) -> Any:
-    sub = subsystem_of(name)
-    _test_of(sub, key)
-    await asyncio.to_thread(_stop_requested, name, sub)
-    runs.say(name, "warn", "stopping", key, {"key": key})
-    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
-
-
-@app.get("/diagnostics/{name}/tests/{key}/steps", response_class=HTMLResponse)
-def tests_steps(request: Request, name: str, key: str) -> Any:
-    _test_of(subsystem_of(name), key)
-    return _fragment(request, "diagnostics/tests/steps.html", _test_context(name, key))
-
-
-@app.post("/diagnostics/{name}/tests/{key}/answer", response_class=HTMLResponse)
-async def tests_answer(request: Request, name: str, key: str) -> Any:
-    sub = subsystem_of(name)
-    _test_of(sub, key)
-    form = await request.form()
-    await asyncio.to_thread(_answer, sub, key, form)
-    return HTMLResponse("")
-
-
-@app.get("/diagnostics/{name}", response_class=HTMLResponse)
-def diagnostics_for(request: Request, name: str) -> Any:
-    subsystem_of(name)
-    return _page(request, name, "link")
-
-
-@app.get("/diagnostics/{name}/{tool}", response_class=HTMLResponse)
-def diagnostics_tool(request: Request, name: str, tool: str) -> Any:
-    sub = subsystem_of(name)
-    if tool not in view.TOOLS or (tool != "link" and not view.is_up(sub)):
-        return RedirectResponse(f"/diagnostics/{name}")
-    return _page(request, name, tool)
-
-
-# ── The stream everything reports on ─────────────────────────────────────────
-
-
-def _sse(event: str, data: Any) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-
-def _sse_html(event: str, body: str) -> str:
-    lines = body.splitlines() or [""]
-    return f"event: {event}\n" + "".join(f"data: {one}\n" for one in lines) + "\n"
-
-
-def _render(template: str, held: dict[str, Any]) -> str:
-    return templates.get_template(template).render(**held)
-
-
-def _log_html(record: Record) -> str:
-    return _sse_html("record", _render("log/record.html", {"record": record}))
-
-
-def _run_html() -> Callable[[Record], str]:
-    shown: dict[tuple[str, str], tuple[Any, ...]] = {}
-
-    def shape(record: Record) -> str:
-        key = (record.data or {}).get("key")
-        sub = diagnosed(record.source)
-        if not key or sub is None or not any(one.key == key for one in sub.tests):
-            return ": keep-alive\n\n"
-        held = _test_context(record.source, key, oob=True)
-        test = held["test"]
-        head = (view.status_of(test), test.readiness.reason, bool(test.readiness))
-        body = _render("diagnostics/tests/steps.html", held)
-        if shown.get((sub.id, key)) != head:
-            shown[(sub.id, key)] = head
-            body = _render("diagnostics/tests/head.html", held) + body
-        if record.kind == "done":
-            body += _group_mark(sub, test.group)
-        return _sse_html("run", body)
-
-    return shape
-
-
-def _group_mark(sub: Diagnosable, group: str) -> str:
-    grouped = [
-        view_of_test(sub, one, True)
-        for one in sub.tests
-        if one.group == group and one.needs is not Needs.DOWN
-    ]
-    if not grouped:
-        return ""
-    return _render(
-        "diagnostics/tests/mark.html",
-        {"items": grouped, "mark": render.slug(f"mark-{sub.id}-{group}")},
-    )
-
-
-def _served(
-    source: Stream, event: str | None, shape: Callable[[Record], str] | None = None
-) -> StreamingResponse:
-    listener, backlog = source.listen()
-
-    def framed(record: Record) -> str:
-        if shape is not None:
-            return shape(record)
-        return _sse(event or record.kind, record.payload())
-
-    async def body() -> AsyncIterator[str]:
-        try:
-            for record in backlog:
-                yield framed(record)
-            while True:
-                try:
-                    record = await asyncio.to_thread(listener.get, True, HEARTBEAT)
-                except Exception:  # noqa: BLE001
-                    yield ": keep-alive\n\n"
-                    continue
-                yield framed(record)
-        finally:
-            source.drop(listener)
-
-    return StreamingResponse(body(), media_type="text/event-stream")
-
-
-@app.get("/api/events")
-async def events() -> StreamingResponse:
-    return _served(stream, "record")
-
-
-@app.get("/api/runs/events")
-async def run_events() -> StreamingResponse:
-    return _served(runs, None)
-
-
 app.mount("/web", StaticFiles(directory=str(WEB)), name="web")
 
-__all__ = ["Activity", "Record", "app", "stef", "stream"]
+__all__ = ["app", "bindings", "model"]

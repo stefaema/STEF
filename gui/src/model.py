@@ -39,7 +39,7 @@ from gui.src.messages import (
 from gui.src.worker import SubsystemWorker
 from machine import Activity, Busy, Machine
 from shared import logs
-from shared.diagnostics import Diagnosable, SubsystemView, TestView
+from shared.diagnostics import Diagnosable, Needs, SubsystemView, TestView
 from shared.subsystem import Level, LinkState, Readiness, Result, blocked
 
 # How many log lines a browser that connects late is shown.
@@ -393,6 +393,8 @@ class GuiModel:
                             k for k in self._option_lists if k[0] == view.id
                         ]:
                             del self._option_lists[cached]
+                if link_changed:
+                    self._alarm_if_lost_while_running(view)
                 self._publish(Change(Channel.LINK, subsystem_id=view.id))
             case TestChanged(subsystem_id=subsystem_id, test_view=test_view):
                 self._replace_test(subsystem_id, test_view)
@@ -412,6 +414,21 @@ class GuiModel:
                 self._publish(
                     Change(Channel.TEST_PROGRESS, subsystem_id, test_view.key, True)
                 )
+
+    def _alarm_if_lost_while_running(self, view: SubsystemView) -> None:
+        """Raise the alarm the moment a link drops under a running test, not when it ends."""
+        lost = view.link is not None and view.link.state in (
+            LinkState.DOWN,
+            LinkState.ERROR,
+        )
+        running = next((one for one in view.tests if one.key == view.running), None)
+        if not lost or running is None or running.needs is Needs.DOWN:
+            return
+        message = gettext(
+            "the link was lost while %(test)s was running; "
+            "the hardware's state is unknown"
+        ) % {"test": running.title}
+        self._raise_stop_alarm(view.id, message, running.hazardous)
 
     def _replace_test(self, subsystem_id: str, test_view: TestView) -> None:
         with self._lock:

@@ -29,7 +29,13 @@ from gui.src.messages import (
     WorkerRequest,
 )
 from shared import logs
-from shared.diagnostics import Diagnosable, StopUnconfirmed, SubsystemView, TestView
+from shared.diagnostics import (
+    Diagnosable,
+    Needs,
+    StopUnconfirmed,
+    SubsystemView,
+    TestView,
+)
 from shared.diagnostics.views import subsystem_view, view_of_test
 from shared.subsystem import (
     Level,
@@ -264,7 +270,17 @@ class SubsystemWorker:
             self._facts = (
                 facts_or_warning(self.subsystem) if state is LinkState.UP else None
             )
+        if state in (LinkState.DOWN, LinkState.ERROR):
+            self._cancel_test_that_lost_its_link()
         self._send_event(SubsystemChanged(self.current_view(), True))
+
+    def _cancel_test_that_lost_its_link(self) -> None:
+        """Cancel a running test that needs the link, since nothing it does reaches the hardware."""
+        running = self.subsystem.running()
+        if running is None or running.test.needs is Needs.DOWN:
+            return
+        log.error("{}: the link was lost while it ran; cancelling it", running.name)
+        self.subsystem.request_stop()
 
     def _check_link_every_interval(self) -> None:
         while not self._closing.wait(LINK_CHECK_INTERVAL_S):

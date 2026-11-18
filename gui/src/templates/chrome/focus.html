@@ -1,0 +1,4 @@
+{%- import "macros/marks.html" as M -%}
+<span id="focus" class="inline-flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"{{ ' hx-swap-oob="true"'|safe if oob }}>
+  {%- if focus_holder %}{{ M.icon("progress_activity", "size-4 animate-spin") }}<span>{{ _("Busy with %(holder)s", holder=focus_holder) }}</span>{% endif -%}
+</span>

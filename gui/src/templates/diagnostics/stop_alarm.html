@@ -1,0 +1,19 @@
+{%- import "macros/style.html" as S -%}
+{%- import "macros/marks.html" as M -%}
+<div id="stop-alarm-{{ subsystem_view.id }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
+  {%- if stop_alarm %}
+  <div class="flex flex-col gap-2 px-4 py-3 rounded-lg border-2 border-red-700 bg-red-600 text-white" role="alert">
+    <div class="flex items-center gap-3 text-sm font-semibold">
+      {{ M.icon("error", "size-5") }}
+      <span class="flex-1">{{ _("A stop did not reach the hardware. Its state is unknown.") }}</span>
+      <button type="button" class="px-3 py-1 text-xs font-medium rounded-md bg-white text-red-700 hover:bg-red-50"
+              hx-post="/diagnostics/{{ subsystem_view.id }}/alarm/acknowledge"
+              hx-target="#stop-alarm-{{ subsystem_view.id }}" hx-swap="outerHTML">{{ _("Acknowledge") }}</button>
+    </div>
+    <div class="pl-8 text-sm font-mono">{{ stop_alarm.message }}</div>
+    {%- if stop_alarm.hazardous %}
+    <div class="pl-8 text-sm">{{ _("This test has hazardous steps. Check the hardware, and if it is still moving or powered, cut its power.") }}</div>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</div>

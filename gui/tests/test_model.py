@@ -176,6 +176,22 @@ def test_a_board_that_dies_during_a_hazardous_test_raises_a_hazardous_alarm(
     assert alarm is not None and alarm.hazardous
 
 
+def test_a_link_lost_under_a_running_test_alarms_at_once_and_cancels_it(
+    model, recorder, monkeypatch
+):
+    monkeypatch.setattr("demo.subsystem.DIES_AFTER_S", 0.1)
+    model.connect("demo", demo_board.DIES)
+    model.start_test("demo", "running.RunsLong", {"seconds": "30"})
+
+    recorder.wait_for(lambda one: model.stop_alarm("demo") is not None)
+    alarm = model.stop_alarm("demo")
+    assert alarm is not None and "was lost while" in alarm.message
+    recorder.wait_for(lambda one: one.test_ended)
+    last = model.test_view("demo", "running.RunsLong").last
+    assert last is not None and last.verdict is not None
+    assert last.verdict.value == "cancelled"
+
+
 def test_a_jammed_drive_is_reported_and_never_called_stopped(model):
     model.connect("demo", demo_board.HEALTHY)
     model.call_command("demo", "calls.jam", {"drive": "left", "jammed": "true"})

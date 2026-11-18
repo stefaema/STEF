@@ -19,7 +19,7 @@
 <script src="/web/vendor/htmx-ext-sse/sse.js"></script>
 <script src="/web/vendor/material-symbols/icons.js"></script>
 </head>
-<body class="h-full text-sm text-gray-900 dark:text-white" hx-ext="sse">
+<body class="h-full text-sm text-gray-900 dark:text-white" hx-ext="sse" sse-connect="/diagnostics/events">
 
 <div class="app-grid">
 {% include "chrome/header.html" %}
@@ -31,7 +31,7 @@
 </div>
 
 <div class="toasts fixed bottom-4 right-4 z-[60] flex flex-col gap-2" id="toasts"></div>
-<div id="runstream" sse-connect="/diagnostics/stream/runs" sse-swap="run" hx-swap="none" hidden></div>
+<div id="screen-events" sse-swap="link,test_progress,focus" hx-swap="none" hidden></div>
 
 <script src="/web/app/stef.js"></script>
 </body>

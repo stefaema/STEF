@@ -1,47 +1,13 @@
+"""Jinja filters and globals: how a value is written on the screen."""
+
 import base64
 import json
-import threading
 import time
 from typing import Any
 
 from gui.src import view
 from shared.diagnostics import RunView, TestView
-from shared.subsystem import Result
-
-TRUTHY = (True, 1, "true", "1", "on", "yes")
-
-
-class OptionsCache:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._held: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-
-    def warm(self, subsystem: str, key: str, name: str) -> list[dict[str, Any]] | None:
-        with self._lock:
-            return self._held.get((subsystem, key, name))
-
-    def fetch(
-        self, sub: Any, key: str, name: str, refresh: bool = False
-    ) -> list[dict[str, Any]]:
-        if not refresh:
-            found = self.warm(sub.id, key, name)
-            if found is not None:
-                return found
-        listed = list(sub.options(key, name))
-        with self._lock:
-            self._held[(sub.id, key, name)] = listed
-        return listed
-
-    def forget(self, subsystem: str | None = None) -> None:
-        with self._lock:
-            if subsystem is None:
-                self._held.clear()
-                return
-            for one in [k for k in self._held if k[0] == subsystem]:
-                del self._held[one]
-
-
-OPTIONS = OptionsCache()
+from shared.subsystem import Result, truthy
 
 
 def clock(seconds: float | None) -> str:
@@ -49,16 +15,6 @@ def clock(seconds: float | None) -> str:
         return ""
     whole = time.strftime("%H:%M:%S", time.localtime(seconds))
     return f"{whole}.{int((seconds % 1) * 1000):03d}"
-
-
-def slug(text: Any) -> str:
-    return str(text).replace(".", "-").replace("/", "-")
-
-
-def truthy(value: Any) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "on", "yes")
-    return bool(value)
 
 
 def hex32(value: Any) -> str:
@@ -95,36 +51,37 @@ def data_uri(value: Any) -> str:
     return f"data:image/{kind};base64,{base64.b64encode(value).decode()}"
 
 
-def as_record(answer: Result | None) -> str:
-    if answer is None:
+def as_record(result: Result | None) -> str:
+    """Return a result as the JSON its copy button puts on the clipboard."""
+    if result is None:
         return "{}"
-    packed: dict[str, Any] = {}
-    if answer.summary:
-        packed["summary"] = answer.summary
-    if answer.note:
-        packed["note"] = answer.note
-    if answer.raw:
-        packed["raw"] = answer.raw.hex(" ")
-    if answer.image:
-        packed["image"] = f"{len(answer.image)} bytes"
-    if answer.fields:
-        packed["fields"] = dict(answer.fields)
-    if answer.table:
-        head = list(answer.table.head)
-        packed["table"] = [
+    copied: dict[str, Any] = {}
+    if result.summary:
+        copied["summary"] = result.summary
+    if result.note:
+        copied["note"] = result.note
+    if result.raw:
+        copied["raw"] = result.raw.hex(" ")
+    if result.image:
+        copied["image"] = f"{len(result.image)} bytes"
+    if result.fields:
+        copied["fields"] = dict(result.fields)
+    if result.table:
+        head = list(result.table.head)
+        copied["table"] = [
             {head[i] if i < len(head) else str(i): cell for i, cell in enumerate(row)}
-            for row in answer.table.rows
+            for row in result.table.rows
         ]
-    return json.dumps(packed, indent=2)
+    return json.dumps(copied, indent=2)
 
 
-def as_run(test: TestView, subsystem: str) -> str:
+def as_run(test: TestView, subsystem_id: str) -> str:
     run: RunView | None = test.last
     if run is None:
         return "{}"
     return json.dumps(
         {
-            "subsystem": subsystem,
+            "subsystem": subsystem_id,
             "test": test.key,
             "title": test.title,
             "status": view.status_of(test),
@@ -174,13 +131,9 @@ def _plain(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def field_of(spec: Any, sub_id: str, key: str) -> view.Field:
-    return view.fields_of((spec,), OPTIONS.warm, sub_id, key)[0]
-
-
 FILTERS = {
     "clock": clock,
-    "slug": slug,
+    "slug": view.slug,
     "truthy": truthy,
     "hex32": hex32,
     "bitset": bitset,
@@ -202,7 +155,6 @@ GLOBALS = {
     "TOOLS": view.TOOLS,
     "TOOL_LABEL": view.TOOL_LABEL,
     "TOOL_ICON": view.TOOL_ICON,
-    "field_of": field_of,
     "group_label": view.group_label,
     "end_errored": view.end_errored,
     "stop_patience": view.stop_patience,
@@ -212,4 +164,4 @@ GLOBALS = {
     "worst_status": view.worst_status,
 }
 
-__all__ = ["FILTERS", "GLOBALS", "OPTIONS", "OptionsCache"]
+__all__ = ["FILTERS", "GLOBALS"]

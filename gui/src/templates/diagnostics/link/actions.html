@@ -1,18 +1,18 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
-{%- if reason %}<div class="{{ S.note }}">{{ reason }}</div>{% endif %}
-{%- if error %}<div class="{{ S.noteError }}">{{ error }}</div>{% endif %}
+{%- if probe_refusal %}<div class="{{ S.note }}">{{ probe_refusal }}</div>{% endif %}
+{%- if action_error %}<div class="{{ S.noteError }}">{{ action_error }}</div>{% endif %}
 <div class="flex items-center gap-2">
-  {%- if up %}
+  {%- if link_is_up %}
   <button type="button" class="{{ S.btn }}"
-          hx-post="/diagnostics/{{ sub.id }}/link/disconnect" hx-target="#main" hx-swap="innerHTML">
+          hx-post="/diagnostics/{{ subsystem_view.id }}/link/disconnect" hx-target="#main" hx-swap="innerHTML">
     {{ M.icon("link_off") }}<span>{{ _("Disconnect") }}</span>
   </button>
   {%- else %}
-  <button type="button" class="{{ S.btnPrimary }}"{{ " disabled" if reason or not known }}
-          {%- if not reason and known %} hx-post="/diagnostics/{{ sub.id }}/link/connect" hx-include="#linkform"
+  <button type="button" class="{{ S.btnPrimary }}"{{ " disabled" if probe_refusal or not probe_answered }}
+          {%- if not probe_refusal and probe_answered %} hx-post="/diagnostics/{{ subsystem_view.id }}/link/connect" hx-include="#linkform"
           hx-target="#main" hx-swap="innerHTML" hx-indicator="this" hx-disabled-elt="this"{% endif %}>
-    {{ M.spinner(not known, "link") }}<span>{{ _("Checking") if not known else _("Connect") }}</span>
+    {{ M.spinner(not probe_answered, "link") }}<span>{{ _("Checking") if not probe_answered else _("Connect") }}</span>
   </button>
   {%- endif %}
 </div>

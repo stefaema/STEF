@@ -2,7 +2,7 @@
 {%- import "macros/marks.html" as M -%}
 {%- set status = status_of(test) -%}
 {%- set running = status in ("running", "waiting", "stopping") -%}
-<summary class="check-grid px-4 py-2.5" id="head-{{ uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
+<summary class="check-grid px-4 py-2.5" id="head-{{ test_uid }}"{{ ' hx-swap-oob="true"'|safe if oob }}>
   <span class="flex items-center gap-2 min-w-0 text-left font-semibold text-gray-900 dark:text-white">
     <span class="caret inline-block shrink-0 text-gray-500 transition-transform">&#9656;</span>
     <span class="truncate" title="{{ test.title }}">{{ test.title }}</span>
@@ -18,8 +18,8 @@
   {%- elif running %}
   <button type="button" data-nofold class="{{ S.btnRunDanger }}"
           title="{{ _("Cancel this test, let its end step run, then stop the hardware") }}"
-          hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/stop"
-          hx-target="#steps-{{ uid }}" hx-swap="outerHTML" hx-disabled-elt="this">
+          hx-post="/diagnostics/{{ subsystem_view.id }}/tests/{{ test.key }}/stop"
+          hx-target="#steps-{{ test_uid }}" hx-swap="outerHTML" hx-disabled-elt="this">
     {{ M.icon("power_settings_new") }}<span>{{ _("Stop") }}</span>
     {{ M.outcome_cage(status) }}
   </button>
@@ -29,8 +29,8 @@
           {{ " disabled" if not test.readiness }}
           {%- if not test.readiness %} title="{{ test.readiness.reason or _("Connect first") }}"{% endif %}
           {%- if test.readiness %}
-          hx-post="/diagnostics/{{ sub.id }}/tests/{{ test.key }}/run"
-          hx-include="#form-{{ uid }}" hx-target="#steps-{{ uid }}" hx-swap="outerHTML"
+          hx-post="/diagnostics/{{ subsystem_view.id }}/tests/{{ test.key }}/run"
+          hx-include="#form-{{ test_uid }}" hx-target="#steps-{{ test_uid }}" hx-swap="outerHTML"
           {%- if test.hazardous %} hx-confirm="{{ _("Confirm") }}"{% endif %}
           {%- endif %}>
     {{ M.icon("play_arrow") }}<span>{{ _("Re-run") if test.last else _("Run") }}</span>

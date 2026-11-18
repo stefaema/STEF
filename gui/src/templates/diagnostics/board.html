@@ -1,7 +1,11 @@
 {%- import "macros/style.html" as S -%}
-{%- if not sub %}
+{%- if not subsystem_view %}
 <div class="{{ S.card }}"><div class="{{ S.cardBody }}"><div class="{{ S.hint }}">{{ _("This part is not built yet") }}</div></div></div>
 {%- else %}
+<span hidden hx-get="/diagnostics/{{ subsystem_view.id }}/{{ tool }}"
+      hx-trigger="sse:link_state[JSON.parse(detail.data).subsystem == '{{ subsystem_view.id }}']"
+      hx-target="#main" hx-swap="innerHTML"></span>
+{% include "diagnostics/stop_alarm.html" %}
 {% include "diagnostics/implementation.html" %}
 {% include "diagnostics/tools.html" %}
 {% include "diagnostics/panel.html" %}

@@ -1,11 +1,14 @@
-import time
-from dataclasses import dataclass
-from typing import Any
+"""What a template reads: labels, tones, groupings, form fields, and the context of every page."""
 
-from gui.src.i18n import mark
-from machine import Machine
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from gui.src.i18n import gettext, mark
 from shared.diagnostics import (
     END_EXPECTED_S,
+    LINK_KEY,
     CommandView,
     InputView,
     Needs,
@@ -14,8 +17,11 @@ from shared.diagnostics import (
     StepStatus,
     SubsystemView,
     TestView,
+    verdict,
 )
-from shared.subsystem import LinkState, Subsystem
+
+if TYPE_CHECKING:
+    from gui.src.model import GuiModel
 
 TOOLS = ("link", "tests", "commands")
 
@@ -95,6 +101,8 @@ class Tab:
     label: str
     available: bool
     current: bool
+    link_state: str
+    alarmed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,44 +129,45 @@ class Row:
     end: bool
 
 
-def clock(seconds: float | None) -> str:
-    if not seconds:
-        return ""
-    return time.strftime("%H:%M:%S", time.localtime(seconds))
+def subsystem_tabs(model: "GuiModel", current: str | None) -> list[Tab]:
+    tabs = []
+    for subsystem_id in model.roster:
+        served = model.has_subsystem(subsystem_id)
+        link = model.subsystem_view(subsystem_id).link if served else None
+        tabs.append(
+            Tab(
+                id=subsystem_id,
+                label=subsystem_id,
+                available=served,
+                current=subsystem_id == current,
+                link_state=link.state.value if link is not None else "down",
+                alarmed=served and model.stop_alarm(subsystem_id) is not None,
+            )
+        )
+    return tabs
 
 
-def subsystem_tabs(stef: Machine, current: str | None) -> list[Tab]:
-    return [
-        Tab(name, name, name in stef.subsystems, name == current)
-        for name in stef.roster
-    ]
+def tests_before_connecting(subsystem_view: SubsystemView) -> list[TestView]:
+    return [one for one in subsystem_view.tests if one.needs is Needs.DOWN]
 
 
-def first_available(stef: Machine) -> str | None:
-    return next((name for name in stef.roster if name in stef.subsystems), None)
+def test_groups(subsystem_view: SubsystemView) -> list[tuple[str, list[TestView]]]:
+    return _grouped(
+        [one for one in subsystem_view.tests if one.needs is not Needs.DOWN]
+    )
 
 
-def is_up(sub: Subsystem) -> bool:
-    return sub.link_state() is LinkState.UP
-
-
-def tests_while_down(seen: SubsystemView) -> list[TestView]:
-    return [one for one in seen.tests if one.needs is Needs.DOWN]
-
-
-def test_groups(seen: SubsystemView) -> list[tuple[str, list[TestView]]]:
-    return _grouped([one for one in seen.tests if one.needs is not Needs.DOWN])
-
-
-def command_groups(seen: SubsystemView) -> list[tuple[str, list[CommandView]]]:
-    return _grouped(list(seen.commands))
+def command_groups(
+    subsystem_view: SubsystemView,
+) -> list[tuple[str, list[CommandView]]]:
+    return _grouped(list(subsystem_view.commands))
 
 
 def _grouped(items: list[Any]) -> list[tuple[str, list[Any]]]:
-    held: dict[str, list[Any]] = {}
+    by_group: dict[str, list[Any]] = {}
     for one in items:
-        held.setdefault(one.group, []).append(one)
-    return list(held.items())
+        by_group.setdefault(one.group, []).append(one)
+    return list(by_group.items())
 
 
 def group_label(name: str) -> str:
@@ -177,8 +186,6 @@ def status_of(test: TestView) -> str:
 
 
 def worst_status(tests: list[TestView]) -> str:
-    from shared.diagnostics import verdict
-
     settled = [
         one.last.verdict
         for one in tests
@@ -232,15 +239,25 @@ def rows_of(test: TestView) -> list[Row]:
     return rows
 
 
+# ── Form fields ──────────────────────────────────────────────────────────────
+
+CachedOptions = Callable[[str, str, str], list[dict[str, Any]] | None]
+
+
 def fields_of(
-    inputs: tuple[InputView, ...], warm: Any, sub_id: str, key: str
+    inputs: tuple[InputView, ...],
+    cached_options: CachedOptions,
+    subsystem_id: str,
+    item_key: str,
 ) -> tuple[Field, ...]:
-    return tuple(_field(one, warm, sub_id, key) for one in inputs)
+    return tuple(_field(one, cached_options, subsystem_id, item_key) for one in inputs)
 
 
-def _field(spec: InputView, warm: Any, sub_id: str, key: str) -> Field:
+def _field(
+    spec: InputView, cached_options: CachedOptions, subsystem_id: str, item_key: str
+) -> Field:
     live = spec.reload is not None
-    cached = warm(sub_id, key, spec.name) if live else None
+    cached = cached_options(subsystem_id, item_key, spec.name) if live else None
     return Field(
         name=spec.name,
         kind=spec.kind,
@@ -249,13 +266,174 @@ def _field(spec: InputView, warm: Any, sub_id: str, key: str) -> Field:
         min=spec.min,
         max=spec.max,
         options=cached if live else (list(spec.options) if spec.options else None),
-        reload=f"/diagnostics/{sub_id}/options/{key}/{spec.name}" if live else None,
+        reload=f"/diagnostics/{subsystem_id}/options/{item_key}/{spec.name}"
+        if live
+        else None,
         autoload=live and cached is None,
-        row_at=f"/diagnostics/{sub_id}/row/{key}/{spec.name}"
+        row_at=f"/diagnostics/{subsystem_id}/row/{item_key}/{spec.name}"
         if spec.kind == "group"
         else None,
-        columns=tuple(_field(one, warm, sub_id, key) for one in spec.columns),
+        columns=tuple(
+            _field(one, cached_options, subsystem_id, item_key) for one in spec.columns
+        ),
     )
+
+
+def blank_form_values(inputs: tuple[InputView, ...]) -> dict[str, Any]:
+    """Return what every control holds before anyone touches it."""
+    return {one.name: _blank(one) for one in inputs}
+
+
+def _blank(spec: InputView) -> Any:
+    if spec.kind == "choice":
+        return spec.options[0]["value"] if spec.options else None
+    if spec.kind == "boolean":
+        return False
+    if spec.kind == "integer":
+        return spec.min or 0
+    if spec.kind == "bitmask":
+        return 0
+    if spec.kind == "raw_bytes":
+        return ""
+    return []
+
+
+# ── What a template is given ─────────────────────────────────────────────────
+
+
+def log_sources(model: "GuiModel") -> list[dict[str, str]]:
+    return [{"id": "all", "label": gettext("All")}] + [
+        {"id": one, "label": one} for one in (*model.roster, "gui", "diagnostics")
+    ]
+
+
+def page_context(
+    model: "GuiModel", subsystem_id: str | None, tool: str
+) -> dict[str, Any]:
+    """Return what every page and the board read, for one subsystem and one tool."""
+    subsystem_view = (
+        model.subsystem_view(subsystem_id)
+        if subsystem_id is not None and model.has_subsystem(subsystem_id)
+        else None
+    )
+    _, focus_holder = model.focus
+
+    def fields_for(item: TestView | CommandView) -> tuple[Field, ...]:
+        if subsystem_view is None:
+            return ()
+        return fields_of(item.inputs, model.cached_options, subsystem_view.id, item.key)
+
+    def field_of(spec: InputView, item_key: str) -> Field:
+        assert subsystem_view is not None
+        return fields_of((spec,), model.cached_options, subsystem_view.id, item_key)[0]
+
+    return {
+        "subsystem_view": subsystem_view,
+        "subsystem_tabs": subsystem_tabs(model, subsystem_id),
+        "tool": tool,
+        "link_is_up": subsystem_view is not None
+        and model.link_is_up(subsystem_view.id),
+        "stop_alarm": model.stop_alarm(subsystem_view.id)
+        if subsystem_view is not None
+        else None,
+        "focus_holder": focus_holder,
+        "log_sources": log_sources(model),
+        "fields_for": fields_for,
+        "field_of": field_of,
+        "oob": False,
+    }
+
+
+def link_tool_context(
+    model: "GuiModel", subsystem_id: str, **extra: Any
+) -> dict[str, Any]:
+    """Return the Link tool: the connect form, and the tests that need the port to themselves."""
+    template_context = page_context(model, subsystem_id, "link")
+    subsystem_view: SubsystemView | None = template_context["subsystem_view"]
+    link = subsystem_view.link if subsystem_view is not None else None
+    target = link.target if link is not None else None
+    template_context.update(
+        connect_fields=fields_of(
+            (target,), model.cached_options, subsystem_id, LINK_KEY
+        )
+        if target is not None
+        else (),
+        connect_values=blank_form_values((target,)) if target is not None else {},
+        tests_before_connecting=tests_before_connecting(subsystem_view)
+        if subsystem_view is not None
+        else [],
+        probe_refusal=None,
+        action_error=None,
+        probe_answered=template_context["link_is_up"] or link is None,
+    )
+    template_context.update(extra)
+    return template_context
+
+
+def tests_tool_context(model: "GuiModel", subsystem_id: str) -> dict[str, Any]:
+    template_context = page_context(model, subsystem_id, "tests")
+    subsystem_view = template_context["subsystem_view"]
+    template_context["test_groups"] = (
+        test_groups(subsystem_view) if subsystem_view is not None else []
+    )
+    return template_context
+
+
+def commands_tool_context(
+    model: "GuiModel",
+    subsystem_id: str,
+    group: str | None = None,
+    command_key: str | None = None,
+) -> dict[str, Any]:
+    """Return the Commands tool with one command picked: the asked one, or the group's first."""
+    template_context = page_context(model, subsystem_id, "commands")
+    subsystem_view = template_context["subsystem_view"]
+    groups = command_groups(subsystem_view) if subsystem_view is not None else []
+    template_context["command_groups"] = groups
+    if not groups:
+        return template_context
+    group_names = [name for name, _ in groups]
+    chosen_group = group if group in group_names else group_names[0]
+    sibling_commands = dict(groups)[chosen_group]
+    picked = next((one for one in sibling_commands if one.key == command_key), None)
+    command = picked or sibling_commands[0]
+    template_context.update(
+        sibling_commands=sibling_commands,
+        command=command,
+        command_fields=fields_of(
+            command.inputs, model.cached_options, subsystem_id, command.key
+        ),
+        command_blank_values=blank_form_values(command.inputs),
+    )
+    return template_context
+
+
+def tool_context(
+    model: "GuiModel", subsystem_id: str | None, tool: str
+) -> dict[str, Any]:
+    if subsystem_id is None:
+        return page_context(model, None, tool)
+    if tool == "tests":
+        return tests_tool_context(model, subsystem_id)
+    if tool == "commands":
+        return commands_tool_context(model, subsystem_id)
+    return link_tool_context(model, subsystem_id)
+
+
+def test_card_context(
+    model: "GuiModel", subsystem_id: str, test_key: str, oob: bool = False
+) -> dict[str, Any]:
+    """Return one test's card: its head and steps, as a route or an event renders them."""
+    template_context = page_context(model, subsystem_id, "tests")
+    test = model.test_view(subsystem_id, test_key)
+    template_context.update(
+        test=test, test_uid=slug(f"{subsystem_id}.{test.key}"), oob=oob
+    )
+    return template_context
+
+
+def slug(text: Any) -> str:
+    return str(text).replace(".", "-").replace("/", "-")
 
 
 __all__ = [
@@ -264,6 +442,7 @@ __all__ = [
     "LINK_LABEL",
     "LINK_MARK",
     "OUTCOME",
+    "SKIPPED_BECAUSE",
     "STATUS_LABEL",
     "TOOLS",
     "TOOL_ICON",
@@ -271,19 +450,24 @@ __all__ = [
     "Field",
     "Row",
     "Tab",
-    "clock",
+    "blank_form_values",
     "command_groups",
+    "commands_tool_context",
     "end_errored",
+    "fields_of",
+    "group_label",
+    "link_tool_context",
+    "page_context",
+    "rows_of",
+    "slug",
+    "status_of",
     "stop_patience",
     "stop_waited",
-    "fields_of",
-    "first_available",
-    "group_label",
-    "is_up",
-    "rows_of",
-    "status_of",
     "subsystem_tabs",
+    "test_card_context",
     "test_groups",
-    "tests_while_down",
+    "tests_before_connecting",
+    "tests_tool_context",
+    "tool_context",
     "worst_status",
 ]
