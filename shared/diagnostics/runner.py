@@ -235,7 +235,9 @@ class Run:
             self._tell(self.stopped)
             return
         try:
-            self.stopped = stopped_by(stop, self.name)
+            self.stopped = stopped_by(
+                stop, self.name, getattr(self.sub, "safe_state", "")
+            )
         except StopUnconfirmed as unconfirmed:
             self.mark_stop_unconfirmed(unconfirmed)
             return
@@ -275,7 +277,7 @@ class Run:
         )
 
 
-def stopped_by(stop: Callable[[], None], name: str) -> Result:
+def stopped_by(stop: Callable[[], None], name: str, safe_state: str = "") -> Result:
     """Call stop and return a Result that says whether it succeeded. StopUnconfirmed is re-raised."""
     try:
         stop()
@@ -286,5 +288,6 @@ def stopped_by(stop: Callable[[], None], name: str) -> Result:
         return Result(
             level=Level.ERROR, summary=f"stopping failed: {type(exc).__name__}: {exc}"
         )
-    run_log.log.info("{}: stopped the hardware", name)
-    return Result(level=Level.OK, summary="stopped the hardware")
+    summary = f"ensured {safe_state}" if safe_state else "stopped the hardware"
+    run_log.log.info("{}: {}", name, summary)
+    return Result(level=Level.OK, summary=summary)

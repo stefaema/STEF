@@ -354,7 +354,7 @@ def test_a_stop_requested_during_a_run_waits_for_the_end_step(oven):
     assert oven.stopped == 1
     assert oven.handle().sent[-2:] == ["set 0", "stop"]
     assert done["run"].stopped is not None
-    assert done["run"].stopped.summary == "stopped the hardware"
+    assert done["run"].stopped.summary == "ensured element off"
     assert done["run"].stop_requested is not None
     assert heard[-1] == done["run"].stopped
 
