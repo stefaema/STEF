@@ -32,9 +32,10 @@ def default_roster() -> tuple[str, ...]:
 class Busy(Exception):
     """Raised when the STEF machine is busy and cannot perform an activity."""
 
-    def __init__(self, activity: Activity) -> None:
-        super().__init__(f"the machine is {activity.value}")
+    def __init__(self, activity: Activity, holder: str) -> None:
+        super().__init__(f"the machine is {activity.value}: {holder}")
         self.activity = activity
+        self.holder = holder
 
 
 class Machine:
@@ -44,6 +45,7 @@ class Machine:
         self.subsystems: dict[str, Subsystem] = {}
         self._lock = threading.Lock()
         self._activity: Activity | None = None
+        self._holder: str | None = None
 
     def assemble(self) -> None:
         """Load all subsystems in the roster, skipping any that cannot be loaded."""
@@ -68,21 +70,28 @@ class Machine:
     def activity(self) -> Activity | None:
         return self._activity
 
-    def focus_on(self, activity: Activity) -> None:
-        """Take the focus of the STEF machine for a given activity."""
+    @property
+    def focus_holder(self) -> str | None:
+        """Return what holds the focus, such as "transport.raw.write", or None when idle."""
+        return self._holder
+
+    def focus_on(self, activity: Activity, holder: str) -> None:
+        """Take the focus of the STEF machine for an activity, on behalf of holder."""
         with self._lock:
             if self._activity is not None:
-                raise Busy(self._activity)
+                raise Busy(self._activity, self._holder or "")
             self._activity = activity
+            self._holder = holder
 
     def unfocus(self) -> None:
         with self._lock:
             self._activity = None
+            self._holder = None
 
     @contextmanager
-    def focusing_on(self, activity: Activity) -> Generator[None]:
+    def focusing_on(self, activity: Activity, holder: str) -> Generator[None]:
         """Context manager for taking and freeing the focus of the STEF machine."""
-        self.focus_on(activity)
+        self.focus_on(activity, holder)
         try:
             yield
         finally:

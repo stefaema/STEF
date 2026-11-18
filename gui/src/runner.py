@@ -137,7 +137,7 @@ def start_run(
     work: Callable[[], Any],
     report: Callable[[str, Any], None],
 ) -> None:
-    stef.focus_on(activity)
+    stef.focus_on(activity, by)
 
     def pump() -> None:
         try:
@@ -156,7 +156,7 @@ async def call_off_loop(
     stef: Machine, activity: Activity, by: str, work: Callable[[], Any]
 ) -> Any:
     """Run one blocking call on a thread, holding the machine for as long as it takes."""
-    stef.focus_on(activity)
+    stef.focus_on(activity, by)
     try:
         return await asyncio.to_thread(work)
     finally:
