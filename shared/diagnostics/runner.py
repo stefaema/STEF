@@ -221,8 +221,18 @@ class Run:
         run_log.write_step(outcome)
         self._tell(outcome)
 
-    def stop_after(self, stop: Callable[[], None]) -> None:
+    def stop_after(self, stop: Callable[[], None] | None) -> None:
+        """Stop the hardware if a stop was asked for. stop is None when the test holds no link."""
         if self.stop_requested is None:
+            return
+        if stop is None:
+            self.stopped = Result(
+                level=Level.OK,
+                summary="cancelled between steps; this test holds no link, "
+                "so there was nothing to stop",
+            )
+            run_log.log.info("{}: {}", self.name, self.stopped.summary)
+            self._tell(self.stopped)
             return
         try:
             self.stopped = stopped_by(stop, self.name)
@@ -276,5 +286,5 @@ def stopped_by(stop: Callable[[], None], name: str) -> Result:
         return Result(
             level=Level.ERROR, summary=f"stopping failed: {type(exc).__name__}: {exc}"
         )
-    run_log.log.info("{}: stopped", name)
-    return Result(level=Level.OK, summary="stopped")
+    run_log.log.info("{}: stopped the hardware", name)
+    return Result(level=Level.OK, summary="stopped the hardware")

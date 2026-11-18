@@ -141,7 +141,9 @@ class Diagnosable(Subsystem):
         try:
             run.execute()
         finally:
-            run.stop_after(lambda: self._stop_reaching_hardware(test))
+            run.stop_after(
+                None if test.needs is Needs.DOWN else self._stop_reaching_hardware
+            )
             if (
                 linked_at_start
                 and not self._link_is_up()
@@ -188,16 +190,14 @@ class Diagnosable(Subsystem):
                 run.stop_requested = time.time()
                 run.cancelled.set()
                 return True
-        self._stop_reaching_hardware(None)
+        self._stop_reaching_hardware()
         return False
 
     def _link_is_up(self) -> bool:
         return not isinstance(self, Linked) or self.link_state() is LinkState.UP
 
-    def _stop_reaching_hardware(self, test: type[Test[Any]] | None) -> None:
+    def _stop_reaching_hardware(self) -> None:
         """Call stop(), or raise StopUnconfirmed when the link it goes through is not up."""
-        if test is not None and test.needs is Needs.DOWN:
-            raise StopUnconfirmed(self.link_state(), port_held_by_test=True)
         if not self._link_is_up():
             raise StopUnconfirmed(self.link_state(), self.link_reason())
         self.stop()

@@ -132,24 +132,17 @@ class StopUnconfirmed(Exception):
         link_state: LinkState,
         link_reason: str | None = None,
         while_running: bool = False,
-        port_held_by_test: bool = False,
     ) -> None:
-        if port_held_by_test:
-            message = (
-                "the stop was not sent: this test opened the port itself, so the "
-                "subsystem cannot reach that hardware; check what its end step reported"
-            )
-        else:
-            cause = (
-                "the link was lost while the test ran"
-                if while_running
-                else LINK_STATE_SAID[link_state]
-            )
-            if link_reason:
-                cause = f"{cause} ({link_reason})"
-            message = f"the stop was not sent: {cause}; the hardware's state is unknown"
-        super().__init__(message)
+        cause = (
+            "the link was lost while the test ran"
+            if while_running
+            else LINK_STATE_SAID[link_state]
+        )
+        if link_reason:
+            cause = f"{cause} ({link_reason})"
+        super().__init__(
+            f"the stop was not sent: {cause}; the hardware's state is unknown"
+        )
         self.link_state = link_state
         self.link_reason = link_reason
         self.while_running = while_running
-        self.port_held_by_test = port_held_by_test

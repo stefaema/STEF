@@ -13,13 +13,14 @@ from shared.diagnostics import (
     WARNED,
     Prompt,
     PromptClosed,
+    Run,
     SkipReason,
     StepOutcome,
     StopUnconfirmed,
     end,
 )
 from shared.diagnostics.tests.fixture import heat
-from shared.subsystem import Level, LinkState, NotReady
+from shared.subsystem import Level, NotReady
 
 
 def run(oven, key, values=None, operator=False):
@@ -353,7 +354,7 @@ def test_a_stop_requested_during_a_run_waits_for_the_end_step(oven):
     assert oven.stopped == 1
     assert oven.handle().sent[-2:] == ["set 0", "stop"]
     assert done["run"].stopped is not None
-    assert done["run"].stopped.summary == "stopped"
+    assert done["run"].stopped.summary == "stopped the hardware"
     assert done["run"].stop_requested is not None
     assert heard[-1] == done["run"].stopped
 
@@ -428,10 +429,18 @@ def test_a_link_lost_during_a_run_is_unconfirmed_without_a_stop(oven, monkeypatc
     assert "lost while the test ran" in (finished.stop_unconfirmed or "")
 
 
-def test_a_stop_for_a_test_that_holds_the_port_says_the_subsystem_cannot_reach_it():
-    unconfirmed = StopUnconfirmed(LinkState.DOWN, port_held_by_test=True)
+def test_a_stop_during_a_test_that_holds_no_link_cancels_and_sends_nothing(oven):
+    oven.disconnect()
+    stopped_before = oven.stopped
+    stopping = Run(heat.Unplugged, oven, {}, lambda record: None)
+    stopping.stop_requested = time.time()
 
-    assert "opened the port itself" in str(unconfirmed)
+    stopping.stop_after(None)
+
+    assert oven.stopped == stopped_before
+    assert stopping.stopped is not None and stopping.stopped.level is Level.OK
+    assert "nothing to stop" in stopping.stopped.summary
+    assert stopping.stop_unconfirmed is None
 
 
 def test_an_end_step_states_how_long_it_is_expected_to_take():
