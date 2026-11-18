@@ -24,8 +24,6 @@ are `write` and `invalidate_owned`, which would undo the bring-up both depend on
 would move the finish line mid-turn and leave the timing proving nothing.
 """
 
-from __future__ import annotations
-
 import time
 from typing import TYPE_CHECKING, Any
 

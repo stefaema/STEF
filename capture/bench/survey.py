@@ -1,7 +1,5 @@
 """Everything this camera will say about itself, written down while we have it."""
 
-from __future__ import annotations
-
 import json
 import shutil
 import tempfile

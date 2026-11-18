@@ -1,7 +1,5 @@
 """The camera the link opens, and whether it will serve us."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from capture import capture, probe

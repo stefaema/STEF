@@ -1,7 +1,5 @@
 """Storage counts and path handling in listings."""
 
-from __future__ import annotations
-
 import pytest
 
 from portable.ccapi import Endpoint, FileType, StorageError

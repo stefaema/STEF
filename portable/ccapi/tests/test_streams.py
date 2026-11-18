@@ -1,7 +1,5 @@
 """Reopening a stream left running by an earlier run."""
 
-from __future__ import annotations
-
 import pytest
 
 from portable.ccapi import InvalidStateError

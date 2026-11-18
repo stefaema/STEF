@@ -1,7 +1,5 @@
 """Is this body fit to shoot, and will it take an instruction and give it back."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from portable.ccapi import Setting, ThermalRestriction

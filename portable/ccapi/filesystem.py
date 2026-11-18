@@ -1,7 +1,5 @@
 """Storage cards and the files on them."""
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 
 from portable.ccapi.endpoints import Endpoint

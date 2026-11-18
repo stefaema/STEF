@@ -11,8 +11,6 @@ nothing on the connect path comes here. This is bench work, and it wants the
 port to itself.
 """
 
-from __future__ import annotations
-
 import contextlib
 import importlib
 import io

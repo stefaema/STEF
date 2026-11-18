@@ -1,7 +1,5 @@
 """Parsed reply types and the functions that build them."""
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass, replace
 from typing import Any

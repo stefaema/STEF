@@ -6,8 +6,6 @@ inherited from those two APIs rather than chosen: what a record reserves for
 itself, and how many frames back the caller is.
 """
 
-from __future__ import annotations
-
 import inspect
 import logging
 from typing import Any

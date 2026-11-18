@@ -1,7 +1,5 @@
 """Finding a camera, and asking whether it will serve us, while nothing holds it."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from capture import capture, probe

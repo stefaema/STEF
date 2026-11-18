@@ -1,7 +1,5 @@
 """What the bench offers, what it refuses, and what running one leaves behind."""
 
-from __future__ import annotations
-
 import pytest
 
 import capture

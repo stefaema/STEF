@@ -1,7 +1,5 @@
 """Live view streaming."""
 
-from __future__ import annotations
-
 import enum
 import logging
 from collections.abc import Generator, Iterator

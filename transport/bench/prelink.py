@@ -7,8 +7,6 @@ already said more than the bootloader could, and nothing was disturbed. Only
 silence is ambiguous, and only silence is worth a reset to resolve.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from shared.diagnostics import (

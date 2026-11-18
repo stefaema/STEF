@@ -1,7 +1,5 @@
 """Packet framing for the camera binary streams."""
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Iterator
 
 from portable.ccapi.vocabulary import Packet, PacketKind

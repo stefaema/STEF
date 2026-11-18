@@ -6,8 +6,6 @@ needs the ROM bootloader, which resets the board, so that is in
 `transport.bench.rom`.
 """
 
-from __future__ import annotations
-
 import enum
 import time
 from dataclasses import dataclass

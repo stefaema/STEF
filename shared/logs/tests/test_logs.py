@@ -1,7 +1,5 @@
 """What a line looks like, what is kept, and what the standard library does."""
 
-from __future__ import annotations
-
 import json
 import logging
 import os

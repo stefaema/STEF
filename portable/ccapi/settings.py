@@ -1,7 +1,5 @@
 """Shooting settings, read and written by name."""
 
-from __future__ import annotations
-
 import enum
 from typing import Any
 

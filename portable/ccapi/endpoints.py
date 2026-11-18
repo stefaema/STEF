@@ -1,7 +1,5 @@
 """Endpoint names and the registry built from a camera manifest."""
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 

@@ -1,7 +1,5 @@
 """Heating, the several ways a test can end."""
 
-from __future__ import annotations
-
 import threading
 from typing import Any
 

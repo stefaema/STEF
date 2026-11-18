@@ -1,7 +1,5 @@
 """Which camera this machine was told about, and how to settle on one."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from capture import probe

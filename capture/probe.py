@@ -1,7 +1,5 @@
 """Which cameras are on the network, and whether they will answer, without disturbing them."""
 
-from __future__ import annotations
-
 import enum
 import selectors
 import socket

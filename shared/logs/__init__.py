@@ -1,7 +1,5 @@
 """Log system of the STEF project"""
 
-from __future__ import annotations
-
 import os
 import sys
 from collections.abc import Callable

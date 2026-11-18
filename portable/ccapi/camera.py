@@ -1,7 +1,5 @@
 """Camera client: the link plus every controller."""
 
-from __future__ import annotations
-
 import logging
 import time
 from collections.abc import Generator, Iterable

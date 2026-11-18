@@ -1,7 +1,5 @@
 """What a camera's own description turns into, read from the reference's example."""
 
-from __future__ import annotations
-
 from capture import probe
 
 # Chapter 2.5 of the Camera Control API reference, verbatim but for the address.

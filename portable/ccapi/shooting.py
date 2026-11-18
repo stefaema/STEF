@@ -1,7 +1,5 @@
 """Shutter release, focus, zoom, and flicker detection."""
 
-from __future__ import annotations
-
 import enum
 from collections.abc import Generator
 from contextlib import contextmanager

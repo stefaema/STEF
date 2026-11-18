@@ -1,7 +1,5 @@
 """Which endpoints must be requested as streams."""
 
-from __future__ import annotations
-
 from portable.ccapi import STREAMED, Endpoint
 
 

@@ -1,7 +1,5 @@
 """The port the link opens, and whether our firmware is answering on it."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from shared.subsystem import READY, Option, Readiness, blocked, choice

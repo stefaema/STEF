@@ -1,7 +1,5 @@
 """Camera state changes from polling or the push stream."""
 
-from __future__ import annotations
-
 import json as jsonlib
 import logging
 from collections.abc import Generator, Iterator

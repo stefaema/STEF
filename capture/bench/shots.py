@@ -1,7 +1,5 @@
 """Taking frames, the several ways the protocol offers, and what each leaves behind."""
 
-from __future__ import annotations
-
 import time
 from typing import TYPE_CHECKING, Any
 

@@ -1,7 +1,5 @@
 """Movie mode and recording."""
 
-from __future__ import annotations
-
 import enum
 import logging
 import time

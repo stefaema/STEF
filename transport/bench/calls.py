@@ -1,7 +1,5 @@
 """One diagnostics command per firmware method, built from the dataclasses `fw_api` generates."""
 
-from __future__ import annotations
-
 import ctypes
 import dataclasses
 import enum

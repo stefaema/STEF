@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import time
 
 from demo.bench import asking, calls, link, outcomes, port, running

@@ -1,7 +1,5 @@
 """What the transport's port is called, and how a link to it is opened."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from shared import fw_api

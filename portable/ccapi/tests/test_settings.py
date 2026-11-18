@@ -1,7 +1,5 @@
 """Still image quality, whose value is an object."""
 
-from __future__ import annotations
-
 import pytest
 
 from portable.ccapi import Setting

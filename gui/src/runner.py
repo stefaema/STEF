@@ -11,8 +11,6 @@ than queued, and the work runs on a thread so the event loop stays free to
 stream what it produces.
 """
 
-from __future__ import annotations
-
 import asyncio
 import itertools
 import queue

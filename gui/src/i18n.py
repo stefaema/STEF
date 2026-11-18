@@ -8,8 +8,6 @@ English is the source language, so the untranslated path is the identity
 function and the screen reads correctly with no catalog installed at all.
 """
 
-from __future__ import annotations
-
 import gettext as _gettext
 from pathlib import Path
 

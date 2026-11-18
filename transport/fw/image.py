@@ -5,8 +5,6 @@ app, with a manifest giving each file's flash offset. Installing replaces the
 previous release, so `auto` expects one release compatible with `fw_api`.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass

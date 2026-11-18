@@ -1,7 +1,5 @@
 """Exception types and the mapping from response status to them."""
 
-from __future__ import annotations
-
 from portable.ccapi.vocabulary import ErrorBody
 
 

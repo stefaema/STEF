@@ -1,7 +1,5 @@
 """Disconnecting stops what the session started."""
 
-from __future__ import annotations
-
 from portable.ccapi import DeviceBusyError, LinkState
 from portable.ccapi.tests import fake
 

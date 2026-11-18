@@ -1,7 +1,5 @@
 """What a caller may change about retrying, and what the change must not cost."""
 
-from __future__ import annotations
-
 from portable.ccapi.tests import fake
 
 

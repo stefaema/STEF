@@ -1,7 +1,5 @@
 """Firmware log lines, written to the PC's log."""
 
-from __future__ import annotations
-
 from shared import logs
 from transport.fw import framing
 

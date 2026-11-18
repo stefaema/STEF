@@ -6,8 +6,6 @@ fixed, so the value control has to be built per setting rather than shared
 between them, which is what makes a loop the way to declare them.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from typing import Any
 
