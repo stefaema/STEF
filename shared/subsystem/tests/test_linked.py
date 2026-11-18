@@ -176,3 +176,72 @@ def test_disconnecting_closes_even_when_stopping_fails():
 def test_a_link_that_is_down_has_no_handle():
     with pytest.raises(NotLinked):
         Oven().handle()
+
+
+def watched_oven():
+    """Return an oven and the link states it announced, in order."""
+    oven = Oven()
+    announced: list[LinkState] = []
+    oven.watch_link(lambda: announced.append(oven.link_state()))
+    return oven, announced
+
+
+def test_connecting_announces_linking_then_up():
+    oven, announced = watched_oven()
+
+    oven.connect("/dev/oven0")
+
+    assert announced == [LinkState.LINKING, LinkState.UP]
+
+
+def test_a_refused_probe_announces_that_the_link_is_down_again():
+    oven, announced = watched_oven()
+    oven.refusal = "nothing answers"
+
+    with pytest.raises(NotReady):
+        oven.connect("/dev/oven0")
+
+    assert announced == [LinkState.LINKING, LinkState.DOWN]
+
+
+def test_a_failed_open_announces_the_error():
+    oven, announced = watched_oven()
+    oven.fails_to_open = OSError("busy")
+
+    with pytest.raises(OSError):
+        oven.connect("/dev/oven0")
+
+    assert announced == [LinkState.LINKING, LinkState.ERROR]
+
+
+def test_disconnecting_announces_down():
+    oven, announced = watched_oven()
+    oven.connect("/dev/oven0")
+    announced.clear()
+
+    oven.disconnect()
+
+    assert announced == [LinkState.DOWN]
+
+
+def test_a_lost_handle_announces_the_error_when_the_subclass_reports_it():
+    oven, announced = watched_oven()
+    oven.connect("/dev/oven0")
+    announced.clear()
+
+    oven.handle().alive = False
+    oven.announce_link_lost()
+
+    assert announced == [LinkState.ERROR]
+
+
+def test_a_watcher_that_raises_does_not_break_connecting():
+    oven = Oven()
+
+    def broken() -> None:
+        raise RuntimeError("the watcher is broken")
+
+    oven.watch_link(broken)
+    oven.connect("/dev/oven0")
+
+    assert oven.link_state() is LinkState.UP

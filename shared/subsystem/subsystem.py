@@ -1,5 +1,6 @@
 import enum
 import threading
+from collections.abc import Callable
 from types import ModuleType
 from typing import Any, ClassVar
 
@@ -65,6 +66,24 @@ class Linked[Target](Subsystem):
         self._handle: Any = None
         self._linking = False
         self._failure: str | None = None
+        self._on_link_change: Callable[[], None] | None = None
+
+    def watch_link(self, on_link_change: Callable[[], None]) -> None:
+        """Call on_link_change after every change of link state, from whichever thread made it."""
+        self._on_link_change = on_link_change
+
+    def announce_link_lost(self) -> None:
+        """Say that the open handle stopped answering. A subclass calls this when it notices."""
+        self._announce_link_change()
+
+    def _announce_link_change(self) -> None:
+        on_link_change = self._on_link_change
+        if on_link_change is None:
+            return
+        try:
+            on_link_change()
+        except Exception:
+            pass
 
     def probe(self, target: Target) -> Readiness | None:
         return None
@@ -108,6 +127,7 @@ class Linked[Target](Subsystem):
             stale, self._handle = self._handle, None
             self._linking = True
             self._failure = None
+        self._announce_link_change()
         if stale is not None:
             self._close_quietly(stale)
         try:
@@ -118,15 +138,18 @@ class Linked[Target](Subsystem):
         except NotReady:
             with self._link_lock:
                 self._linking = False
+            self._announce_link_change()
             raise
         except Exception as exc:
             with self._link_lock:
                 self._linking = False
                 self._failure = f"{type(exc).__name__}: {exc}"
+            self._announce_link_change()
             raise
         with self._link_lock:
             self._handle = opened
             self._linking = False
+        self._announce_link_change()
 
     def disconnect(self) -> None:
         errors: list[Exception] = []
@@ -143,6 +166,7 @@ class Linked[Target](Subsystem):
                 self._close(closing)
             except Exception as exc:
                 errors.append(exc)
+        self._announce_link_change()
         if errors:
             raise errors[0]
 
