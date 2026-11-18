@@ -74,7 +74,7 @@ def test_every_channel_renders_into_server_sent_events(client):
     client.post("/diagnostics/demo/tests/outcomes.Passes/run")
     screen = app_module.bindings
 
-    link = screen.render(Change(Channel.LINK, subsystem_id="demo"))
+    link = screen.render(Change(Channel.LINK, subsystem_id="demo", link_changed=True))
     assert link.startswith("event: link\n")
     assert 'id="implementation-demo"' in link
     assert "event: link_state\n" in link
@@ -91,3 +91,25 @@ def test_every_channel_renders_into_server_sent_events(client):
     logged = screen.log_event(app_module.model.log_backlog()[-1])
     assert logged.startswith("event: log\n")
     client.post("/diagnostics/demo/link/disconnect")
+
+
+def test_a_refused_connect_stays_on_the_panel_with_the_target_kept(client):
+    from gui.src import app as app_module
+
+    refused = client.post(
+        "/diagnostics/demo/link/connect", data={"board": "fails to open"}
+    )
+    assert "would not open" in refused.text
+
+    refetched = client.get("/diagnostics/demo/link", headers={"hx-request": "true"})
+    assert "would not open" in refetched.text
+    assert 'value="fails to open" selected' in refetched.text
+    assert app_module.model.last_target("demo") == "fails to open"
+
+
+def test_a_command_reply_is_not_followed_by_a_board_refetch(client):
+    from gui.src import app as app_module
+    from gui.src.messages import Change, Channel
+
+    rendered = app_module.bindings.render(Change(Channel.LINK, subsystem_id="demo"))
+    assert "event: link_state" not in rendered

@@ -75,6 +75,10 @@ class StopAlarm:
 class SubsystemState:
     view: SubsystemView
     stop_alarm: StopAlarm | None = None
+    # Why the last connect or disconnect was refused, shown until the next attempt.
+    link_refusal: str | None = None
+    # The target that the connect form last submitted, so the form keeps it.
+    last_target: Any = None
 
 
 @dataclass(slots=True)
@@ -108,6 +112,8 @@ class GuiModel:
         self._request_ids = itertools.count(1)
         self._lock = threading.Lock()
         self._log_sink_id: int | None = None
+        # Subsystems with a connect or disconnect in progress.
+        self._link_actions_running: set[str] = set()
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -210,20 +216,58 @@ class GuiModel:
         return finished.reply
 
     def connect(self, subsystem_id: str, target: Any) -> None:
-        with self._focused(Activity.BENCHING, f"{subsystem_id}.connect"):
-            self.say(subsystem_id, Level.OK, "command", f"connect({target!r})")
-            self._reply_or_refuse(
-                subsystem_id,
-                self._ask_worker(
-                    subsystem_id, lambda request_id: Connect(request_id, target)
-                ),
-            )
+        with self._link_action(subsystem_id, target):
+            with self._focused(Activity.BENCHING, f"{subsystem_id}.connect"):
+                self.say(subsystem_id, Level.OK, "command", f"connect({target!r})")
+                self._reply_or_refuse(
+                    subsystem_id,
+                    self._ask_worker(
+                        subsystem_id, lambda request_id: Connect(request_id, target)
+                    ),
+                )
         self.say(subsystem_id, Level.OK, "result", gettext("Connected"))
 
     def disconnect(self, subsystem_id: str) -> None:
-        self.say(subsystem_id, Level.OK, "command", "disconnect()")
-        self._reply_or_refuse(subsystem_id, self._ask_worker(subsystem_id, Disconnect))
+        with self._link_action(subsystem_id, None):
+            self.say(subsystem_id, Level.OK, "command", "disconnect()")
+            self._reply_or_refuse(
+                subsystem_id, self._ask_worker(subsystem_id, Disconnect)
+            )
         self.say(subsystem_id, Level.OK, "result", gettext("Disconnected"))
+
+    def link_refusal(self, subsystem_id: str) -> str | None:
+        with self._lock:
+            return self._states[subsystem_id].link_refusal
+
+    def last_target(self, subsystem_id: str) -> Any:
+        with self._lock:
+            return self._states[subsystem_id].last_target
+
+    @contextmanager
+    def _link_action(self, subsystem_id: str, target: Any) -> Generator[None]:
+        """Hold back board refetches until the action ends, then send one.
+
+        A connect changes the link state more than once. A refetch at each change
+        would replace the panel that the action's own response returns.
+        """
+        with self._lock:
+            state = self._states[subsystem_id]
+            state.link_refusal = None
+            if target is not None:
+                state.last_target = target
+            self._link_actions_running.add(subsystem_id)
+        try:
+            yield
+        except Refused as refused:
+            with self._lock:
+                state.link_refusal = str(refused)
+            raise
+        finally:
+            with self._lock:
+                self._link_actions_running.discard(subsystem_id)
+            self._publish(
+                Change(Channel.LINK, subsystem_id=subsystem_id, link_changed=True)
+            )
 
     def start_test(
         self, subsystem_id: str, test_key: str, form_values: dict[str, Any]
@@ -403,7 +447,15 @@ class GuiModel:
                             del self._option_lists[cached]
                 if link_changed:
                     self._alarm_if_lost_while_running(view)
-                self._publish(Change(Channel.LINK, subsystem_id=view.id))
+                with self._lock:
+                    action_running = view.id in self._link_actions_running
+                self._publish(
+                    Change(
+                        Channel.LINK,
+                        subsystem_id=view.id,
+                        link_changed=link_changed and not action_running,
+                    )
+                )
             case TestChanged(subsystem_id=subsystem_id, test_view=test_view):
                 self._replace_test(subsystem_id, test_view)
                 self._publish(

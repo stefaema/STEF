@@ -19,6 +19,7 @@ from shared.diagnostics import (
     TestView,
     verdict,
 )
+from shared.subsystem import LinkState
 
 if TYPE_CHECKING:
     from gui.src.model import GuiModel
@@ -358,16 +359,31 @@ def link_tool_context(
         )
         if target is not None
         else (),
-        connect_values=blank_form_values((target,)) if target is not None else {},
+        connect_values=connect_form_values(model, subsystem_id, target),
         tests_before_connecting=tests_before_connecting(subsystem_view)
         if subsystem_view is not None
         else [],
         probe_refusal=None,
-        action_error=None,
+        action_error=model.link_refusal(subsystem_id),
+        link_failure=link.reason
+        if link is not None and link.state is LinkState.ERROR
+        else None,
         probe_answered=template_context["link_is_up"] or link is None,
     )
     template_context.update(extra)
     return template_context
+
+
+def connect_form_values(
+    model: "GuiModel", subsystem_id: str, target: InputView | None
+) -> dict[str, Any]:
+    """Return the connect form's values, keeping the target that was last submitted."""
+    if target is None:
+        return {}
+    last_target = model.last_target(subsystem_id)
+    if last_target is None:
+        return blank_form_values((target,))
+    return {target.name: last_target}
 
 
 def tests_tool_context(model: "GuiModel", subsystem_id: str) -> dict[str, Any]:

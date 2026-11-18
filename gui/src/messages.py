@@ -154,6 +154,7 @@ class Change:
     subsystem_id: str | None = None
     test_key: str | None = None
     test_ended: bool = False
+    link_changed: bool = False
     log_line: LogLine | None = None
 
 

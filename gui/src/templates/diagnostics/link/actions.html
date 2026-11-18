@@ -1,7 +1,8 @@
 {%- import "macros/style.html" as S -%}
 {%- import "macros/marks.html" as M -%}
 {%- if probe_refusal %}<div class="{{ S.note }}">{{ probe_refusal }}</div>{% endif %}
-{%- if action_error %}<div class="{{ S.noteError }}">{{ action_error }}</div>{% endif %}
+{%- if action_error %}<div class="{{ S.noteError }}">{{ action_error }}</div>
+{%- elif link_failure %}<div class="{{ S.noteError }}">{{ link_failure }}</div>{% endif %}
 <div class="flex items-center gap-2">
   {%- if link_is_up %}
   <button type="button" class="{{ S.btn }}"

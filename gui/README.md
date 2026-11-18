@@ -67,9 +67,11 @@ renders each change once into an event and sends the same text to every connecti
 | --- | --- | --- |
 | log | `log` | one row of the log dock |
 | link | `link` | the link marks on the subsystem tabs, the Implementation card, the stop alarm and every test's head |
-| link | `link_state` | makes the board of that subsystem request itself again, because its content depends on the open tool |
+| link | `link_state` | sent only when the link state changed. It makes the board of that subsystem request itself again, because its content depends on the open tool. During a connect or disconnect, one is sent when the action ends. |
 | test progress | `test_progress` | one test's head and steps, and its group's mark when it ends |
 | focus | `focus` | the busy line in the header |
+
+A refused connect is kept in the model with the submitted target, so the Link panel shows the refusal until the next attempt and the form keeps the target. A link in error shows its reason.
 
 `Linked.watch_link` reports each link change when it happens. The worker also
 checks the link once a second for changes that were not reported.

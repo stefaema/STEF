@@ -83,7 +83,7 @@ class ScreenBindings:
             case Channel.LOG:
                 return self.log_event(change.log_line) if change.log_line else ""
             case Channel.LINK:
-                return self.link_events(change.subsystem_id or "")
+                return self.link_events(change.subsystem_id or "", change.link_changed)
             case Channel.TEST_PROGRESS:
                 return self.test_progress_event(
                     change.subsystem_id or "", change.test_key or "", change.test_ended
@@ -94,8 +94,11 @@ class ScreenBindings:
     def log_event(self, log_line: LogLine) -> str:
         return sse_event("log", self._render("log/record.html", {"log_line": log_line}))
 
-    def link_events(self, subsystem_id: str) -> str:
-        """Return the fragments that look the same to every browser, followed by a link_state event."""
+    def link_events(self, subsystem_id: str, link_changed: bool) -> str:
+        """Return the fragments that look the same to every browser.
+
+        A link_state event follows when link_changed is set.
+        """
         template_context = view.tests_tool_context(self.model, subsystem_id)
         template_context["oob"] = True
         fragments = [
@@ -120,9 +123,11 @@ class ScreenBindings:
         link = subsystem_view.link
         link_state = link.state.value if link is not None else "down"
         events = sse_event("link", "".join(fragments))
-        events += sse_event(
-            "link_state", json.dumps({"subsystem": subsystem_id, "state": link_state})
-        )
+        if link_changed:
+            events += sse_event(
+                "link_state",
+                json.dumps({"subsystem": subsystem_id, "state": link_state}),
+            )
         return events
 
     def test_progress_event(self, subsystem_id: str, test_key: str, ended: bool) -> str:
