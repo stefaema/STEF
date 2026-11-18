@@ -54,6 +54,7 @@
 {%- set td = "px-2.5 py-1.5 border-t border-gray-300 dark:border-gray-700" -%}
 
 {%- set sectionTitle = "text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400" -%}
+{%- set badge = "inline-flex items-center shrink-0 h-5 px-2 rounded-[5px] bg-inset text-xs leading-none font-semibold uppercase tracking-wider text-gray-500" -%}
 
 {%- macro seg(on) -%}{{ segBase }}{{ segOn if on else segOff }}{%- endmacro -%}
 {%- macro tab(on) -%}{{ tabBase }}{{ tabOn if on else tabOff }}{%- endmacro -%}

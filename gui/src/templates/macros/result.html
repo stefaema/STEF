@@ -68,6 +68,7 @@
 <div class="step-grid px-3 py-2 border-t border-gray-300 first:border-t-0 dark:border-gray-700">
   <div class="min-w-0">
     <div class="flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+      {%- if row.end %}<span class="{{ S.badge }}">{{ _("End step") }}</span>{% endif %}
       <span class="truncate">{{ row.title }}</span>
       {%- if row.hazard %}{{ M.hazard_mark(row.hazard, False) }}{% endif %}
     </div>

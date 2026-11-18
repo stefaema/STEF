@@ -41,9 +41,6 @@
   </div>
   {%- endif %}
   {%- for row in rows_of(test) %}
-  {%- if row.end %}
-  <div class="px-3 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-500 border-t border-gray-300 dark:border-gray-700">{{ _("End step") }}</div>
-  {%- endif %}
   {{ R.step_row(row) }}
   {%- endfor %}
   {%- if test.last and test.last.stopped %}
