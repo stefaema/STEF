@@ -92,6 +92,14 @@ class Prompt:
     timeout: float
 
 
+@dataclass(frozen=True, slots=True)
+class PromptClosed:
+    """A question stopped being asked: answered, timed out or cancelled."""
+
+    test: str
+    step: str
+
+
 class Cancelled(Exception):
     pass
 

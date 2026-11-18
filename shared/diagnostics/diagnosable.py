@@ -1,6 +1,6 @@
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -121,7 +121,9 @@ class Diagnosable(Subsystem):
         submitted: Mapping[str, Any],
         report: Report,
         operator: bool = False,
+        on_started: Callable[[], None] | None = None,
     ) -> "RunView":
+        """Run one test to its end. on_started is called once the run is registered."""
         test = self.test(key)
         values = coerced_values(test.inputs, submitted, self)
         with self._run_lock:
@@ -134,6 +136,8 @@ class Diagnosable(Subsystem):
             self._running = run
             self._runs[key] = run
         linked_at_start = self._link_is_up()
+        if on_started is not None:
+            on_started()
         try:
             run.execute()
         finally:

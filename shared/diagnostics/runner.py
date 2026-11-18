@@ -18,6 +18,7 @@ from shared.diagnostics.records import (
     Measurement,
     NoAnswer,
     Prompt,
+    PromptClosed,
     SkipReason,
     StepOutcome,
     StepStatus,
@@ -27,7 +28,7 @@ from shared.diagnostics.records import (
 from shared.diagnostics.steps import Finish, Skip, StepSpec, Test
 from shared.subsystem import DeclarationError, Input, Level, NotReady, Result, coerced
 
-Report = Callable[[StepOutcome | Prompt | Result], None]
+Report = Callable[[StepOutcome | Prompt | PromptClosed | Result], None]
 
 POLL = 0.1
 
@@ -114,6 +115,7 @@ class Run:
         finally:
             with self._lock:
                 self.prompt = None
+            self._tell(PromptClosed(self.test.key, asked.step))
         value = coerced(question, self._answer, self.sub)
         self._pending.answers.append((question.name, value))
         return value
@@ -236,9 +238,9 @@ class Run:
         run_log.log.error("{}: {}", self.name, unconfirmed)
         self._tell(self.stopped)
 
-    def _tell(self, said: StepOutcome | Prompt | Result) -> None:
+    def _tell(self, record: StepOutcome | Prompt | PromptClosed | Result) -> None:
         try:
-            self.report(said)
+            self.report(record)
         except Exception as exc:
             run_log.log.warning("a report listener failed: {}", exc)
 

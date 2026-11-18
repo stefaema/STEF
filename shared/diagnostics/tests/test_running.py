@@ -12,6 +12,7 @@ from shared.diagnostics import (
     SKIPPED,
     WARNED,
     Prompt,
+    PromptClosed,
     SkipReason,
     StepOutcome,
     StopUnconfirmed,
@@ -226,6 +227,20 @@ def test_a_question_waits_for_the_answer_and_records_it(oven):
     assert smell.answers == (("smelled", True),)
 
 
+def test_every_question_says_when_it_stopped_being_asked(oven):
+    worker, heard, _ = in_background(oven, "heat.Asks", operator=True)
+    wait_for(lambda: len(prompts(heard)) == 1)
+    oven.answer("True")
+    wait_for(lambda: len(prompts(heard)) == 2)
+    oven.answer("true")
+    worker.join(5)
+
+    asked_then_closed = [
+        type(one).__name__ for one in heard if isinstance(one, Prompt | PromptClosed)
+    ]
+    assert asked_then_closed == ["Prompt", "PromptClosed", "Prompt", "PromptClosed"]
+
+
 def test_a_question_nobody_answers_cancels_the_run(oven):
     oven.patience = 0.2
     worker, heard, done = in_background(oven, "heat.Asks", operator=True)
@@ -257,7 +272,7 @@ def test_answering_when_nothing_is_asked_is_refused(oven):
 def test_a_run_s_outcomes_are_steps_and_prompts_only(oven):
     _, heard = run(oven, "heat.Breaks")
 
-    assert all(isinstance(one, StepOutcome | Prompt) for one in heard)
+    assert all(isinstance(one, StepOutcome | Prompt | PromptClosed) for one in heard)
 
 
 def test_finishing_as_failed_leaves_the_rest_not_reached(oven):
@@ -357,6 +372,19 @@ def test_a_deferred_stop_that_fails_says_so(oven, monkeypatch):
 
     assert done["run"].stopped is not None
     assert "element 1 did not confirm" in done["run"].stopped.summary
+
+
+def test_a_run_says_it_is_registered_before_its_first_step(oven):
+    registered = []
+
+    def started():
+        registered.append(oven.running() is not None)
+
+    oven.run_test(
+        "heat.Preheat", {"celsius": "180"}, lambda record: None, on_started=started
+    )
+
+    assert registered == [True]
 
 
 def test_a_stop_with_the_link_down_raises_and_sends_nothing(oven):
