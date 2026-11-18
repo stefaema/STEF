@@ -152,7 +152,7 @@ class GuiModel:
             return self._states[subsystem_id].view
 
     def test_view(self, subsystem_id: str, test_key: str) -> TestView:
-        found = next(
+        test = next(
             (
                 one
                 for one in self.subsystem_view(subsystem_id).tests
@@ -160,9 +160,9 @@ class GuiModel:
             ),
             None,
         )
-        if found is None:
+        if test is None:
             raise KeyError(f"{subsystem_id} declares no test {test_key!r}")
-        return found
+        return test
 
     def stop_alarm(self, subsystem_id: str) -> StopAlarm | None:
         with self._lock:

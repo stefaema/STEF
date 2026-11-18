@@ -89,10 +89,14 @@ def as_run(test: TestView, subsystem_id: str) -> str:
             "inputs": _plain(run.values),
             "steps": [
                 {
-                    "step": settled.step,
-                    "status": settled.status.value,
-                    **({"skipped": settled.skipped.value} if settled.skipped else {}),
-                    **({"detail": settled.detail} if settled.detail else {}),
+                    "step": step_outcome.step,
+                    "status": step_outcome.status.value,
+                    **(
+                        {"skipped": step_outcome.skipped.value}
+                        if step_outcome.skipped
+                        else {}
+                    ),
+                    **({"detail": step_outcome.detail} if step_outcome.detail else {}),
                     **(
                         {
                             "measurements": [
@@ -103,20 +107,24 @@ def as_run(test: TestView, subsystem_id: str) -> str:
                                     "limits": one.limits() or None,
                                     "within": one.within,
                                 }
-                                for one in settled.measurements
+                                for one in step_outcome.measurements
                             ]
                         }
-                        if settled.measurements
+                        if step_outcome.measurements
                         else {}
                     ),
-                    **({"answers": dict(settled.answers)} if settled.answers else {}),
                     **(
-                        {"result": json.loads(as_record(settled.result))}
-                        if settled.result
+                        {"answers": dict(step_outcome.answers)}
+                        if step_outcome.answers
+                        else {}
+                    ),
+                    **(
+                        {"result": json.loads(as_record(step_outcome.result))}
+                        if step_outcome.result
                         else {}
                     ),
                 }
-                for settled in run.outcomes
+                for step_outcome in run.outcomes
             ],
         },
         indent=2,

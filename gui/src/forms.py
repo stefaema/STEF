@@ -32,10 +32,10 @@ def _listed(name: str, form: Mapping[str, Any]) -> list[Any]:
     getter = getattr(form, "getlist", None)
     if getter is not None:
         return list(getter(name))
-    found = form.get(name)
-    if found is None:
+    submitted = form.get(name)
+    if submitted is None:
         return []
-    return list(found) if isinstance(found, list) else [found]
+    return list(submitted) if isinstance(submitted, list) else [submitted]
 
 
 def _mask(name: str, form: Mapping[str, Any]) -> int:

@@ -71,12 +71,12 @@ def declared_test(subsystem_id: str, test_key: str) -> TestView:
 
 def declared_command(subsystem_id: str, command_key: str) -> CommandView:
     subsystem_view = model.subsystem_view(served_subsystem(subsystem_id))
-    found = next(
+    command = next(
         (one for one in subsystem_view.commands if one.key == command_key), None
     )
-    if found is None:
+    if command is None:
         raise HTTPException(404, f"no command {subsystem_id}.{command_key}")
-    return found
+    return command
 
 
 def link_target(subsystem_id: str) -> InputView:

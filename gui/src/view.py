@@ -123,7 +123,7 @@ class Field:
 @dataclass(frozen=True, slots=True)
 class Row:
     title: str
-    settled: StepOutcome | None
+    step_outcome: StepOutcome | None
     status: str
     hazard: str | None
     end: bool
@@ -223,19 +223,19 @@ def rows_of(test: TestView) -> list[Row]:
     running = bool(test.last and test.last.running)
     rows = []
     for index, (title, hazard, is_end) in enumerate(previews):
-        settled = outcomes[index] if index < len(outcomes) else None
-        if settled is not None:
-            status = settled.status.value
+        step_outcome = outcomes[index] if index < len(outcomes) else None
+        if step_outcome is not None:
+            status = step_outcome.status.value
             if (
-                settled.status is StepStatus.SKIPPED
-                and settled.skipped is SkipReason.NOT_REACHED
+                step_outcome.status is StepStatus.SKIPPED
+                and step_outcome.skipped is SkipReason.NOT_REACHED
             ):
                 status = "unreached"
         elif running and index == len(outcomes):
             status = "running"
         else:
             status = "idle"
-        rows.append(Row(title, settled, status, hazard, is_end))
+        rows.append(Row(title, step_outcome, status, hazard, is_end))
     return rows
 
 
