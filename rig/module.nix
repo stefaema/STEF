@@ -9,8 +9,7 @@ in
 {
   description = "The STEF project rig: its parts modelled as code and exported for fabrication";
 
-  # The CAD wheels are cp313 x86_64 only, which is what fixes the repository's
-  # interpreter at 3.13.
+  # The CAD wheels are packaged here for x86_64 only.
   systems = [ "x86_64-linux" ];
 
   pythonOverlay = import ./nix/overlay.nix;

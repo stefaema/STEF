@@ -82,8 +82,8 @@
 
           # One interpreter for the repository. Modules extend its package set
           # rather than picking their own, so the editor can hold every import
-          # in the tree at once. 3.13 because rig's CAD wheels are cp313.
-          python = pkgs.python313.override {
+          # in the tree at once. 3.14 is the newest rig's CAD wheels are built for.
+          python = pkgs.python314.override {
             self = python;
             packageOverrides = lib.composeManyExtensions
               (lib.filter (o: o != null) (map (d: d.pythonOverlay) all));

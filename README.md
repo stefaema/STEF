@@ -27,7 +27,7 @@ A `module.nix` returns an attribute set, every field optional:
 | `pythonOverlay` | packages nixpkgs does not carry, added to the interpreter |
 | `shell` | a shell taken whole from elsewhere, which `firmware` does |
 
-The interpreter is 3.13, fixed there by `rig`'s CAD wheels being `cp313`.
+The interpreter is 3.14, the newest that `rig`'s CAD wheels are built for.
 
 Every shell exports `STEF_HOME`, pointing at `local/`. `shared.paths` reads it
 to decide where config, state and logs go, so a shell that left it unset would

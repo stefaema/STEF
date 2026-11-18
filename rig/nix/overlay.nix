@@ -17,11 +17,11 @@ in
 {
   cadquery-ocp-novtk = wheel {
     pname = "cadquery-ocp-novtk";
-    version = "7.9.3.1.1";
+    version = "8.0.1.1.0";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/f3/31/82baf17406c0a13f2eb98c1d46d09a640795fc7d6b373a69bc5f44344db3/cadquery_ocp_novtk-7.9.3.1.1-cp313-cp313-manylinux_2_31_x86_64.whl";
-      hash = "sha256-/80E1O+gh9OqlCNgAgJloawOEkB717z+s35wtNHuct8=";
+      url = "https://files.pythonhosted.org/packages/f5/a2/44043f9f2ff482a40aa43726c745d4215c6e1fec0e6ca3868169ea5c9b1c/cadquery_ocp_novtk-8.0.1.1.0-cp314-cp314-manylinux_2_28_x86_64.whl";
+      hash = "sha256-fWpkUZUJBb8Z6fNpAJ+JzPFyhyA6Cc2qAo8BCoojylk=";
     };
 
     nativeBuildInputs = [ autoPatchelfHook ];
@@ -34,11 +34,11 @@ in
 
   cadquery-ocp-proxy = wheel {
     pname = "cadquery-ocp-proxy";
-    version = "7.9.3.1.1";
+    version = "8.0.1.1.0";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/30/c0/04e9363a99fee892de2776820e3dcf04f8825b6edc9580efe3416c9465a7/cadquery_ocp_proxy-7.9.3.1.1-py3-none-any.whl";
-      hash = "sha256-ykFk7EtUlW2fw+aMZ9VVtUhsuWPC9x4Y3wBboWuSHJE=";
+      url = "https://files.pythonhosted.org/packages/13/5e/29c3d8c4b290dee82387468a33ac06c663518a167963cdb9ff48e6bbd8f9/cadquery_ocp_proxy-8.0.1.1.0-py3-none-any.whl";
+      hash = "sha256-mMcbtgz7ZRr+F5sTSriFgP11OE/ODMbWM/cnACzRir0=";
     };
   };
 
@@ -59,11 +59,11 @@ in
 
   ocpsvg = wheel {
     pname = "ocpsvg";
-    version = "0.6.0";
+    version = "0.7.0";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/a9/d7/27d2c9d5a2645fdda9e502a2a1a1cb5d4c9d137223ef76a43296eb7c152b/ocpsvg-0.6.0-py3-none-any.whl";
-      hash = "sha256-XPxt6y9gLe2EVZZAnkH+j14bOJ4U6MxyfbCVXw6I3ns=";
+      url = "https://files.pythonhosted.org/packages/f1/a5/4143c35ee979c5decc985ba4621f50fae1ec6977adf8ab0429c2a74be668/ocpsvg-0.7.0-py3-none-any.whl";
+      hash = "sha256-pHa7SLay4tnx86Y1b95Xk3PWgWGLOaatnJmoCKAROZc=";
     };
 
     dependencies = [
@@ -76,11 +76,11 @@ in
 
   ocp-gordon = wheel {
     pname = "ocp_gordon";
-    version = "0.2.2";
+    version = "0.3.1";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/6c/d1/ee535cdbc502790dda6555e439ea8bcacdd38325859151769d109d307a94/ocp_gordon-0.2.2-py3-none-any.whl";
-      hash = "sha256-ZBTpAaEQZaVug5yBtW9BgQC00Lgetaojux+Pcvl/8Jk=";
+      url = "https://files.pythonhosted.org/packages/3e/dc/ffc8307cd048f4f1e28d95cff6fe694af74f2bae771af6da272701d9646a/ocp_gordon-0.3.1-py3-none-any.whl";
+      hash = "sha256-XfFMOAMtzKWCuniOU/jS6LOaZGpep4agMJ6ElLMGGoE=";
     };
 
     dependencies = [
@@ -106,11 +106,11 @@ in
 
   yacv-server = wheel {
     pname = "yacv_server";
-    version = "0.11.3";
+    version = "0.12.2";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/bb/73/e0e4f9b9af9be15a079ae6689e2b91fd5a56b2646dcb5fea98a39fdf006b/yacv_server-0.11.3-py3-none-any.whl";
-      hash = "sha256-V+fcEsWijomaXLXKoYJlpFKRVJuqsDuWSHFl1hqn0TU=";
+      url = "https://files.pythonhosted.org/packages/41/1a/ed20a6d97d18cb794dee3ac5532840cb5b77f49e7ea85899985be8efc6b6/yacv_server-0.12.2-py3-none-any.whl";
+      hash = "sha256-2QErTJWj9e+Y3U6xtNjjG/gMV1UDTFq6zpwMGDEsu64=";
     };
 
     dependencies = [
@@ -124,17 +124,20 @@ in
 
   build123d = wheel {
     pname = "build123d";
-    version = "0.11.1";
+    version = "0.13.0";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/e7/f2/c466dbd4cb3aa75a192ba39f1a49058f828fcc0eb6f9cf6936ed6078308b/build123d-0.11.1-py3-none-any.whl";
-      hash = "sha256-TpX6fMvcg+YkMTvkkufE9fDrLqHfNhMOtxi7DCWonhA=";
+      url = "https://files.pythonhosted.org/packages/16/a2/da58cdab8a6978376d66c909b06f4a1c9aafbd23163540741c75a51b675e/build123d-0.13.0-py3-none-any.whl";
+      hash = "sha256-F38RTl8FFAVBiRNDRtOGxwBASPjlhDC5uEt0oE+8lP4=";
     };
 
     pythonRelaxDeps = [ "webcolors" ];
 
     dependencies = [
       final.anytree
+      final.bd-materials
+      final.fonttools
+      final.threejs-materials
       final.cadquery-ocp-novtk
       final.ezdxf
       final.ipython
@@ -153,5 +156,44 @@ in
     ];
 
     pythonImportsCheck = [ "build123d" ];
+  };
+
+  threejs-materials = wheel {
+    pname = "threejs_materials";
+    version = "1.2.5";
+
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/d5/ea/d2980e85afcc62e2a9c032c012009e3d50ec15f9b66ec1097463e65aa55e/threejs_materials-1.2.5-py3-none-any.whl";
+      hash = "sha256-5iImQ4gEX6NWErUU3a7eyyE4McmKoLFAoQG78/3VJ6Y=";
+    };
+
+    dependencies = [
+      final.numpy
+      final.pillow
+      final.platformdirs
+      final.pygltflib
+      final.requests
+    ];
+
+    pythonImportsCheck = [ "threejs_materials" ];
+  };
+
+  bd-materials = wheel {
+    pname = "bd_materials";
+    version = "0.2.6";
+
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/18/61/118b3c58f74724b6d11b86a53d63eefbe988747d3291d763d99652263f11/bd_materials-0.2.6-py3-none-any.whl";
+      hash = "sha256-Hu6HheC3Z9y6OXFL4yaUvFcM7wzXeIgGNSXiB6gBLRo=";
+    };
+
+    pythonRelaxDeps = [ "webcolors" ];
+
+    dependencies = [
+      final.threejs-materials
+      final.webcolors
+    ];
+
+    pythonImportsCheck = [ "bd_materials" ];
   };
 }
