@@ -83,11 +83,15 @@ the end step is overdue (30 s, unless the test's `@end` says otherwise), the car
 says so, and for a hazardous test it says to cut the hardware's power.
 
 A stop that cannot reach the hardware raises `StopUnconfirmed`. That happens when
-the link is down or lost, or when the test opened the port itself. The board
-then shows a red alarm and the subsystem's tab mark turns red, on every open
+the link is down or lost. The board then shows a red alarm and the subsystem's tab mark turns red, on every open
 browser, until the operator acknowledges it or a later stop succeeds. A link
 that drops under a running test raises the same alarm at once and cancels the
 test.
+
+A test with `needs=DOWN`, such as `prelink.VerifyPort` or `prelink.FlashBoard`,
+holds no link: each of its steps opens its own short connection and closes it.
+Stop cancels it at the next step and calls no `stop()`, since there is no link
+to send one through, and raises no alarm.
 
 ## Language
 

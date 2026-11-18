@@ -127,7 +127,7 @@ def test_a_stopped_test_is_cancelled_and_still_runs_its_end_step(model, recorder
     assert last is not None and last.verdict is not None
     assert last.verdict.value == "cancelled"
     assert last.outcomes[-1].end and last.outcomes[-1].status.value == "passed"
-    assert last.stopped is not None and last.stopped.summary == "stopped"
+    assert last.stopped is not None and last.stopped.summary == "stopped the hardware"
 
 
 def test_a_question_is_answered_through_the_model(model, recorder):
