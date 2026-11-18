@@ -115,6 +115,15 @@ class NoAnswer(Exception):
     pass
 
 
+# How a stop that was not sent describes the link it would have gone through.
+LINK_STATE_SAID = {
+    LinkState.DOWN: "the link is down",
+    LinkState.LINKING: "the link is still connecting",
+    LinkState.UP: "the link is up",
+    LinkState.ERROR: "the link failed",
+}
+
+
 class StopUnconfirmed(Exception):
     """Raised when a stop could not be sent, so the hardware's state is unknown."""
 
@@ -134,7 +143,7 @@ class StopUnconfirmed(Exception):
             cause = (
                 "the link was lost while the test ran"
                 if while_running
-                else (f"the link is {link_state.value}")
+                else LINK_STATE_SAID[link_state]
             )
             if link_reason:
                 cause = f"{cause} ({link_reason})"
